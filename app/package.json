@@ -1,0 +1,20 @@
+{
+  "name": "debt-pawn-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "หนี้สิน & ตั๋วจำนำ — Android app (Capacitor)",
+  "scripts": {
+    "add-android": "cap add android",
+    "sync": "cap sync android",
+    "open-android": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.1.0",
+    "@capacitor/android": "^6.1.0",
+    "@capacitor/push-notifications": "^6.0.2",
+    "@codetrix-studio/capacitor-google-auth": "^3.3.6"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.0"
+  }
+}

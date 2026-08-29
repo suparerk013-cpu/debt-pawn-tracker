@@ -1,0 +1,18 @@
+{
+  "appId": "com.debtpawn.tracker",
+  "appName": "หนี้สิน & ตั๋วจำนำ",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "GoogleAuth": {
+      "scopes": ["profile", "email"],
+      "serverClientId": "YOUR_WEB_CLIENT_ID.apps.googleusercontent.com",
+      "forceCodeForRefreshToken": true
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "หนี้สิน & ตั๋วจำนำ",
+  "short_name": "DebtPawn",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#0E6B5C",
+  "theme_color": "#0E6B5C",
+  "orientation": "portrait",
+  "icons": []
+}

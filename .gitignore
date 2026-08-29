@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Capacitor-generated native project (CI regenerates this every build)
+app/android/
+app/ios/
+
+# Secrets — never commit real values (copy config.example.php to config.php and fill it in)
+backend/config/config.php
+backend/config/firebase-service-account.json
+
+# Editor/OS cruft
+.DS_Store
+Thumbs.db
