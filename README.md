@@ -73,7 +73,32 @@ debt-pawn-tracker/
 
 ## 4. Build แอป Android (APK)
 
-> **ยังไม่ได้ build ให้ในรอบนี้ตามที่ขอ** — เครื่องที่ผมรันอยู่มีพื้นที่ดิสก์เหลือไม่พอสำหรับ Android SDK/Gradle (เหลือ ~3.4GB) ขั้นตอนด้านล่างคือสิ่งที่ต้องทำเองบนเครื่องที่มี Android Studio
+### วิธีที่แนะนำ: build ผ่าน GitHub Actions (ไม่ต้องมี Android Studio)
+
+เครื่องนี้มีพื้นที่ดิสก์เหลือไม่พอสำหรับ Android SDK/Gradle เลยตั้งระบบให้ build บนคลาวด์แทน — GitHub ให้เนื้อที่/เครื่องฟรีสำหรับรัน CI (GitHub Actions) ผลลัพธ์คือไฟล์ `.apk` จริงที่ดาวน์โหลดมาลงมือถือได้เลย
+
+**สิ่งที่ทำให้แล้ว** (อยู่ใน repo นี้): ไฟล์ `.github/workflows/build-apk.yml` — บอกให้ GitHub Actions ติดตั้ง Node.js + JDK 17 + Android SDK เอง แล้วรัน `npx cap add android` → `npx cap sync` → `./gradlew assembleDebug` โดยอัตโนมัติทุกครั้งที่ push โค้ด หรือกดรันเองก็ได้
+
+**สิ่งที่ต้องทำเอง** (ต้องมีบัญชี GitHub — สมัครฟรีที่ [github.com](https://github.com) ถ้ายังไม่มี):
+
+1. สร้าง repository ใหม่บน GitHub (private หรือ public ก็ได้) เช่น `debt-pawn-tracker` — **อย่าติ๊ก** "Add a README" ตอนสร้าง (repo ต้องว่างเปล่า)
+2. กลับมาที่เครื่องนี้ รันคำสั่งนี้ (แก้ `YOUR_USERNAME` และ `YOUR_REPO` ให้ตรงกับที่สร้างไว้):
+   ```bash
+   cd "debt-pawn-tracker"
+   git branch -M main
+   git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git
+   git push -u origin main
+   ```
+   ตอน push ครั้งแรก Git อาจถามให้ล็อกอิน GitHub ในเบราว์เซอร์ — ทำตามได้เลย
+3. ไปที่หน้า repo บน GitHub → แท็บ **Actions** → จะเห็น workflow "Build Android APK" กำลังรันอยู่ (รันอัตโนมัติทันทีที่ push) รอสัก 5-10 นาที
+4. พอรันเสร็จ (เครื่องหมายถูกสีเขียว) → กดเข้าไปในรายการรันนั้น → เลื่อนลงไปที่ **Artifacts** ด้านล่าง → ดาวน์โหลด `debt-pawn-tracker-debug-apk.zip`
+5. แตกไฟล์ zip จะได้ `app-debug.apk` → ส่งไฟล์นี้เข้ามือถือ (ผ่าน Google Drive, LINE, สาย USB ฯลฯ) → เปิดไฟล์เพื่อติดตั้ง (ต้องเปิด "อนุญาตติดตั้งจากแหล่งที่ไม่รู้จัก" ในตั้งค่ามือถือครั้งแรก)
+
+> **ก่อน push ครั้งแรก อย่าลืม**: แก้ `BASE_URL` ใน [`app/www/js/api.js`](app/www/js/api.js) ให้ชี้ไปที่ backend จริงที่ deploy ไว้แล้ว (ทำตามข้อ 1-3.5 ด้านบนให้เสร็จก่อน) ไม่งั้น APK ที่ได้จะต่อ backend จริงไม่ได้ (มันจะ fallback ไปที่ URL placeholder ที่ยังไม่มีอยู่จริง)
+
+> **นี่คือ debug APK** (เซ็นด้วย debug keystore อัตโนมัติ) — ติดตั้งใช้เองได้ปกติ แจกลิงก์ตรงได้ตามสเปกเดิม แค่ไม่สามารถอัปโหลดขึ้น Play Store ได้ (ถ้าต้องการ release APK แบบเซ็นจริงในอนาคต ค่อยเพิ่ม keystore + step เซ็นในไฟล์ workflow ทีหลังได้)
+
+### วิธีทางเลือก: build เองด้วย Android Studio (ถ้ามีเครื่องอื่นที่ติดตั้งไว้แล้ว)
 
 ต้องมี [Node.js](https://nodejs.org), [Android Studio](https://developer.android.com/studio) (มี Android SDK + JDK) ติดตั้งไว้
 
