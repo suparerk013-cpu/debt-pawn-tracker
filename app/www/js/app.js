@@ -29,18 +29,21 @@
   ];
   const JEWELRY_MAX_RENEWALS = 4;
 
+  // Calendar dates use LOCAL Y/M/D, never toISOString() (which converts to UTC and can shift
+  // the date by a day in timezones ahead of UTC, e.g. Thailand at UTC+7).
+  function dateStr(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
   function computePeriodDate(unit, value) {
     const d = new Date();
     if (unit === 'day') d.setDate(d.getDate() + value);
     else if (unit === 'month') d.setMonth(d.getMonth() + value);
-    return d.toISOString().slice(0, 10);
+    return dateStr(d);
   }
-  function addMonths(dateStr, n) {
-    const d = new Date(dateStr + 'T00:00:00');
+  function addMonths(dateStrIn, n) {
+    const d = new Date(dateStrIn + 'T00:00:00');
     d.setMonth(d.getMonth() + n);
-    return d.toISOString().slice(0, 10);
+    return dateStr(d);
   }
-  function todayISO() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString().slice(0, 10); }
+  function todayISO() { return dateStr(new Date()); }
 
   const S = {
     screen: 'login',           // login | dashboard | debtList | debtDetail | debtSettings | pawnList | expenses | addEdit | settings | notifications
@@ -194,16 +197,15 @@
   }
   function setPawnCategory(key) { setForms({ category: key }); }
 
-  // ---------------- Auth: pick-a-username, no password ----------------
-  function saveSession(token, user, realUser) {
-    Api.setToken(token);
+  // ---------------- Auth: pick-a-username, no password (Firestore + anonymous auth) ----------------
+  function saveSession(user, realUser) {
+    Api.setActiveUser(user.id);
     localStorage.setItem('dpt_user', JSON.stringify(user));
     localStorage.setItem('dpt_real_user', JSON.stringify(realUser));
     S.currentUser = user;
     S.realUser = realUser;
   }
   function clearSession() {
-    Api.setToken(null);
     localStorage.removeItem('dpt_user');
     localStorage.removeItem('dpt_real_user');
     S.currentUser = null;
@@ -217,13 +219,12 @@
     S.busy = true; render();
     try {
       const res = await Api.login(username);
-      saveSession(res.token, res.user, res.user);
+      saveSession(res.user, res.user);
       S.busy = false;
       setState({ screen: 'dashboard', loginError: '', forms: { ...S.forms, loginUsername: '' } });
       if (res.user.is_admin) loadSwitchableUsers();
       await loadAll();
       loadNotifications();
-      registerWebPush();
     } catch (e) {
       S.busy = false;
       setState({ loginError: e.message || 'ไม่พบผู้ใช้นี้' });
@@ -238,7 +239,7 @@
     if (S.currentUser && S.currentUser.id === userId) { setState({ userMenuOpen: false }); return; }
     try {
       const res = await Api.switchUser(userId);
-      saveSession(res.token, res.user, S.realUser);
+      saveSession(res.user, S.realUser);
       setState({ userMenuOpen: false, screen: 'dashboard', fabMenuOpen: false });
       await loadAll();
       loadNotifications();
@@ -447,21 +448,6 @@
     S.unreadCount = 0;
     render();
     try { await Api.markAllNotificationsRead(); } catch (e) { /* keep optimistic */ }
-  }
-  // ---------------- Web Push notifications ----------------
-  // Uses the browser's own Push API + a service worker (no native app needed). Requires
-  // Firebase's Web SDK + a VAPID key to be configured in index.html (see README).
-  async function registerWebPush() {
-    try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-      if (!window.firebase || !window.FIREBASE_VAPID_KEY) return; // not configured yet
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') return;
-      const reg = await navigator.serviceWorker.ready;
-      const messaging = firebase.messaging();
-      const token = await messaging.getToken({ vapidKey: window.FIREBASE_VAPID_KEY, serviceWorkerRegistration: reg });
-      if (token) await Api.registerFcmToken(token);
-    } catch (e) { /* push not available in this browser/setup */ }
   }
 
   // ---------------- Render ----------------
@@ -1004,26 +990,26 @@
       case 'submit-login': submitLogin(); break;
       case 'logout': logout(); break;
       case 'toggle-user-menu': setState({ userMenuOpen: !S.userMenuOpen }); break;
-      case 'switch-user': switchToUser(Number(el.dataset.id)); break;
+      case 'switch-user': switchToUser(el.dataset.id); break;
       case 'open-notifications': openNotifications(); break;
-      case 'mark-notif-read': markNotifRead(Number(el.dataset.id)); break;
+      case 'mark-notif-read': markNotifRead(el.dataset.id); break;
       case 'mark-all-read': markAllNotifsRead(); break;
       case 'back': goBack(); break;
       case 'nav': nav(el.dataset.screen); break;
-      case 'open-debt': openDebt(Number(el.dataset.id)); break;
-      case 'open-debt-settings': openDebtSettings(Number(el.dataset.id)); break;
+      case 'open-debt': openDebt(el.dataset.id); break;
+      case 'open-debt-settings': openDebtSettings(el.dataset.id); break;
       case 'submit-edit-debt': editDebtSubmit(); break;
-      case 'close-debt': closeDebt(Number(el.dataset.id)); break;
-      case 'delete-debt': deleteDebt(Number(el.dataset.id)); break;
-      case 'mark-paid': markPaid(Number(el.dataset.id), Number(el.dataset.debt)); break;
-      case 'redeem': redeemPawn(Number(el.dataset.id)); break;
-      case 'renew-open': toggleRenewPicker(Number(el.dataset.id)); break;
+      case 'close-debt': closeDebt(el.dataset.id); break;
+      case 'delete-debt': deleteDebt(el.dataset.id); break;
+      case 'mark-paid': markPaid(el.dataset.id, el.dataset.debt); break;
+      case 'redeem': redeemPawn(el.dataset.id); break;
+      case 'renew-open': toggleRenewPicker(el.dataset.id); break;
       case 'renew-confirm': {
         const opt = PERIOD_OPTIONS.find((o) => o.key === el.dataset.key);
-        if (opt && opt.unit) renewPawn(Number(el.dataset.id), opt);
+        if (opt && opt.unit) renewPawn(el.dataset.id, opt);
         break;
       }
-      case 'renew-final-confirm': renewPawnFinal(Number(el.dataset.id)); break;
+      case 'renew-final-confirm': renewPawnFinal(el.dataset.id); break;
       case 'pawn-period': setPawnPeriod(el.dataset.key); break;
       case 'pawn-category': setPawnCategory(el.dataset.key); break;
       case 'expense-type': setExpenseType(el.dataset.key); break;
@@ -1031,9 +1017,9 @@
       case 'submit-debt': addDebtSubmit(); break;
       case 'submit-pawn': addPawnSubmit(); break;
       case 'submit-expense': addExpenseSubmit(); break;
-      case 'mark-expense-paid': markExpensePaid(Number(el.dataset.id), el.dataset.expenseType); break;
-      case 'confirm-expense-pay': confirmExpensePay(Number(el.dataset.id)); break;
-      case 'delete-expense': deleteExpense(Number(el.dataset.id)); break;
+      case 'mark-expense-paid': markExpensePaid(el.dataset.id, el.dataset.expenseType); break;
+      case 'confirm-expense-pay': confirmExpensePay(el.dataset.id); break;
+      case 'delete-expense': deleteExpense(el.dataset.id); break;
       case 'goto-expenses': setState({ screen: 'expenses', returnScreen: 'dashboard' }); break;
       case 'warn-days': setWarnDays(Number(el.dataset.n)); break;
       case 'fab-click':
@@ -1060,11 +1046,15 @@
 
   // ---------------- Boot ----------------
   render();
-  if (S.currentUser && Api.getToken()) {
-    // Returning user — session already saved on this device, skip straight to the app.
-    setState({ screen: 'dashboard' });
-    if (S.realUser && S.realUser.is_admin) loadSwitchableUsers();
-    loadAll();
-    loadNotifications();
-  }
+  (async () => {
+    await Api.ready(); // make sure anonymous auth is signed in before any Firestore call
+    if (S.currentUser) {
+      // Returning user — session already saved on this device, skip straight to the app.
+      Api.setActiveUser(S.currentUser.id);
+      setState({ screen: 'dashboard' });
+      if (S.realUser && S.realUser.is_admin) loadSwitchableUsers();
+      loadAll();
+      loadNotifications();
+    }
+  })();
 })();

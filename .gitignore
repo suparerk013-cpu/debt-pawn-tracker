@@ -1,6 +1,5 @@
-# Secrets — never commit real values (copy config.example.php to config.php and fill it in)
-backend/config/config.php
-backend/config/firebase-service-account.json
+# Firebase CLI local cache
+.firebase/
 
 # Editor/OS cruft
 .DS_Store
