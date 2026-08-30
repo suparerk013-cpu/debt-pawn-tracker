@@ -1,4 +1,4 @@
-// Debt & Pawn Tracker — vanilla JS app shell (Capacitor-wrapped).
+// Debt & Pawn Tracker — vanilla JS PWA. Single-user (PIN only, no accounts/Google).
 (function () {
   'use strict';
 
@@ -20,26 +20,34 @@
     { key: '4m',  label: '4 เดือน',  unit: 'month', value: 4 },
     { key: 'custom', label: 'กำหนดเอง', unit: null, value: null },
   ];
+  const PAWN_CATEGORIES = [
+    { key: 'jewelry',     label: 'เครื่องประดับ', icon: '💍' },
+    { key: 'car',         label: 'รถ',            icon: '🚗' },
+    { key: 'electronics', label: 'อุปกรณ์อิเล็กทรอนิก', icon: '📱' },
+    { key: 'other',       label: 'อื่นๆ',          icon: '📦' },
+  ];
+  const JEWELRY_MAX_RENEWALS = 4;
+
   function computePeriodDate(unit, value) {
     const d = new Date();
     if (unit === 'day') d.setDate(d.getDate() + value);
     else if (unit === 'month') d.setMonth(d.getMonth() + value);
     return d.toISOString().slice(0, 10);
   }
+  function addMonths(dateStr, n) {
+    const d = new Date(dateStr + 'T00:00:00');
+    d.setMonth(d.getMonth() + n);
+    return d.toISOString().slice(0, 10);
+  }
+  function todayISO() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString().slice(0, 10); }
 
   const S = {
-    screen: 'auth',            // auth | lock | forgotPassword | forgotPin | dashboard | debtList | debtDetail | pawnList | addEdit | settings
-    authTab: 'login',          // login | register
-    authError: '',
-
-    needsPinSetup: false,
-    pinContext: 'unlock',      // unlock | setup | forgotPin
-    pinStage: 'enter',         // enter | confirm  (setup/forgotPin double-entry)
+    screen: 'lock',            // lock | dashboard | debtList | debtDetail | pawnList | expenses | addEdit | settings
+    hasAccount: localStorage.getItem('dpt_has_account') === '1',
+    pinStage: 'enter',         // enter | confirm  (only relevant during first-time setup)
     pinFirstEntry: '',
     pin: [],
     pinError: '',
-
-    forgotStage: 'identify',   // identify | pin  (forgotPin screen)
 
     busy: false,
     wasBackgrounded: false,
@@ -57,11 +65,9 @@
     report: null,
     forms: {
       name: '', total: '', remaining: '', dueDay: '5', installmentAmount: '',
-      itemName: '', shop: '', ticketCode: '', amount: '', dueDate: '', pawnPeriod: '1m',
+      itemName: '', shop: '', ticketCode: '', category: 'jewelry', amount: '', dueDate: '', pawnPeriod: '1m',
       expenseName: '', expenseAmount: '', expenseDueDay: '5',
-      username: '', password: '', phone: '',
-      fpUsername: '', fpContact: '',
-      fpaUsername: '', fpaContact: '', fpaNewPassword: '',
+      pawnFinalDate: '',
     },
   };
 
@@ -149,7 +155,8 @@
       forms: {
         ...S.forms,
         name: '', total: '', remaining: '', dueDay: '5', installmentAmount: '',
-        itemName: '', shop: '', ticketCode: '', amount: '', pawnPeriod: '1m', dueDate: computePeriodDate('month', 1),
+        itemName: '', shop: '', ticketCode: '', category: 'jewelry', amount: '',
+        pawnPeriod: '1m', dueDate: computePeriodDate('month', 1),
         expenseName: '', expenseAmount: '', expenseDueDay: '5',
       },
     });
@@ -161,67 +168,11 @@
     if (opt.key === 'custom') { setForms({ pawnPeriod: key }); return; }
     setForms({ pawnPeriod: key, dueDate: computePeriodDate(opt.unit, opt.value) });
   }
+  function setPawnCategory(key) { setForms({ category: key }); }
 
-  // ---------------- Auth: login / register / google ----------------
-  function afterAuthSuccess(needsPin) {
-    if (needsPin) {
-      setState({ screen: 'lock', needsPinSetup: true, pinContext: 'setup', pinStage: 'enter', pin: [], pinFirstEntry: '', pinError: '', authError: '' });
-    } else {
-      setState({ screen: 'lock', needsPinSetup: false, pinContext: 'unlock', pin: [], pinError: '', authError: '' });
-    }
-  }
-
-  async function submitLogin() {
-    const f = S.forms;
-    if (!f.username.trim() || !f.password) { setState({ authError: 'กรอกชื่อผู้ใช้และรหัสผ่าน' }); return; }
-    S.busy = true; render();
-    try {
-      const res = await Api.loginPassword(f.username.trim(), f.password);
-      Api.setToken(res.token);
-      S.busy = false;
-      afterAuthSuccess(res.needs_pin);
-    } catch (e) {
-      S.busy = false;
-      setState({ authError: e.message || 'เข้าสู่ระบบไม่สำเร็จ' });
-    }
-  }
-
-  async function submitRegister() {
-    const f = S.forms;
-    if (!f.username.trim() || !f.password || !f.phone.trim()) { setState({ authError: 'กรอกข้อมูลให้ครบ' }); return; }
-    S.busy = true; render();
-    try {
-      const res = await Api.register(f.username.trim(), f.password, f.phone.trim());
-      Api.setToken(res.token);
-      S.busy = false;
-      afterAuthSuccess(res.needs_pin);
-    } catch (e) {
-      S.busy = false;
-      setState({ authError: e.message || 'สมัครสมาชิกไม่สำเร็จ' });
-    }
-  }
-
-  async function googleSignIn() {
-    try {
-      const gauth = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.GoogleAuth;
-      if (!gauth) { showToast('ต้อง build เป็นแอป Android ก่อนถึงจะใช้ Google ได้'); return; }
-      S.busy = true; render();
-      const result = await gauth.signIn();
-      const idToken = result && result.authentication && result.authentication.idToken;
-      if (!idToken) throw new Error('ไม่ได้รับ token จาก Google');
-
-      const res = await Api.googleLogin(idToken);
-      Api.setToken(res.token);
-      S.busy = false;
-      afterAuthSuccess(res.needs_pin);
-    } catch (e) {
-      S.busy = false;
-      showToast(e.message || 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ');
-      render();
-    }
-  }
-
-  // ---------------- PIN pad (shared: unlock / setup / forgotPin) ----------------
+  // ---------------- Auth: single-user PIN ----------------
+  // First PIN ever entered on this device becomes the account's PIN (double-entry confirm).
+  // Every time after that, the same PIN just unlocks the app.
   async function pinPress(d) {
     if (S.pin.length >= 4 || S.busy) return;
     const pin = [...S.pin, d];
@@ -229,9 +180,9 @@
     if (pin.length !== 4) return;
     const entered = pin.join('');
 
-    if (S.pinContext === 'unlock') { await submitPin(entered); return; }
+    if (S.hasAccount) { await submitPin(entered); return; }
 
-    // setup / forgotPin: double-entry confirmation
+    // First-time setup: double-entry confirmation.
     if (S.pinStage === 'enter') {
       setState({ pin: [], pinStage: 'confirm', pinFirstEntry: entered });
       return;
@@ -240,105 +191,31 @@
       setState({ pin: [], pinStage: 'enter', pinFirstEntry: '', pinError: 'PIN ไม่ตรงกัน กรุณาลองใหม่อีกครั้ง' });
       return;
     }
-    if (S.pinContext === 'setup') await submitPinSetup(entered);
-    else if (S.pinContext === 'forgotPin') await submitForgotPin(entered);
+    await submitPin(entered);
   }
   function pinBack() { setState({ pin: S.pin.slice(0, -1), pinError: '' }); }
 
   async function submitPin(pinStr) {
     S.busy = true; render();
     try {
-      await Api.verifyPin(pinStr);
+      const res = await Api.login(pinStr);
+      Api.setToken(res.token);
+      if (res.created) {
+        localStorage.setItem('dpt_has_account', '1');
+        S.hasAccount = true;
+      }
       S.pin = []; S.busy = false;
-      setState({ screen: 'dashboard' });
+      setState({ screen: 'dashboard', pinStage: 'enter', pinFirstEntry: '' });
       await loadAll();
-      registerPushToken();
+      if (res.created) showToast('ตั้ง PIN สำเร็จ');
+      registerWebPush();
     } catch (e) {
       S.busy = false;
-      if (e.status === 401 && /token/i.test(e.message || '')) {
-        Api.setToken(null);
-        setState({ screen: 'auth', authTab: 'login', pin: [], pinError: '' });
-        showToast('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
-        return;
-      }
       setState({ pin: [], pinError: e.message || 'PIN ไม่ถูกต้อง' });
     }
   }
 
-  async function submitPinSetup(pinStr) {
-    S.busy = true; render();
-    try {
-      await Api.setPin(pinStr);
-      S.pin = []; S.busy = false;
-      setState({ screen: 'dashboard', needsPinSetup: false, pinContext: 'unlock', pinStage: 'enter', pinFirstEntry: '' });
-      await loadAll();
-      showToast('ตั้ง PIN สำเร็จ');
-      registerPushToken();
-    } catch (e) {
-      S.busy = false;
-      setState({ pin: [], pinStage: 'enter', pinFirstEntry: '', pinError: e.message || 'ตั้ง PIN ไม่สำเร็จ' });
-    }
-  }
-
-  async function submitForgotPin(pinStr) {
-    S.busy = true; render();
-    try {
-      const res = await Api.forgotPin(S.forms.fpUsername.trim(), S.forms.fpContact.trim(), pinStr);
-      Api.setToken(res.token);
-      S.pin = []; S.busy = false;
-      setState({ screen: 'dashboard', needsPinSetup: false, pinContext: 'unlock', pinStage: 'enter', pinFirstEntry: '' });
-      await loadAll();
-      showToast('ตั้งค่า PIN ใหม่สำเร็จ');
-      registerPushToken();
-    } catch (e) {
-      S.busy = false;
-      setState({
-        screen: 'forgotPin', forgotStage: 'identify',
-        pin: [], pinStage: 'enter', pinFirstEntry: '', pinError: '',
-      });
-      showToast(e.message || 'รีเซ็ต PIN ไม่สำเร็จ');
-    }
-  }
-
-  function forgotPinNext() {
-    const f = S.forms;
-    if (!f.fpUsername.trim() || !f.fpContact.trim()) { setState({ pinError: 'กรอกชื่อผู้ใช้และเบอร์โทรศัพท์หรืออีเมล' }); return; }
-    setState({ forgotStage: 'pin', pinContext: 'forgotPin', pinStage: 'enter', pin: [], pinFirstEntry: '', pinError: '' });
-  }
-
-  async function submitForgotPassword() {
-    const f = S.forms;
-    if (!f.fpaUsername.trim() || !f.fpaContact.trim() || f.fpaNewPassword.length < 6) {
-      setState({ authError: 'กรอกข้อมูลให้ครบ (รหัสผ่านอย่างน้อย 6 ตัวอักษร)' });
-      return;
-    }
-    S.busy = true; render();
-    try {
-      await Api.forgotPassword(f.fpaUsername.trim(), f.fpaContact.trim(), f.fpaNewPassword);
-      S.busy = false;
-      setState({ screen: 'auth', authTab: 'login', authError: '' });
-      showToast('เปลี่ยนรหัสผ่านสำเร็จ กรุณาเข้าสู่ระบบใหม่');
-    } catch (e) {
-      S.busy = false;
-      setState({ authError: e.message || 'เปลี่ยนรหัสผ่านไม่สำเร็จ' });
-    }
-  }
-
-  async function fingerprintUnlock() {
-    if (S.pinContext !== 'unlock') { showToast('กรุณาใช้ PIN'); return; }
-    try {
-      const bio = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeBiometric;
-      if (!bio || !Api.getToken()) { showToast('กรุณาใช้ PIN'); return; }
-      const avail = await bio.isAvailable();
-      if (!avail || !avail.isAvailable) { showToast('อุปกรณ์นี้ไม่รองรับลายนิ้วมือ'); return; }
-      await bio.verifyIdentity({ reason: 'ปลดล็อกแอป', title: 'ยืนยันตัวตน' });
-      setState({ screen: 'dashboard', pin: [] });
-      await loadAll();
-    } catch (e) {
-      showToast('ยืนยันตัวตนไม่สำเร็จ กรุณาใช้ PIN');
-    }
-  }
-  function relock() { setState({ screen: 'lock', pin: [], pinContext: 'unlock', pinStage: 'enter', pinFirstEntry: '' }); }
+  function relock() { setState({ screen: 'lock', pin: [], pinStage: 'enter', pinFirstEntry: '' }); }
 
   // ---------------- Actions ----------------
   async function markPaid(installmentId, debtId) {
@@ -360,17 +237,29 @@
       refreshReport();
     } catch (e) { showToast('ไถ่ถอนไม่สำเร็จ'); }
   }
-  function toggleRenewPicker(id) { setState({ renewPickerFor: S.renewPickerFor === id ? null : id }); }
+  function toggleRenewPicker(id) { setState({ renewPickerFor: S.renewPickerFor === id ? null : id, forms: { ...S.forms, pawnFinalDate: '' } }); }
 
   async function renewPawn(id, opt) {
     const period = opt.unit === 'month' ? { months: opt.value } : { days: opt.value };
     try {
       const res = await Api.renewPawn(id, period);
       const p = S.pawns.find((x) => x.id === id);
-      if (p) p.due_date = res.due_date;
+      if (p) { p.due_date = res.due_date; p.renewal_count = (p.renewal_count || 0) + 1; }
       setState({ renewPickerFor: null });
       showToast('ต่อดอกแล้ว เลื่อนกำหนดเป็น ' + formatDate(res.due_date));
-    } catch (e) { showToast('ต่อดอกไม่สำเร็จ'); }
+    } catch (e) { showToast(e.message || 'ต่อดอกไม่สำเร็จ'); }
+  }
+
+  async function renewPawnFinal(id) {
+    const date = S.forms.pawnFinalDate;
+    if (!date) { showToast('กรุณาเลือกวันที่จะชำระ'); return; }
+    try {
+      const res = await Api.renewPawn(id, { due_date: date });
+      const p = S.pawns.find((x) => x.id === id);
+      if (p) { p.due_date = res.due_date; p.renewal_count = (p.renewal_count || 0) + 1; }
+      setState({ renewPickerFor: null, forms: { ...S.forms, pawnFinalDate: '' } });
+      showToast('บันทึกวันชำระเป็น ' + formatDate(res.due_date));
+    } catch (e) { showToast(e.message || 'บันทึกไม่สำเร็จ'); }
   }
 
   async function addDebtSubmit() {
@@ -398,7 +287,7 @@
     try {
       await Api.createPawn({
         item_name: f.itemName.trim(), shop_name: f.shop.trim(), ticket_code: f.ticketCode.trim(),
-        amount, due_date: f.dueDate,
+        category: f.category, amount, due_date: f.dueDate,
         period_unit: opt && opt.unit ? opt.unit : null,
         period_value: opt && opt.value ? opt.value : null,
       });
@@ -450,24 +339,26 @@
     try { await Api.updateSettings({ auto_lock: S.autoLock }); } catch (e) { /* ignore */ }
   }
 
-  // ---------------- Push notifications (optional, needs native build) ----------------
-  async function registerPushToken() {
+  // ---------------- Web Push notifications ----------------
+  // Uses the browser's own Push API + a service worker (no native app needed). Requires
+  // Firebase's Web SDK + a VAPID key to be configured in index.html (see README).
+  async function registerWebPush() {
     try {
-      const push = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
-      if (!push) return;
-      const perm = await push.requestPermissions();
-      if (perm.receive !== 'granted') return;
-      await push.register();
-      push.addListener('registration', async (token) => {
-        try { await Api.registerFcmToken(token.value); } catch (e) { /* ignore */ }
-      });
-    } catch (e) { /* push not available in this build */ }
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      if (!window.firebase || !window.FIREBASE_VAPID_KEY) return; // not configured yet
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return;
+      const reg = await navigator.serviceWorker.ready;
+      const messaging = firebase.messaging();
+      const token = await messaging.getToken({ vapidKey: window.FIREBASE_VAPID_KEY, serviceWorkerRegistration: reg });
+      if (token) await Api.registerFcmToken(token);
+    } catch (e) { /* push not available in this browser/setup */ }
   }
 
   // ---------------- Auto-lock on background ----------------
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      if (S.autoLock && S.screen !== 'lock' && S.screen !== 'auth') S.wasBackgrounded = true;
+      if (S.autoLock && S.screen !== 'lock') S.wasBackgrounded = true;
     } else if (S.wasBackgrounded) {
       S.wasBackgrounded = false;
       relock();
@@ -476,59 +367,20 @@
 
   // ---------------- Render ----------------
   function render() {
-    let html;
-    if (S.screen === 'auth') html = renderAuth();
-    else if (S.screen === 'lock') html = renderLock();
-    else if (S.screen === 'forgotPassword') html = renderForgotPassword();
-    else if (S.screen === 'forgotPin') html = renderForgotPin();
-    else html = renderApp();
-    app.innerHTML = html;
+    app.innerHTML = S.screen === 'lock' ? renderLock() : renderApp();
   }
 
   function toastHtml() { return S.toast ? `<div class="toast">${esc(S.toast)}</div>` : ''; }
 
-  function renderAuth() {
-    const isLogin = S.authTab === 'login';
-    return `
-    <div class="lock-screen" style="justify-content:flex-start;overflow-y:auto">
-      <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:6px;margin-bottom:22px">
-        <div class="lock-icon">${svgLock()}</div>
-        <div class="lock-title">หนี้สิน & ตั๋วจำนำ</div>
-      </div>
-      <div class="segmented" style="width:100%;max-width:320px;background:rgba(255,255,255,0.14)">
-        <button class="segmented-btn ${isLogin ? 'active' : ''}" data-action="goto-auth-login" style="${isLogin ? '' : 'color:#fff'}">เข้าสู่ระบบ</button>
-        <button class="segmented-btn ${!isLogin ? 'active' : ''}" data-action="goto-auth-register" style="${!isLogin ? '' : 'color:#fff'}">สมัครสมาชิก</button>
-      </div>
-      <div style="width:100%;max-width:320px;display:flex;flex-direction:column;gap:12px;margin-top:18px">
-        <div><div class="field-label" style="color:rgba(255,255,255,0.75)">ชื่อผู้ใช้</div><input class="field-input" data-bind="username" value="${esc(S.forms.username)}" placeholder="เช่น somchai01"/></div>
-        <div><div class="field-label" style="color:rgba(255,255,255,0.75)">รหัสผ่าน</div><input class="field-input" type="password" data-bind="password" value="${esc(S.forms.password)}" placeholder="อย่างน้อย 6 ตัวอักษร"/></div>
-        ${!isLogin ? `<div><div class="field-label" style="color:rgba(255,255,255,0.75)">เบอร์โทรศัพท์</div><input class="field-input" data-bind="phone" value="${esc(S.forms.phone)}" placeholder="0812345678"/></div>` : ''}
-        <div class="lock-error" style="text-align:left">${esc(S.authError)}</div>
-        <button class="submit-btn" data-action="${isLogin ? 'submit-login' : 'submit-register'}">${isLogin ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}</button>
-        ${isLogin ? `<button class="link-btn" data-action="goto-forgot-password">ลืมรหัสผ่าน?</button>` : ''}
-        <div style="display:flex;align-items:center;gap:10px;color:rgba(255,255,255,0.5);font-size:12px;margin-top:2px">
-          <div style="flex:1;height:1px;background:rgba(255,255,255,0.2)"></div>หรือ<div style="flex:1;height:1px;background:rgba(255,255,255,0.2)"></div>
-        </div>
-        <button class="google-btn" data-action="google-signin">${svgGoogle()} ${isLogin ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}ด้วย Google</button>
-      </div>
-      ${toastHtml()}
-    </div>`;
-  }
-
-  function renderPinDotsAndKeys() {
+  function renderLock() {
+    const isSetup = !S.hasAccount;
     const dots = [0, 1, 2, 3].map((i) => `<div class="pin-dot ${i < S.pin.length ? 'filled' : ''}"></div>`).join('');
-    const keys = ['1','2','3','4','5','6','7','8','9','fp','0','bs'];
+    const keys = ['1','2','3','4','5','6','7','8','9','','0','bs'];
     const keyHtml = keys.map((k) => {
-      if (k === 'fp') return `<button class="keypad-key" data-action="fp">${svgFingerprint()}</button>`;
       if (k === 'bs') return `<button class="keypad-key" data-action="bs">${svgBackspace()}</button>`;
+      if (k === '') return `<div class="keypad-key empty"></div>`;
       return `<button class="keypad-key" data-action="digit" data-digit="${k}">${k}</button>`;
     }).join('');
-    return { dots, keyHtml };
-  }
-
-  function renderLock() {
-    const { dots, keyHtml } = renderPinDotsAndKeys();
-    const isSetup = S.pinContext === 'setup';
 
     let title, sub;
     if (isSetup) {
@@ -549,63 +401,7 @@
       </div>
       <div class="pin-dots">${dots}</div>
       <div class="keypad">${keyHtml}</div>
-      ${!isSetup ? `<button class="link-btn" data-action="goto-forgot-pin">ลืมรหัส PIN?</button>` : '<div></div>'}
-      ${toastHtml()}
-    </div>`;
-  }
-
-  function renderForgotPin() {
-    if (S.forgotStage === 'identify') {
-      return `
-      <div class="lock-screen" style="justify-content:flex-start;overflow-y:auto">
-        <div style="width:100%;display:flex;align-items:center;gap:8px">
-          <button class="icon-btn" data-action="back-to-lock" style="background:rgba(255,255,255,0.14)">${svgBack('#fff')}</button>
-          <div class="lock-title" style="font-size:17px">ลืมรหัส PIN</div>
-        </div>
-        <div style="width:100%;max-width:320px;display:flex;flex-direction:column;gap:14px;margin-top:24px">
-          <div><div class="field-label" style="color:rgba(255,255,255,0.75)">ชื่อผู้ใช้</div><input class="field-input" data-bind="fpUsername" value="${esc(S.forms.fpUsername)}" placeholder="ชื่อผู้ใช้ของคุณ"/></div>
-          <div><div class="field-label" style="color:rgba(255,255,255,0.75)">เบอร์โทรศัพท์หรืออีเมลที่ลงทะเบียนไว้</div><input class="field-input" data-bind="fpContact" value="${esc(S.forms.fpContact)}" placeholder="0812345678 หรือ you@email.com"/></div>
-          <div class="lock-error" style="text-align:left">${esc(S.pinError)}</div>
-          <button class="submit-btn" data-action="forgot-pin-next">ถัดไป</button>
-        </div>
-        ${toastHtml()}
-      </div>`;
-    }
-
-    const { dots, keyHtml } = renderPinDotsAndKeys();
-    const title = S.pinStage === 'enter' ? 'ตั้ง PIN ใหม่ (ขั้นตอน 1/2)' : 'ยืนยัน PIN อีกครั้ง (ขั้นตอน 2/2)';
-    return `
-    <div class="lock-screen">
-      <div style="width:100%;display:flex;align-items:center;gap:8px;margin-top:-30px">
-        <button class="icon-btn" data-action="back-to-lock" style="background:rgba(255,255,255,0.14)">${svgBack('#fff')}</button>
-      </div>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
-        <div class="lock-icon">${svgLock()}</div>
-        <div class="lock-title">${title}</div>
-        <div class="lock-sub">ใส่ PIN 4 หลักที่ต้องการใช้</div>
-        <div class="lock-error">${esc(S.pinError)}</div>
-      </div>
-      <div class="pin-dots">${dots}</div>
-      <div class="keypad">${keyHtml}</div>
       <div></div>
-      ${toastHtml()}
-    </div>`;
-  }
-
-  function renderForgotPassword() {
-    return `
-    <div class="lock-screen" style="justify-content:flex-start;overflow-y:auto">
-      <div style="width:100%;display:flex;align-items:center;gap:8px">
-        <button class="icon-btn" data-action="back-to-auth" style="background:rgba(255,255,255,0.14)">${svgBack('#fff')}</button>
-        <div class="lock-title" style="font-size:17px">ลืมรหัสผ่าน</div>
-      </div>
-      <div style="width:100%;max-width:320px;display:flex;flex-direction:column;gap:14px;margin-top:24px">
-        <div><div class="field-label" style="color:rgba(255,255,255,0.75)">ชื่อผู้ใช้</div><input class="field-input" data-bind="fpaUsername" value="${esc(S.forms.fpaUsername)}" placeholder="ชื่อผู้ใช้ของคุณ"/></div>
-        <div><div class="field-label" style="color:rgba(255,255,255,0.75)">เบอร์โทรศัพท์หรืออีเมลที่ลงทะเบียนไว้</div><input class="field-input" data-bind="fpaContact" value="${esc(S.forms.fpaContact)}" placeholder="0812345678 หรือ you@email.com"/></div>
-        <div><div class="field-label" style="color:rgba(255,255,255,0.75)">รหัสผ่านใหม่</div><input class="field-input" type="password" data-bind="fpaNewPassword" value="${esc(S.forms.fpaNewPassword)}" placeholder="อย่างน้อย 6 ตัวอักษร"/></div>
-        <div class="lock-error" style="text-align:left">${esc(S.authError)}</div>
-        <button class="submit-btn" data-action="submit-forgot-password">เปลี่ยนรหัสผ่าน</button>
-      </div>
       ${toastHtml()}
     </div>`;
   }
@@ -781,43 +577,86 @@
   function renderPawnList() {
     const empty = !S.pawns.length ? `
       <div class="empty-card"><div class="empty-emoji">🎫</div><div class="empty-text">ยังไม่มีตั๋วจำนำ กดปุ่ม + เพื่อเพิ่ม</div></div>` : '';
-    const cards = S.pawns.map((p) => {
-      const days = daysUntil(p.due_date);
-      const status = days < 0 ? 'overdue' : (days <= S.warnDays ? 'due_soon' : 'upcoming');
-      const meta = STATUS_META[status];
-      const shopLine = esc(p.shop_name || 'ไม่ระบุร้าน') + (p.ticket_code ? ' · เลขที่ตั๋ว ' + esc(p.ticket_code) : '');
-      return `
-        <div class="pawn-card">
-          <div style="display:flex;gap:12px;align-items:center">
-            <div class="pawn-icon">${svgPawn()}</div>
-            <div style="flex:1;min-width:0">
-              <div class="pawn-item">${esc(p.item_name)}</div>
-              <div class="pawn-shop">${shopLine}</div>
-            </div>
-            <div class="near-badge" style="background:${meta.bg};color:${meta.fg}">${daysLabel(days, status)}</div>
-          </div>
-          <div class="pawn-footer">
-            <div class="pawn-amount">฿${formatMoney(p.amount)}</div>
-            <div class="pawn-due">ครบกำหนด ${formatDate(p.due_date)}</div>
-          </div>
-          <div class="pawn-actions">
-            <button class="pawn-btn redeem" data-action="redeem" data-id="${p.id}">ไถ่ถอนแล้ว</button>
-            <button class="pawn-btn renew" data-action="renew-open" data-id="${p.id}">ต่อดอก</button>
-          </div>
-          ${S.renewPickerFor === p.id ? `
-            <div style="display:flex;flex-direction:column;gap:6px;padding-top:2px">
-              <div class="field-label" style="margin-bottom:0">เลือกระยะเวลาต่อดอก</div>
-              <div class="warn-options">
-                ${PERIOD_OPTIONS.filter((o) => o.unit).map((o) =>
-                  `<button class="warn-opt" data-action="renew-confirm" data-id="${p.id}" data-key="${o.key}">${o.label}</button>`
-                ).join('')}
-              </div>
-            </div>` : ''}
-        </div>`;
-    }).join('');
+    const cards = S.pawns.map(renderPawnCard).join('');
     return `<div class="screen-pad">${empty}${cards}</div>`;
   }
 
+  function renderPawnCard(p) {
+    const categoryMeta = PAWN_CATEGORIES.find((c) => c.key === p.category) || PAWN_CATEGORIES[3];
+    const isJewelry = p.category === 'jewelry';
+    const renewalCount = p.renewal_count || 0;
+    const finalDueDate = isJewelry ? addMonths((p.created_at || '').slice(0, 10), 5) : null;
+    const pastFinal = isJewelry && finalDueDate && todayISO() >= finalDueDate;
+    const atCap = isJewelry && renewalCount >= JEWELRY_MAX_RENEWALS;
+    const usedFinalPick = isJewelry && renewalCount > JEWELRY_MAX_RENEWALS;
+
+    const days = daysUntil(p.due_date);
+    let badgeLabel, badgeBg, badgeFg;
+    if (pastFinal) {
+      badgeLabel = '⚠️ ใกล้ขาดจำนำ'; badgeBg = '#D64545'; badgeFg = '#fff';
+    } else {
+      const status = days < 0 ? 'overdue' : (days <= S.warnDays ? 'due_soon' : 'upcoming');
+      const meta = STATUS_META[status];
+      badgeLabel = daysLabel(days, status); badgeBg = meta.bg; badgeFg = meta.fg;
+    }
+
+    const shopLine = esc(p.shop_name || 'ไม่ระบุร้าน') + (p.ticket_code ? ' · เลขที่ตั๋ว ' + esc(p.ticket_code) : '');
+
+    let actionsHtml;
+    if (usedFinalPick) {
+      actionsHtml = `
+        <div class="pawn-actions"><button class="pawn-btn redeem" data-action="redeem" data-id="${p.id}">ไถ่ถอนแล้ว</button></div>
+        <div class="field-label" style="color:#B23B3B;margin-bottom:0">ต่อดอก/เลื่อนกำหนดครบสูงสุดแล้ว กรุณาไถ่ถอนก่อนวันครบกำหนดสุดท้าย</div>`;
+    } else if (atCap) {
+      actionsHtml = `
+        <div class="pawn-actions">
+          <button class="pawn-btn redeem" data-action="redeem" data-id="${p.id}">ไถ่ถอนแล้ว</button>
+          <button class="pawn-btn renew" data-action="renew-open" data-id="${p.id}">เลือกวันชำระ</button>
+        </div>
+        <div class="field-label" style="color:#92600A;margin-bottom:0">ต่อดอกครบ 4 เดือนแล้ว เข้าสู่เดือนสุดท้าย — เลือกวันที่จะชำระได้ ไม่เกิน ${formatDate(finalDueDate)}</div>
+        ${S.renewPickerFor === p.id ? `
+          <div style="display:flex;gap:8px;align-items:flex-end;padding-top:2px">
+            <div style="flex:1"><div class="field-label">เลือกวันที่จะชำระ</div><input class="field-input" type="date" data-bind="pawnFinalDate" value="${esc(S.forms.pawnFinalDate)}" min="${todayISO()}" max="${finalDueDate}"/></div>
+            <button class="submit-btn" style="width:auto;padding:13px 18px" data-action="renew-final-confirm" data-id="${p.id}">ยืนยัน</button>
+          </div>` : ''}`;
+    } else {
+      actionsHtml = `
+        <div class="pawn-actions">
+          <button class="pawn-btn redeem" data-action="redeem" data-id="${p.id}">ไถ่ถอนแล้ว</button>
+          <button class="pawn-btn renew" data-action="renew-open" data-id="${p.id}">ต่อดอก</button>
+        </div>
+        ${isJewelry ? `<div class="field-label" style="margin-bottom:0">ต่อดอกแล้ว ${renewalCount}/${JEWELRY_MAX_RENEWALS} ครั้ง</div>` : ''}
+        ${S.renewPickerFor === p.id ? `
+          <div style="display:flex;flex-direction:column;gap:6px;padding-top:2px">
+            <div class="field-label" style="margin-bottom:0">เลือกระยะเวลาต่อดอก</div>
+            <div class="warn-options">
+              ${PERIOD_OPTIONS.filter((o) => o.unit).map((o) =>
+                `<button class="warn-opt" data-action="renew-confirm" data-id="${p.id}" data-key="${o.key}">${o.label}</button>`
+              ).join('')}
+            </div>
+          </div>` : ''}`;
+    }
+
+    return `
+      <div class="pawn-card">
+        <div style="display:flex;gap:12px;align-items:center">
+          <div class="pawn-icon">${svgPawn()}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span class="near-kind" style="background:#EFEFEF;color:#5C6C68">${categoryMeta.icon} ${categoryMeta.label}</span>
+            </div>
+            <div class="pawn-item">${esc(p.item_name)}</div>
+            <div class="pawn-shop">${shopLine}</div>
+          </div>
+          <div class="near-badge" style="background:${badgeBg};color:${badgeFg}">${badgeLabel}</div>
+        </div>
+        <div class="pawn-footer">
+          <div class="pawn-amount">฿${formatMoney(p.amount)}</div>
+          <div class="pawn-due">ครบกำหนด ${formatDate(p.due_date)}</div>
+        </div>
+        ${actionsHtml}
+      </div>`;
+  }
 
   function renderExpenses() {
     const empty = !S.expenses.length ? `
@@ -872,9 +711,16 @@
     const periodChips = PERIOD_OPTIONS.map((o) =>
       `<button class="warn-opt ${o.key === S.forms.pawnPeriod ? 'selected' : ''}" data-action="pawn-period" data-key="${o.key}">${o.label}</button>`
     ).join('');
+    const categoryChips = PAWN_CATEGORIES.map((c) =>
+      `<button class="warn-opt ${c.key === S.forms.category ? 'selected' : ''}" data-action="pawn-category" data-key="${c.key}">${c.icon} ${c.label}</button>`
+    ).join('');
 
     const pawnForm = `
       <div style="display:flex;flex-direction:column;gap:14px">
+        <div>
+          <div class="field-label">หมวดหมู่</div>
+          <div class="warn-options">${categoryChips}</div>
+        </div>
         <div><div class="field-label">ชื่อสินค้า</div><input class="field-input" data-bind="itemName" value="${esc(S.forms.itemName)}" placeholder="เช่น ทองคำแท่ง 1 บาท"/></div>
         <div><div class="field-label">ร้านจำนำ</div><input class="field-input" data-bind="shop" value="${esc(S.forms.shop)}" placeholder="ชื่อร้าน"/></div>
         <div><div class="field-label">รหัสตั๋ว (ถ้ามี)</div><input class="field-input" data-bind="ticketCode" value="${esc(S.forms.ticketCode)}" placeholder="เลขที่ตั๋วจำนำ"/></div>
@@ -886,6 +732,7 @@
         ${isCustomPeriod
           ? `<div><div class="field-label">วันครบกำหนด</div><input class="field-input" type="date" data-bind="dueDate" value="${esc(S.forms.dueDate)}"/></div>`
           : `<div class="field-label">ครบกำหนดต่อดอก: ${S.forms.dueDate ? formatDate(S.forms.dueDate) : '-'}${S.forms.pawnPeriod !== 'custom' ? ' (แจ้งเตือนซ้ำทุกรอบถ้ายังไม่ต่อดอก)' : ''}</div>`}
+        ${S.forms.category === 'jewelry' ? `<div class="field-label" style="color:#92600A">หมวดเครื่องประดับ: ต่อดอกได้สูงสุด 4 เดือน เดือนที่ 5 คือกำหนดสุดท้าย</div>` : ''}
         <button class="submit-btn" data-action="submit-pawn">บันทึกตั๋วจำนำ</button>
       </div>`;
 
@@ -963,13 +810,11 @@
   function svgChevron() { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A6ACAA" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>`; }
   function svgPlus() { return `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`; }
   function svgPawn() { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B8862F" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M8 12h8"/></svg>`; }
-  function svgFingerprint() { return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5"><path d="M12 2a6 6 0 00-6 6v2c0 3-1 5-2 6"/><path d="M12 2a6 6 0 016 6v2c0 4 1.5 6.5 3 8"/><path d="M8 20c1-1.5 2-4 2-8a2 2 0 014 0c0 2 .3 3.5 1 5"/><path d="M12 10a2 2 0 012 2c0 3 .5 5 1.5 6.5"/></svg>`; }
   function svgBackspace() { return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><path d="M21 12H8l-4 0M12 8l-4 4 4 4M8 12h13"/></svg>`; }
   function svgTrash() { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B23B3B" stroke-width="1.8"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0v12a2 2 0 002 2h6a2 2 0 002-2V7"/></svg>`; }
   function svgHome(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h14v-9"/></svg>`; }
   function svgList(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg>`; }
   function svgTicket(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 12l6-8h9a3 3 0 013 3v3l-8 9a2 2 0 01-3 0l-7-6z"/><circle cx="15" cy="9" r="1.4"/></svg>`; }
-  function svgGoogle() { return `<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34 5.1 29.3 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.4-.1-2.8-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34 5.1 29.3 3 24 3c-7.5 0-14 4.2-17.7 10.7z"/><path fill="#4CAF50" d="M24 45c5.2 0 9.9-2 13.4-5.2l-6.2-5.2c-2 1.4-4.6 2.4-7.2 2.4-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.9 40.7 16.4 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.3-4.1 5.6l6.2 5.2C40.9 36 44 30.5 44 24c0-1.4-.1-2.8-.4-3.5z"/></svg>`; }
   function svgGear(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.6 7.6 0 000-2l1.9-1.5-2-3.4-2.3.6a7.7 7.7 0 00-1.7-1l-.3-2.4h-4l-.3 2.4a7.7 7.7 0 00-1.7 1l-2.3-.6-2 3.4L4.6 11a7.6 7.6 0 000 2l-1.9 1.5 2 3.4 2.3-.6a7.7 7.7 0 001.7 1l.3 2.4h4l.3-2.4a7.7 7.7 0 001.7-1l2.3.6 2-3.4z"/></svg>`; }
 
   // ---------------- Event delegation ----------------
@@ -980,8 +825,6 @@
     switch (action) {
       case 'digit': pinPress(el.dataset.digit); break;
       case 'bs': pinBack(); break;
-      case 'fp': fingerprintUnlock(); break;
-      case 'google-signin': googleSignIn(); break;
       case 'back': goBack(); break;
       case 'relock': relock(); break;
       case 'nav': nav(el.dataset.screen); break;
@@ -994,7 +837,9 @@
         if (opt && opt.unit) renewPawn(Number(el.dataset.id), opt);
         break;
       }
+      case 'renew-final-confirm': renewPawnFinal(Number(el.dataset.id)); break;
       case 'pawn-period': setPawnPeriod(el.dataset.key); break;
+      case 'pawn-category': setPawnCategory(el.dataset.key); break;
       case 'add-type': setState({ addType: el.dataset.type }); break;
       case 'submit-debt': addDebtSubmit(); break;
       case 'submit-pawn': addPawnSubmit(); break;
@@ -1011,17 +856,6 @@
         else openAdd('pawn', 'pawnList');
         break;
       case 'add-from-dash': openAdd(el.dataset.type, S.screen); break;
-
-      case 'goto-auth-login': setState({ authTab: 'login', authError: '' }); break;
-      case 'goto-auth-register': setState({ authTab: 'register', authError: '' }); break;
-      case 'submit-login': submitLogin(); break;
-      case 'submit-register': submitRegister(); break;
-      case 'goto-forgot-password': setState({ screen: 'forgotPassword', authError: '' }); break;
-      case 'goto-forgot-pin': setState({ screen: 'forgotPin', forgotStage: 'identify', pinError: '' }); break;
-      case 'back-to-auth': setState({ screen: 'auth', authError: '' }); break;
-      case 'back-to-lock': setState({ screen: 'lock', pinError: '' }); break;
-      case 'forgot-pin-next': forgotPinNext(); break;
-      case 'submit-forgot-password': submitForgotPassword(); break;
     }
   });
 
@@ -1036,19 +870,7 @@
 
   // ---------------- Boot ----------------
   render();
-  boot();
-  async function boot() {
-    const token = Api.getToken();
-    if (!token) return;
-    try {
-      const me = await Api.me();
-      setState({
-        screen: 'lock',
-        needsPinSetup: !!me.needs_pin,
-        pinContext: me.needs_pin ? 'setup' : 'unlock',
-      });
-    } catch (e) {
-      Api.setToken(null);
-    }
+  if (S.hasAccount && Api.getToken()) {
+    // Returning user with a session already on this device — just needs their PIN.
   }
 })();

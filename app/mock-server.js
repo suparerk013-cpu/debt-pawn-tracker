@@ -12,11 +12,12 @@ const SECRET = 'local-dev-secret-not-for-production';
 
 // ---------------- In-memory data ----------------
 let nextUserId = 1, nextDebtId = 1, nextInstId = 1, nextPawnId = 1, nextExpenseId = 1;
-const users = [];        // {id, username, password_hash, phone, pin_hash, google_id, email, warn_days, auto_lock, failed_attempts, locked_until}
+const users = [];        // {id, username, pin_hash, warn_days, auto_lock, failed_attempts, locked_until}
 const debts = [];        // {id, user_id, name, total_amount, remaining_amount, payment_type, due_day, installment_amount, created_at}
 const installments = []; // {id, debt_id, due_date, amount, paid, paid_at}
-const pawns = [];        // {id, user_id, ticket_code, shop_name, item_name, amount, due_date, period_unit, period_value, status, created_at}
+const pawns = [];        // {id, user_id, ticket_code, shop_name, item_name, category, amount, due_date, period_unit, period_value, renewal_count, status, created_at}
 const expenses = [];     // {id, user_id, name, amount, due_day, last_paid_month, created_at}
+const JEWELRY_MAX_RENEWALS = 4;
 
 // ---------------- Helpers ----------------
 function hashSecret(plain) {
@@ -83,64 +84,21 @@ function readBody(req) {
 const routes = {};
 function on(method, route, handler) { routes[method + ' ' + route] = handler; }
 
-on('POST', '/auth/register.php', async (req, res, q, body) => {
-  const username = String(body.username || '').trim();
-  const password = String(body.password || '');
-  const phone = String(body.phone || '').replace(/\D+/g, '');
-  if (!/^[a-zA-Z0-9_.]{3,32}$/.test(username)) return err(res, 'ชื่อผู้ใช้ต้องเป็นตัวอักษร/ตัวเลข 3-32 ตัวอักษร');
-  if (password.length < 6) return err(res, 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
-  if (phone.length < 9 || phone.length > 10) return err(res, 'กรอกเบอร์โทรศัพท์ให้ถูกต้อง');
-  if (users.find((u) => u.username === username)) return err(res, 'มีชื่อผู้ใช้นี้อยู่แล้ว');
-
-  const user = {
-    id: nextUserId++, username, password_hash: hashSecret(password), phone,
-    pin_hash: null, google_id: null, email: null,
-    warn_days: 3, auto_lock: true, failed_attempts: 0, locked_until: null,
-  };
-  users.push(user);
-  send(res, 201, { token: signToken(user.id), needs_pin: true });
-});
-
+// Single-user app: the first PIN ever submitted becomes the account's PIN.
 on('POST', '/auth/login.php', async (req, res, q, body) => {
-  const username = String(body.username || '').trim();
-  const password = String(body.password || '');
-  if (!username || !password) return err(res, 'กรอกชื่อผู้ใช้และรหัสผ่าน');
-  const user = users.find((u) => u.username === username);
-  if (!user || !user.password_hash) return err(res, 'ไม่พบบัญชีนี้ หรือบัญชีนี้สมัครด้วย Google กรุณาเข้าสู่ระบบด้วย Google', 401);
-  if (user.locked_until && user.locked_until > Date.now()) {
-    return err(res, `ลองผิดหลายครั้งเกินไป กรุณารอ ${Math.ceil((user.locked_until - Date.now()) / 1000)} วินาที`, 429);
-  }
-  if (!verifySecret(password, user.password_hash)) {
-    user.failed_attempts++;
-    if (user.failed_attempts >= 5) { user.locked_until = Date.now() + 30000; user.failed_attempts = 0; }
-    return err(res, 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 401);
-  }
-  user.failed_attempts = 0; user.locked_until = null;
-  send(res, 200, { token: signToken(user.id), needs_pin: !user.pin_hash });
-});
+  const pin = String(body.pin || '').trim();
+  if (!/^\d{4,6}$/.test(pin)) return err(res, 'PIN ต้องเป็นตัวเลข 4-6 หลัก');
 
-on('POST', '/auth/google-login.php', async (req, res, q, body) => {
-  // No real Google verification locally — the client only calls this if the native
-  // GoogleAuth plugin exists (Android build), which it never does in a plain browser.
-  if (!body.id_token) return err(res, 'Missing id_token');
-  let user = users.find((u) => u.google_id === body.id_token);
+  let user = users[0];
   if (!user) {
     user = {
-      id: nextUserId++, username: 'google_' + nextUserId, password_hash: null, phone: null,
-      pin_hash: null, google_id: body.id_token, email: null,
+      id: nextUserId++, username: 'owner', pin_hash: hashSecret(pin),
       warn_days: 3, auto_lock: true, failed_attempts: 0, locked_until: null,
     };
     users.push(user);
+    return send(res, 200, { token: signToken(user.id), created: true });
   }
-  send(res, 200, { token: signToken(user.id), needs_pin: !user.pin_hash });
-});
 
-on('POST', '/auth/verify-pin.php', async (req, res, q, body) => {
-  const uid = requireAuth(req, res); if (!uid) return;
-  const user = findUser(uid); if (!user) return err(res, 'ไม่พบบัญชี', 404);
-  const pin = String(body.pin || '').trim();
-  if (!/^\d{4,6}$/.test(pin)) return err(res, 'PIN ต้องเป็นตัวเลข 4-6 หลัก');
-  if (!user.pin_hash) return err(res, 'ยังไม่ได้ตั้ง PIN', 400);
   if (user.locked_until && user.locked_until > Date.now()) {
     return err(res, `ลองผิดหลายครั้งเกินไป กรุณารอ ${Math.ceil((user.locked_until - Date.now()) / 1000)} วินาที`, 429);
   }
@@ -150,56 +108,7 @@ on('POST', '/auth/verify-pin.php', async (req, res, q, body) => {
     return err(res, 'PIN ไม่ถูกต้อง', 401);
   }
   user.failed_attempts = 0; user.locked_until = null;
-  send(res, 200, { ok: true });
-});
-
-on('POST', '/auth/set-pin.php', async (req, res, q, body) => {
-  const uid = requireAuth(req, res); if (!uid) return;
-  const user = findUser(uid); if (!user) return err(res, 'ไม่พบบัญชี', 404);
-  const pin = String(body.pin || '').trim();
-  if (!/^\d{4,6}$/.test(pin)) return err(res, 'PIN ต้องเป็นตัวเลข 4-6 หลัก');
-  user.pin_hash = hashSecret(pin); user.failed_attempts = 0; user.locked_until = null;
-  send(res, 200, { ok: true });
-});
-
-// `contact` is either the phone or the email on file — Google-signup users only have an email.
-function contactMatchesUser(user, contact) {
-  contact = String(contact || '').trim();
-  if (!contact) return false;
-  const digits = contact.replace(/\D+/g, '');
-  if (user.phone && digits && digits === user.phone) return true;
-  if (user.email && contact.toLowerCase() === user.email.toLowerCase()) return true;
-  return false;
-}
-
-on('POST', '/auth/forgot-password.php', async (req, res, q, body) => {
-  const username = String(body.username || '').trim();
-  const contact = String(body.contact || '').trim();
-  const newPassword = String(body.new_password || '');
-  if (!username || !contact) return err(res, 'กรอกชื่อผู้ใช้และเบอร์โทรศัพท์หรืออีเมล');
-  if (newPassword.length < 6) return err(res, 'รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร');
-  const user = users.find((u) => u.username === username);
-  if (!user || !contactMatchesUser(user, contact)) return err(res, 'ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบชื่อผู้ใช้และเบอร์โทรศัพท์/อีเมล', 401);
-  user.password_hash = hashSecret(newPassword); user.failed_attempts = 0; user.locked_until = null;
-  send(res, 200, { ok: true });
-});
-
-on('POST', '/auth/forgot-pin.php', async (req, res, q, body) => {
-  const username = String(body.username || '').trim();
-  const contact = String(body.contact || '').trim();
-  const newPin = String(body.new_pin || '').trim();
-  if (!username || !contact) return err(res, 'กรอกชื่อผู้ใช้และเบอร์โทรศัพท์หรืออีเมล');
-  if (!/^\d{4,6}$/.test(newPin)) return err(res, 'PIN ต้องเป็นตัวเลข 4-6 หลัก');
-  const user = users.find((u) => u.username === username);
-  if (!user || !contactMatchesUser(user, contact)) return err(res, 'ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบชื่อผู้ใช้และเบอร์โทรศัพท์/อีเมล', 401);
-  user.pin_hash = hashSecret(newPin); user.failed_attempts = 0; user.locked_until = null;
-  send(res, 200, { ok: true, token: signToken(user.id) });
-});
-
-on('GET', '/auth/me.php', async (req, res) => {
-  const uid = requireAuth(req, res); if (!uid) return;
-  const user = findUser(uid); if (!user) return err(res, 'Not found', 404);
-  send(res, 200, { username: user.username, phone: user.phone, needs_pin: !user.pin_hash });
+  send(res, 200, { token: signToken(user.id), created: false });
 });
 
 on('POST', '/auth/register-token.php', async (req, res) => {
@@ -273,6 +182,7 @@ on('POST', '/pawns/index.php', async (req, res, q, body) => {
   const item = String(body.item_name || '').trim();
   const shop = String(body.shop_name || '').trim();
   const ticketCode = String(body.ticket_code || '').trim();
+  const category = ['jewelry', 'car', 'electronics', 'other'].includes(body.category) ? body.category : 'other';
   const amount = Number(body.amount) || 0;
   const dueDate = String(body.due_date || '').trim();
   const periodUnit = ['day', 'month'].includes(body.period_unit) ? body.period_unit : null;
@@ -280,8 +190,8 @@ on('POST', '/pawns/index.php', async (req, res, q, body) => {
   if (!item || amount <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return err(res, 'กรอกข้อมูลตั๋วจำนำให้ครบ');
   const pawn = {
     id: nextPawnId++, user_id: uid, ticket_code: ticketCode || null, shop_name: shop || null,
-    item_name: item, amount, due_date: dueDate, period_unit: periodUnit, period_value: periodValue,
-    status: 'active', created_at: new Date().toISOString(),
+    item_name: item, category, amount, due_date: dueDate, period_unit: periodUnit, period_value: periodValue,
+    renewal_count: 0, status: 'active', created_at: new Date().toISOString(),
   };
   pawns.push(pawn);
   send(res, 201, { id: pawn.id });
@@ -295,10 +205,33 @@ on('PATCH', '/pawns/redeem.php', async (req, res, q, body) => {
   send(res, 200, { ok: true });
 });
 
+// See backend/api/pawns/renew.php for the full explanation of the jewelry 4-renewal cap
+// and the final grace-month behavior — this mirrors that logic for local testing.
 on('PATCH', '/pawns/renew.php', async (req, res, q, body) => {
   const uid = requireAuth(req, res); if (!uid) return;
   const pawn = pawns.find((p) => p.id === Number(body.id) && p.user_id === uid);
   if (!pawn) return err(res, 'Not found', 404);
+
+  const isJewelry = pawn.category === 'jewelry';
+  const finalDue = new Date(pawn.created_at); finalDue.setMonth(finalDue.getMonth() + 5);
+
+  if (isJewelry && pawn.renewal_count >= JEWELRY_MAX_RENEWALS + 1) {
+    return err(res, 'ตั๋วนี้ต่อดอก/เลื่อนกำหนดครบจำนวนสูงสุดแล้ว กรุณาไถ่ถอนก่อนวันครบกำหนดสุดท้าย', 400);
+  }
+
+  if (isJewelry && pawn.renewal_count >= JEWELRY_MAX_RENEWALS) {
+    const requested = String(body.due_date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(requested)) return err(res, 'กรุณาเลือกวันที่จะชำระ (ไม่เกินวันครบกำหนดสุดท้าย)');
+    const newDue = new Date(requested + 'T00:00:00');
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (newDue < today) return err(res, 'เลือกวันที่ในอดีตไม่ได้');
+    if (newDue > finalDue) return err(res, 'เลือกวันเกินวันครบกำหนดสุดท้าย (' + finalDue.toISOString().slice(0, 10) + ') ไม่ได้');
+    pawn.due_date = newDue.toISOString().slice(0, 10);
+    pawn.renewal_count++;
+    pawn.status = 'active';
+    return send(res, 200, { ok: true, due_date: pawn.due_date, final: true });
+  }
+
   const d = new Date(pawn.due_date + 'T00:00:00');
   if (body.months) {
     const months = Math.max(1, Math.min(12, Number(body.months)));
@@ -310,6 +243,7 @@ on('PATCH', '/pawns/renew.php', async (req, res, q, body) => {
     pawn.period_unit = 'day'; pawn.period_value = days;
   }
   pawn.due_date = d.toISOString().slice(0, 10);
+  pawn.renewal_count++;
   pawn.status = 'active';
   send(res, 200, { ok: true, due_date: pawn.due_date });
 });

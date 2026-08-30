@@ -44,16 +44,6 @@ function require_auth(): int {
   return (int) $payload['uid'];
 }
 
-/** True if $contact (a phone number or email typed by the user) matches this user's phone or email on file. */
-function contact_matches_user(array $user, string $contact): bool {
-  $contact = trim($contact);
-  if ($contact === '') return false;
-  $digits = preg_replace('/\D+/', '', $contact);
-  if (!empty($user['phone']) && $digits !== '' && $digits === $user['phone']) return true;
-  if (!empty($user['email']) && strcasecmp($contact, $user['email']) === 0) return true;
-  return false;
-}
-
 /** Verifies the cron secret header, or aborts with 401. Use only on /api/cron/* endpoints. */
 function require_cron_secret(): void {
   $secret = $_SERVER['HTTP_X_CRON_SECRET'] ?? '';

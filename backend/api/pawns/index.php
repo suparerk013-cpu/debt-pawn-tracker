@@ -21,6 +21,7 @@ if ($method === 'POST') {
   $item = trim((string)($body['item_name'] ?? ''));
   $shop = trim((string)($body['shop_name'] ?? ''));
   $ticketCode = trim((string)($body['ticket_code'] ?? ''));
+  $category = in_array($body['category'] ?? null, ['jewelry', 'car', 'electronics', 'other'], true) ? $body['category'] : 'other';
   $amount = (float)($body['amount'] ?? 0);
   $dueDate = trim((string)($body['due_date'] ?? ''));
   $periodUnit = in_array($body['period_unit'] ?? null, ['day', 'month'], true) ? $body['period_unit'] : null;
@@ -30,8 +31,8 @@ if ($method === 'POST') {
     json_error('กรอกข้อมูลตั๋วจำนำให้ครบ');
   }
 
-  $stmt = $pdo->prepare('INSERT INTO pawn_tickets (user_id, ticket_code, shop_name, item_name, amount, due_date, period_unit, period_value, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-  $stmt->execute([$userId, $ticketCode ?: null, $shop ?: null, $item, $amount, $dueDate, $periodUnit, $periodValue, 'active']);
+  $stmt = $pdo->prepare('INSERT INTO pawn_tickets (user_id, ticket_code, shop_name, item_name, category, amount, due_date, period_unit, period_value, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  $stmt->execute([$userId, $ticketCode ?: null, $shop ?: null, $item, $category, $amount, $dueDate, $periodUnit, $periodValue, 'active']);
 
   json_response(['id' => (int)$pdo->lastInsertId()], 201);
 }

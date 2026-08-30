@@ -1,14 +1,12 @@
 -- Debt & Pawn Tracker — MySQL schema
 -- Import this in your hosting's phpMyAdmin (InfinityFree or equivalent) before deploying the API.
 
+-- Single-user app: this table only ever holds one row. The first PIN anyone submits
+-- becomes the account's PIN (see api/auth/login.php).
 CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   username VARCHAR(64) NOT NULL UNIQUE,
-  password_hash VARCHAR(255) NULL,
-  phone VARCHAR(30) NULL,
   pin_hash VARCHAR(255) NULL,
-  google_id VARCHAR(255) NULL UNIQUE,
-  email VARCHAR(255) NULL,
   fcm_token VARCHAR(255) NULL,
   warn_days INT NOT NULL DEFAULT 3,
   auto_lock TINYINT(1) NOT NULL DEFAULT 1,
@@ -46,11 +44,15 @@ CREATE TABLE IF NOT EXISTS pawn_tickets (
   ticket_code VARCHAR(100) NULL,
   shop_name VARCHAR(255) NULL,
   item_name VARCHAR(255) NOT NULL,
+  category ENUM('jewelry','car','electronics','other') NOT NULL DEFAULT 'other',
   amount DECIMAL(12,2) NOT NULL,
   interest DECIMAL(12,2) NULL,
   due_date DATE NOT NULL,
   period_unit ENUM('day','month') NULL,
   period_value INT NULL,
+  -- Jewelry tickets can only be renewed 4 times (see api/pawns/renew.php); this counts
+  -- renewals for all categories but the cap only applies to 'jewelry'.
+  renewal_count INT NOT NULL DEFAULT 0,
   status ENUM('active','redeemed','renewed') NOT NULL DEFAULT 'active',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

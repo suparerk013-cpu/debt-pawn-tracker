@@ -67,24 +67,39 @@ foreach ($stmt->fetchAll() as $row) {
 // instead of every day, using period_unit/period_value captured when the ticket was created
 // or last renewed. Tickets with no period set (older data) fall back to the old daily behavior.
 $stmt = $pdo->query("
-  SELECT p.id, p.due_date, p.amount, p.item_name, p.user_id, p.period_unit, p.period_value, u.fcm_token, u.warn_days
+  SELECT p.id, p.due_date, p.amount, p.item_name, p.category, p.created_at, p.period_unit, p.period_value, u.fcm_token, u.warn_days
   FROM pawn_tickets p
   JOIN users u ON u.id = p.user_id
   WHERE p.status = 'active'
 ");
 foreach ($stmt->fetchAll() as $row) {
   $daysLeft = (strtotime($row['due_date']) - strtotime($today)) / 86400;
-  if ($daysLeft > (int)$row['warn_days']) continue;
-  if (already_notified($pdo, (int)$row['user_id'], 'pawn', (int)$row['id'], $today)) { $skipped++; continue; }
 
-  $cycleDays = $row['period_unit'] === 'month' ? ((int)$row['period_value'] * 30) : (int)($row['period_value'] ?: 1);
-  $sinceLast = days_since_last_notified($pdo, (int)$row['user_id'], 'pawn', (int)$row['id'], $today);
-  if ($sinceLast !== null && $sinceLast < $cycleDays) { $skipped++; continue; }
+  // Jewelry tickets past their hard 5-month deadline: urgent daily red-alert, ignoring the
+  // normal period-cycle throttle below — the item is about to be forfeited to the pawn shop.
+  $finalDueDate = (new DateTime($row['created_at']))->modify('+5 months')->format('Y-m-d');
+  $isForfeitWarning = $row['category'] === 'jewelry' && $today >= $finalDueDate;
+
+  if (!$isForfeitWarning) {
+    if ($daysLeft > (int)$row['warn_days']) continue;
+    if (already_notified($pdo, (int)$row['user_id'], 'pawn', (int)$row['id'], $today)) { $skipped++; continue; }
+
+    $cycleDays = $row['period_unit'] === 'month' ? ((int)$row['period_value'] * 30) : (int)($row['period_value'] ?: 1);
+    $sinceLast = days_since_last_notified($pdo, (int)$row['user_id'], 'pawn', (int)$row['id'], $today);
+    if ($sinceLast !== null && $sinceLast < $cycleDays) { $skipped++; continue; }
+  } elseif (already_notified($pdo, (int)$row['user_id'], 'pawn', (int)$row['id'], $today)) {
+    $skipped++; continue;
+  }
 
   if (empty($row['fcm_token'])) { $skipped++; continue; }
 
-  $title = $daysLeft < 0 ? 'ตั๋วจำนำเลยกำหนด' : 'ตั๋วจำนำใกล้ครบกำหนด';
-  $body = "{$row['item_name']} — ฿" . number_format((float)$row['amount']) . " ครบกำหนด {$row['due_date']}";
+  if ($isForfeitWarning) {
+    $title = '⚠️ ตั๋วจำนำใกล้ขาดแล้ว!';
+    $body = "{$row['item_name']} — ครบกำหนดไถ่ถอนสุดท้ายวันนี้ ({$finalDueDate}) ไม่ไถ่ถอนจะเสียสิทธิ์ทันที";
+  } else {
+    $title = $daysLeft < 0 ? 'ตั๋วจำนำเลยกำหนด' : 'ตั๋วจำนำใกล้ครบกำหนด';
+    $body = "{$row['item_name']} — ฿" . number_format((float)$row['amount']) . " ครบกำหนด {$row['due_date']}";
+  }
 
   if ($fcm && $fcm->send($row['fcm_token'], $title, $body, ['type' => 'pawn', 'pawn_id' => (string)$row['id']])) {
     log_notified($pdo, (int)$row['user_id'], 'pawn', (int)$row['id'], $today);

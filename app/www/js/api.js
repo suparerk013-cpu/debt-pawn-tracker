@@ -38,14 +38,7 @@ const Api = (() => {
   return {
     setToken,
     getToken: () => token,
-    me: () => request('/auth/me.php'),
-    register: (username, password, phone) => request('/auth/register.php', { method: 'POST', body: { username, password, phone }, auth: false }),
-    loginPassword: (username, password) => request('/auth/login.php', { method: 'POST', body: { username, password }, auth: false }),
-    googleLogin: (id_token) => request('/auth/google-login.php', { method: 'POST', body: { id_token }, auth: false }),
-    verifyPin: (pin) => request('/auth/verify-pin.php', { method: 'POST', body: { pin } }),
-    setPin: (pin) => request('/auth/set-pin.php', { method: 'POST', body: { pin } }),
-    forgotPassword: (username, contact, new_password) => request('/auth/forgot-password.php', { method: 'POST', body: { username, contact, new_password }, auth: false }),
-    forgotPin: (username, contact, new_pin) => request('/auth/forgot-pin.php', { method: 'POST', body: { username, contact, new_pin }, auth: false }),
+    login: (pin) => request('/auth/login.php', { method: 'POST', body: { pin }, auth: false }),
     registerFcmToken: (fcm_token) => request('/auth/register-token.php', { method: 'POST', body: { fcm_token } }),
 
     getDebts: () => request('/debts/index.php'),
