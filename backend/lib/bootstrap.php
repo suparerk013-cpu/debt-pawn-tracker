@@ -31,8 +31,12 @@ function read_json_body(): array {
   return is_array($data) ? $data : [];
 }
 
-/** Verifies the Bearer JWT and returns the authenticated user id, or aborts with 401. */
-function require_auth(): int {
+/**
+ * Verifies the Bearer JWT and returns the full auth context: `uid` is the user whose data
+ * this request should read/write (the "acting as" user — see api/auth/switch-user.php),
+ * `real_uid`/`real_is_admin` describe who actually logged in, for permission checks.
+ */
+function require_auth_ctx(): array {
   $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
   if (!preg_match('/^Bearer\s+(.+)$/i', $header, $m)) {
     json_error('Missing or invalid Authorization header', 401);
@@ -41,7 +45,17 @@ function require_auth(): int {
   if (!$payload || !isset($payload['uid'])) {
     json_error('Invalid or expired token', 401);
   }
-  return (int) $payload['uid'];
+  return [
+    'uid' => (int) $payload['uid'],
+    'is_admin' => !empty($payload['is_admin']),
+    'real_uid' => (int) ($payload['real_uid'] ?? $payload['uid']),
+    'real_is_admin' => !empty($payload['real_is_admin']),
+  ];
+}
+
+/** Verifies the Bearer JWT and returns just the "acting as" user id, or aborts with 401. */
+function require_auth(): int {
+  return require_auth_ctx()['uid'];
 }
 
 /** Verifies the cron secret header, or aborts with 401. Use only on /api/cron/* endpoints. */

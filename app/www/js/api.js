@@ -38,12 +38,17 @@ const Api = (() => {
   return {
     setToken,
     getToken: () => token,
-    login: (pin) => request('/auth/login.php', { method: 'POST', body: { pin }, auth: false }),
+    login: (username) => request('/auth/login.php', { method: 'POST', body: { username }, auth: false }),
+    switchUser: (user_id) => request('/auth/switch-user.php', { method: 'POST', body: { user_id } }),
+    getUsers: () => request('/auth/users.php'),
     registerFcmToken: (fcm_token) => request('/auth/register-token.php', { method: 'POST', body: { fcm_token } }),
 
     getDebts: () => request('/debts/index.php'),
     getDebtDetail: (id) => request(`/debts/detail.php?id=${id}`),
     createDebt: (payload) => request('/debts/index.php', { method: 'POST', body: payload }),
+    updateDebt: (payload) => request('/debts/update.php', { method: 'PATCH', body: payload }),
+    closeDebt: (id) => request('/debts/close.php', { method: 'PATCH', body: { id } }),
+    deleteDebt: (id) => request('/debts/delete.php', { method: 'DELETE', body: { id } }),
     markInstallmentPaid: (id) => request('/installments/mark.php', { method: 'PATCH', body: { id } }),
 
     getPawns: () => request('/pawns/index.php'),
@@ -60,5 +65,9 @@ const Api = (() => {
 
     getSettings: () => request('/settings/update.php'),
     updateSettings: (payload) => request('/settings/update.php', { method: 'PATCH', body: payload }),
+
+    getNotifications: () => request('/notifications/index.php'),
+    markNotificationRead: (id) => request('/notifications/mark-read.php', { method: 'PATCH', body: { id } }),
+    markAllNotificationsRead: () => request('/notifications/mark-read.php', { method: 'PATCH', body: { all: true } }),
   };
 })();

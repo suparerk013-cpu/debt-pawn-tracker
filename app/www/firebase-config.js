@@ -6,10 +6,10 @@
 // Web configuration, and set FIREBASE_VAPID_KEY below.
 self.FIREBASE_CONFIG = {
   apiKey: 'YOUR_API_KEY',
-  authDomain: 'debt-pawn-tracker.firebaseapp.com',
-  projectId: 'debt-pawn-tracker',
-  storageBucket: 'debt-pawn-tracker.firebasestorage.app',
-  messagingSenderId: '305192323483',
+  authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
+  projectId: 'YOUR_PROJECT_ID',
+  storageBucket: 'YOUR_PROJECT_ID.firebasestorage.app',
+  messagingSenderId: 'YOUR_SENDER_ID',
   appId: 'YOUR_WEB_APP_ID',
 };
 

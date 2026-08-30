@@ -11,32 +11,36 @@ const WWW = path.join(__dirname, 'www');
 const SECRET = 'local-dev-secret-not-for-production';
 
 // ---------------- In-memory data ----------------
-let nextUserId = 1, nextDebtId = 1, nextInstId = 1, nextPawnId = 1, nextExpenseId = 1;
-const users = [];        // {id, username, pin_hash, warn_days, auto_lock, failed_attempts, locked_until}
-const debts = [];        // {id, user_id, name, total_amount, remaining_amount, payment_type, due_day, installment_amount, created_at}
+let nextUserId = 1, nextDebtId = 1, nextInstId = 1, nextPawnId = 1, nextExpenseId = 1, nextNotifId = 1;
+const users = [        // {id, username, is_admin, warn_days, fcm_token}
+  { id: nextUserId++, username: 'not', is_admin: true, warn_days: 3, fcm_token: null },
+  { id: nextUserId++, username: 'lek', is_admin: false, warn_days: 3, fcm_token: null },
+];
+const debts = [];        // {id, user_id, name, total_amount, remaining_amount, payment_type, due_day, installment_amount, status, created_at}
 const installments = []; // {id, debt_id, due_date, amount, paid, paid_at}
 const pawns = [];        // {id, user_id, ticket_code, shop_name, item_name, category, amount, due_date, period_unit, period_value, renewal_count, status, created_at}
 const expenses = [];     // {id, user_id, name, expense_type, amount, due_day, created_at}
 const expensePayments = []; // {expense_id, month 'YYYY-MM', amount, paid_at}
+const notifications = []; // {id, user_id, ref_type, ref_id, title, body, sent_at, read_at}
 const JEWELRY_MAX_RENEWALS = 4;
 
+// Seed a sample notification per user so the bell icon has something to show in local
+// testing — the real backend fills this table from cron/check-due.php's daily push run.
+users.forEach((u) => {
+  notifications.push({
+    id: nextNotifId++, user_id: u.id, ref_type: 'installment', ref_id: 0,
+    title: 'ตัวอย่างการแจ้งเตือน', body: 'นี่คือตัวอย่างการแจ้งเตือนสำหรับทดสอบกระดิ่งแจ้งเตือน (ของจริงจะมาจาก cron ทุกวัน)',
+    sent_at: new Date().toISOString(), read_at: null,
+  });
+});
+
 // ---------------- Helpers ----------------
-function hashSecret(plain) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(plain, salt, 64).toString('hex');
-  return salt + ':' + hash;
+function signToken(payload) {
+  const encoded = Buffer.from(JSON.stringify({ ...payload, exp: Date.now() + 7 * 86400000 })).toString('base64url');
+  const sig = crypto.createHmac('sha256', SECRET).update(encoded).digest('base64url');
+  return encoded + '.' + sig;
 }
-function verifySecret(plain, stored) {
-  if (!stored) return false;
-  const [salt, hash] = stored.split(':');
-  const check = crypto.scryptSync(plain, salt, 64).toString('hex');
-  return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(check, 'hex'));
-}
-function signToken(uid) {
-  const payload = Buffer.from(JSON.stringify({ uid, exp: Date.now() + 7 * 86400000 })).toString('base64url');
-  const sig = crypto.createHmac('sha256', SECRET).update(payload).digest('base64url');
-  return payload + '.' + sig;
-}
+// Returns the full auth context ({uid, is_admin, real_uid, real_is_admin}), or null if invalid.
 function verifyToken(token) {
   if (!token) return null;
   const [payload, sig] = token.split('.');
@@ -46,7 +50,7 @@ function verifyToken(token) {
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
     if (data.exp < Date.now()) return null;
-    return data.uid;
+    return { uid: data.uid, is_admin: !!data.is_admin, real_uid: data.real_uid ?? data.uid, real_is_admin: !!data.real_is_admin };
   } catch (e) { return null; }
 }
 function todayISO() { return new Date().toISOString().slice(0, 10); }
@@ -63,13 +67,19 @@ function send(res, status, obj) {
 }
 function err(res, message, status = 400) { send(res, status, { error: message }); }
 
-function requireAuth(req, res) {
+function requireAuthCtx(req, res) {
   const header = req.headers['authorization'] || '';
   const m = /^Bearer\s+(.+)$/i.exec(header);
   if (!m) { err(res, 'Missing or invalid Authorization header', 401); return null; }
-  const uid = verifyToken(m[1]);
-  if (!uid) { err(res, 'Invalid or expired token', 401); return null; }
-  return uid;
+  const ctx = verifyToken(m[1]);
+  if (!ctx) { err(res, 'Invalid or expired token', 401); return null; }
+  return ctx;
+}
+// Most handlers only need the "acting as" user id (admin viewing another user's data
+// transparently uses that user's id here — see /auth/switch-user.php).
+function requireAuth(req, res) {
+  const ctx = requireAuthCtx(req, res);
+  return ctx ? ctx.uid : null;
 }
 function findUser(id) { return users.find((u) => u.id === id); }
 
@@ -85,41 +95,43 @@ function readBody(req) {
 const routes = {};
 function on(method, route, handler) { routes[method + ' ' + route] = handler; }
 
-// Single-user app: the first PIN ever submitted becomes the account's PIN.
+// Two fixed users, no password — typing a known username logs straight in.
 on('POST', '/auth/login.php', async (req, res, q, body) => {
-  const pin = String(body.pin || '').trim();
-  if (!/^\d{4,6}$/.test(pin)) return err(res, 'PIN ต้องเป็นตัวเลข 4-6 หลัก');
+  const username = String(body.username || '').trim().toLowerCase();
+  if (!username) return err(res, 'กรุณาพิมพ์ชื่อผู้ใช้');
+  const user = users.find((u) => u.username.toLowerCase() === username);
+  if (!user) return err(res, 'ไม่พบผู้ใช้นี้', 404);
 
-  let user = users[0];
-  if (!user) {
-    user = {
-      id: nextUserId++, username: 'owner', pin_hash: hashSecret(pin),
-      warn_days: 3, auto_lock: true, failed_attempts: 0, locked_until: null,
-    };
-    users.push(user);
-    return send(res, 200, { token: signToken(user.id), created: true });
-  }
-
-  if (user.locked_until && user.locked_until > Date.now()) {
-    return err(res, `ลองผิดหลายครั้งเกินไป กรุณารอ ${Math.ceil((user.locked_until - Date.now()) / 1000)} วินาที`, 429);
-  }
-  if (!verifySecret(pin, user.pin_hash)) {
-    user.failed_attempts++;
-    if (user.failed_attempts >= 5) { user.locked_until = Date.now() + 30000; user.failed_attempts = 0; }
-    return err(res, 'PIN ไม่ถูกต้อง', 401);
-  }
-  user.failed_attempts = 0; user.locked_until = null;
-  send(res, 200, { token: signToken(user.id), created: false });
+  const token = signToken({ uid: user.id, is_admin: user.is_admin, real_uid: user.id, real_is_admin: user.is_admin });
+  send(res, 200, { token, user: { id: user.id, username: user.username, is_admin: user.is_admin } });
 });
 
-on('POST', '/auth/register-token.php', async (req, res) => {
+on('POST', '/auth/switch-user.php', async (req, res, q, body) => {
+  const ctx = requireAuthCtx(req, res); if (!ctx) return;
+  if (!ctx.real_is_admin) return err(res, 'ไม่มีสิทธิ์สลับผู้ใช้', 403);
+  const target = users.find((u) => u.id === Number(body.user_id));
+  if (!target) return err(res, 'Not found', 404);
+
+  const token = signToken({ uid: target.id, is_admin: target.is_admin, real_uid: ctx.real_uid, real_is_admin: true });
+  send(res, 200, { token, user: { id: target.id, username: target.username, is_admin: target.is_admin } });
+});
+
+on('GET', '/auth/users.php', async (req, res) => {
+  const ctx = requireAuthCtx(req, res); if (!ctx) return;
+  if (!ctx.real_is_admin) return err(res, 'ไม่มีสิทธิ์ดูรายชื่อผู้ใช้', 403);
+  send(res, 200, users.map((u) => ({ id: u.id, username: u.username, is_admin: u.is_admin })));
+});
+
+on('POST', '/auth/register-token.php', async (req, res, q, body) => {
   const uid = requireAuth(req, res); if (!uid) return;
+  const user = findUser(uid);
+  if (user) user.fcm_token = String(body.fcm_token || '') || null;
   send(res, 200, { ok: true });
 });
 
 on('GET', '/debts/index.php', async (req, res) => {
   const uid = requireAuth(req, res); if (!uid) return;
-  const list = debts.filter((d) => d.user_id === uid).map((d) => ({
+  const list = debts.filter((d) => d.user_id === uid && d.status === 'active').map((d) => ({
     ...d, installments: installments.filter((i) => i.debt_id === d.id).sort((a, b) => a.due_date < b.due_date ? -1 : 1),
   }));
   send(res, 200, list);
@@ -137,7 +149,7 @@ on('POST', '/debts/index.php', async (req, res, q, body) => {
 
   const debt = {
     id: nextDebtId++, user_id: uid, name, total_amount: total, remaining_amount: remaining,
-    payment_type: 'installment', due_day: dueDay, installment_amount: instAmount,
+    payment_type: 'installment', due_day: dueDay, installment_amount: instAmount, status: 'active',
     created_at: new Date().toISOString(),
   };
   debts.push(debt);
@@ -158,6 +170,52 @@ on('GET', '/debts/detail.php', async (req, res, q) => {
   const debt = debts.find((d) => d.id === id && d.user_id === uid);
   if (!debt) return err(res, 'Not found', 404);
   send(res, 200, { ...debt, installments: installments.filter((i) => i.debt_id === id).sort((a, b) => a.due_date < b.due_date ? -1 : 1) });
+});
+
+on('PATCH', '/debts/update.php', async (req, res, q, body) => {
+  const uid = requireAuth(req, res); if (!uid) return;
+  const debt = debts.find((d) => d.id === Number(body.id) && d.user_id === uid);
+  if (!debt) return err(res, 'Not found', 404);
+
+  if (body.name !== undefined) {
+    const name = String(body.name).trim();
+    if (!name) return err(res, 'ชื่อหนี้ห้ามว่าง');
+    debt.name = name;
+  }
+  if (body.total_amount !== undefined) {
+    const total = Number(body.total_amount);
+    if (!(total > 0)) return err(res, 'ยอดหนี้ทั้งหมดต้องมากกว่า 0');
+    debt.total_amount = total;
+  }
+  if (body.remaining_amount !== undefined) debt.remaining_amount = Math.max(0, Number(body.remaining_amount));
+  if (body.due_day !== undefined) debt.due_day = Math.max(1, Math.min(28, Number(body.due_day)));
+  if (body.installment_amount !== undefined) {
+    const instAmount = Number(body.installment_amount);
+    if (!(instAmount > 0)) return err(res, 'ยอดผ่อนต่อเดือนต้องมากกว่า 0');
+    debt.installment_amount = instAmount;
+    installments.filter((i) => i.debt_id === debt.id && !i.paid).forEach((i) => { i.amount = instAmount; });
+  }
+  send(res, 200, { ok: true });
+});
+
+on('PATCH', '/debts/close.php', async (req, res, q, body) => {
+  const uid = requireAuth(req, res); if (!uid) return;
+  const debt = debts.find((d) => d.id === Number(body.id) && d.user_id === uid);
+  if (!debt) return err(res, 'Not found', 404);
+  debt.status = 'closed';
+  debt.remaining_amount = 0;
+  send(res, 200, { ok: true });
+});
+
+on('DELETE', '/debts/delete.php', async (req, res, q, body) => {
+  const uid = requireAuth(req, res); if (!uid) return;
+  const idx = debts.findIndex((d) => d.id === Number(body.id) && d.user_id === uid);
+  if (idx === -1) return err(res, 'Not found', 404);
+  const [removed] = debts.splice(idx, 1);
+  for (let i = installments.length - 1; i >= 0; i--) {
+    if (installments[i].debt_id === removed.id) installments.splice(i, 1);
+  }
+  send(res, 200, { ok: true });
 });
 
 on('PATCH', '/installments/mark.php', async (req, res, q, body) => {
@@ -307,7 +365,7 @@ on('GET', '/dashboard/report.php', async (req, res) => {
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
   const currentMonth = now.toISOString().slice(0, 7);
 
-  const totalDebt = debts.filter((d) => d.user_id === uid).reduce((a, d) => a + d.remaining_amount, 0);
+  const totalDebt = debts.filter((d) => d.user_id === uid && d.status === 'active').reduce((a, d) => a + d.remaining_amount, 0);
   const activePawns = pawns.filter((p) => p.user_id === uid && p.status === 'active');
   const totalPawn = activePawns.reduce((a, p) => a + p.amount, 0);
   const userExpenses = expenses.filter((e) => e.user_id === uid);
@@ -323,7 +381,7 @@ on('GET', '/dashboard/report.php', async (req, res) => {
 
   const dueInstallments = installments.filter((i) => {
     if (i.paid || i.due_date < monthStart || i.due_date > monthEnd) return false;
-    const debt = debts.find((d) => d.id === i.debt_id && d.user_id === uid);
+    const debt = debts.find((d) => d.id === i.debt_id && d.user_id === uid && d.status === 'active');
     return !!debt;
   }).map((i) => {
     const debt = debts.find((d) => d.id === i.debt_id);
@@ -353,14 +411,32 @@ on('GET', '/dashboard/report.php', async (req, res) => {
 on('GET', '/settings/update.php', async (req, res) => {
   const uid = requireAuth(req, res); if (!uid) return;
   const user = findUser(uid);
-  send(res, 200, { warn_days: user.warn_days, auto_lock: user.auto_lock });
+  send(res, 200, { warn_days: user.warn_days });
 });
 
 on('PATCH', '/settings/update.php', async (req, res, q, body) => {
   const uid = requireAuth(req, res); if (!uid) return;
   const user = findUser(uid);
   if (body.warn_days !== undefined) user.warn_days = Math.max(1, Math.min(30, Number(body.warn_days)));
-  if (body.auto_lock !== undefined) user.auto_lock = !!body.auto_lock;
+  send(res, 200, { ok: true });
+});
+
+on('GET', '/notifications/index.php', async (req, res) => {
+  const uid = requireAuth(req, res); if (!uid) return;
+  const items = notifications.filter((n) => n.user_id === uid).sort((a, b) => b.sent_at.localeCompare(a.sent_at)).slice(0, 50);
+  const unread_count = notifications.filter((n) => n.user_id === uid && !n.read_at).length;
+  send(res, 200, { items, unread_count });
+});
+
+on('PATCH', '/notifications/mark-read.php', async (req, res, q, body) => {
+  const uid = requireAuth(req, res); if (!uid) return;
+  if (body.all) {
+    notifications.filter((n) => n.user_id === uid && !n.read_at).forEach((n) => { n.read_at = new Date().toISOString(); });
+    return send(res, 200, { ok: true });
+  }
+  const notif = notifications.find((n) => n.id === Number(body.id) && n.user_id === uid);
+  if (!notif) return err(res, 'Not found', 404);
+  notif.read_at = new Date().toISOString();
   send(res, 200, { ok: true });
 });
 

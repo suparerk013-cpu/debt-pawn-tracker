@@ -33,9 +33,9 @@ function days_since_last_notified(PDO $pdo, int $userId, string $type, int $refI
   return (int) round((strtotime($today) - strtotime($last)) / 86400);
 }
 
-function log_notified(PDO $pdo, int $userId, string $type, int $refId, string $today): void {
-  $stmt = $pdo->prepare('INSERT IGNORE INTO notification_log (user_id, ref_type, ref_id, sent_date) VALUES (?, ?, ?, ?)');
-  $stmt->execute([$userId, $type, $refId, $today]);
+function log_notified(PDO $pdo, int $userId, string $type, int $refId, string $today, string $title, string $body): void {
+  $stmt = $pdo->prepare('INSERT IGNORE INTO notification_log (user_id, ref_type, ref_id, sent_date, title, body) VALUES (?, ?, ?, ?, ?, ?)');
+  $stmt->execute([$userId, $type, $refId, $today, $title, $body]);
 }
 
 // Due/overdue installments
@@ -44,7 +44,7 @@ $stmt = $pdo->query("
   FROM installments i
   JOIN debts d ON d.id = i.debt_id
   JOIN users u ON u.id = d.user_id
-  WHERE i.paid = 0
+  WHERE i.paid = 0 AND d.status = 'active'
 ");
 foreach ($stmt->fetchAll() as $row) {
   $daysLeft = (strtotime($row['due_date']) - strtotime($today)) / 86400;
@@ -56,7 +56,7 @@ foreach ($stmt->fetchAll() as $row) {
   $body = "{$row['debt_name']} — ฿" . number_format((float)$row['amount']) . " ครบกำหนด {$row['due_date']}";
 
   if ($fcm && $fcm->send($row['fcm_token'], $title, $body, ['type' => 'installment', 'debt_id' => (string)$row['user_id']])) {
-    log_notified($pdo, (int)$row['user_id'], 'installment', (int)$row['id'], $today);
+    log_notified($pdo, (int)$row['user_id'], 'installment', (int)$row['id'], $today, $title, $body);
     $sent++;
   } else {
     $skipped++;
@@ -102,24 +102,28 @@ foreach ($stmt->fetchAll() as $row) {
   }
 
   if ($fcm && $fcm->send($row['fcm_token'], $title, $body, ['type' => 'pawn', 'pawn_id' => (string)$row['id']])) {
-    log_notified($pdo, (int)$row['user_id'], 'pawn', (int)$row['id'], $today);
+    log_notified($pdo, (int)$row['user_id'], 'pawn', (int)$row['id'], $today, $title, $body);
     $sent++;
   } else {
     $skipped++;
   }
 }
 
-// Due/overdue recurring monthly expenses (rent, utilities, etc). Skipped entirely once marked
-// paid for the current month; reminders repeat daily within warn_days like installments do,
-// since the "due date" resets automatically every month.
+// Due/overdue recurring monthly expenses (rent, utilities, etc). Skipped entirely once a
+// payment is logged for the current month (see expense_payments); reminders repeat daily
+// within warn_days like installments do, since the "due date" resets automatically every
+// month. Variable-amount expenses (water/electric/internet) have no fixed amount to show,
+// so the notification just names the bill without a ฿ figure.
 $currentMonth = date('Y-m');
 $stmt = $pdo->query("
-  SELECT e.id, e.name, e.amount, e.due_day, e.last_paid_month, e.user_id, u.fcm_token, u.warn_days
+  SELECT e.id, e.name, e.expense_type, e.amount, e.due_day, e.user_id, u.fcm_token, u.warn_days
   FROM recurring_expenses e
   JOIN users u ON u.id = e.user_id
 ");
+$paidThisMonthStmt = $pdo->prepare('SELECT 1 FROM expense_payments WHERE expense_id = ? AND month = ?');
 foreach ($stmt->fetchAll() as $row) {
-  if ($row['last_paid_month'] === $currentMonth) continue;
+  $paidThisMonthStmt->execute([$row['id'], $currentMonth]);
+  if ($paidThisMonthStmt->fetchColumn()) continue;
 
   $dueDate = date('Y-m-') . str_pad((string)$row['due_day'], 2, '0', STR_PAD_LEFT);
   $daysLeft = (strtotime($dueDate) - strtotime($today)) / 86400;
@@ -128,10 +132,11 @@ foreach ($stmt->fetchAll() as $row) {
   if (empty($row['fcm_token'])) { $skipped++; continue; }
 
   $title = $daysLeft < 0 ? 'ค่าใช้จ่ายประจำค้างชำระ' : 'ค่าใช้จ่ายประจำใกล้ถึงกำหนด';
-  $body = "{$row['name']} — ฿" . number_format((float)$row['amount']) . " ครบกำหนด {$dueDate}";
+  $amountPart = $row['expense_type'] === 'fixed' ? ('฿' . number_format((float)$row['amount']) . ' ') : '';
+  $body = "{$row['name']} — {$amountPart}ครบกำหนด {$dueDate}";
 
   if ($fcm && $fcm->send($row['fcm_token'], $title, $body, ['type' => 'expense', 'expense_id' => (string)$row['id']])) {
-    log_notified($pdo, (int)$row['user_id'], 'expense', (int)$row['id'], $today);
+    log_notified($pdo, (int)$row['user_id'], 'expense', (int)$row['id'], $today, $title, $body);
     $sent++;
   } else {
     $skipped++;

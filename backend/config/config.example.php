@@ -25,10 +25,6 @@ define('CRON_SECRET', 'CHANGE_ME_TO_ANOTHER_LONG_RANDOM_SECRET');
 define('FCM_PROJECT_ID', 'your-firebase-project-id');
 define('FCM_SERVICE_ACCOUNT_JSON', __DIR__ . '/firebase-service-account.json'); // upload this file next to this one, keep it OUT of any public git repo
 
-// --- Rate limiting ---
-define('LOGIN_MAX_ATTEMPTS', 5);
-define('LOGIN_LOCKOUT_SECONDS', 30);
-
 // --- CORS ---
 // The web app (PWA) origin(s) allowed to call this API. Add your deployed PWA's real
 // origin here once you know it (e.g. 'https://debtpawntracker.42web.io').

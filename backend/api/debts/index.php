@@ -6,7 +6,7 @@ $pdo = db();
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method === 'GET') {
-  $stmt = $pdo->prepare('SELECT * FROM debts WHERE user_id = ? ORDER BY created_at DESC');
+  $stmt = $pdo->prepare("SELECT * FROM debts WHERE user_id = ? AND status = 'active' ORDER BY created_at DESC");
   $stmt->execute([$userId]);
   $debts = $stmt->fetchAll();
 

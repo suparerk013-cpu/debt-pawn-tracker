@@ -11,7 +11,7 @@ $monthStart = date('Y-m-01');
 $monthEnd = date('Y-m-t');
 $currentMonth = date('Y-m');
 
-$stmt = $pdo->prepare('SELECT COALESCE(SUM(remaining_amount),0) AS s FROM debts WHERE user_id = ?');
+$stmt = $pdo->prepare("SELECT COALESCE(SUM(remaining_amount),0) AS s FROM debts WHERE user_id = ? AND status = 'active'");
 $stmt->execute([$userId]);
 $totalDebt = (float)$stmt->fetchColumn();
 
@@ -44,7 +44,7 @@ foreach ($variableLatestMonth as $row) {
 $stmt = $pdo->prepare("
   SELECT i.id, i.due_date, i.amount, d.id AS debt_id, d.name AS debt_name
   FROM installments i JOIN debts d ON d.id = i.debt_id
-  WHERE d.user_id = ? AND i.paid = 0 AND i.due_date BETWEEN ? AND ?
+  WHERE d.user_id = ? AND d.status = 'active' AND i.paid = 0 AND i.due_date BETWEEN ? AND ?
   ORDER BY i.due_date ASC
 ");
 $stmt->execute([$userId, $monthStart, $monthEnd]);

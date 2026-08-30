@@ -1,4 +1,5 @@
-// Debt & Pawn Tracker — vanilla JS PWA. Single-user (PIN only, no accounts/Google).
+// Debt & Pawn Tracker — vanilla JS PWA. Two fixed users (not/lek), login is just a username,
+// no password. The admin user can switch to view/edit the other user's data.
 (function () {
   'use strict';
 
@@ -42,29 +43,31 @@
   function todayISO() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString().slice(0, 10); }
 
   const S = {
-    screen: 'lock',            // lock | dashboard | debtList | debtDetail | pawnList | expenses | addEdit | settings
-    hasAccount: localStorage.getItem('dpt_has_account') === '1',
-    pinStage: 'enter',         // enter | confirm  (only relevant during first-time setup)
-    pinFirstEntry: '',
-    pin: [],
-    pinError: '',
+    screen: 'login',           // login | dashboard | debtList | debtDetail | debtSettings | pawnList | expenses | addEdit | settings | notifications
+    currentUser: JSON.parse(localStorage.getItem('dpt_user') || 'null'), // {id, username, is_admin} — the user whose data is being viewed
+    realUser: JSON.parse(localStorage.getItem('dpt_real_user') || 'null'), // the account that actually logged in (only differs from currentUser while an admin is "viewing as" someone else)
+    switchableUsers: [],
+    loginError: '',
 
     busy: false,
-    wasBackgrounded: false,
     returnScreen: 'dashboard',
     addType: 'debt',
     fabMenuOpen: false,
+    userMenuOpen: false,
     warnDays: 5,
-    autoLock: true,
     toast: null,
     selectedDebtId: null,
+    editingDebtId: null,
     renewPickerFor: null,
     expensePayFor: null,
     debts: [],
     pawns: [],
     expenses: [],
     report: null,
+    notifications: [],
+    unreadCount: 0,
     forms: {
+      loginUsername: '',
       name: '', total: '', remaining: '', dueDay: '5', installmentAmount: '',
       itemName: '', shop: '', ticketCode: '', category: 'jewelry', amount: '', dueDate: '', pawnPeriod: '1m',
       expenseName: '', expenseType: 'fixed', expenseAmount: '', expenseDueDay: '5', expensePayAmount: '',
@@ -121,11 +124,19 @@
       S.expenses = expenses;
       S.report = report;
       S.warnDays = settings.warn_days;
-      S.autoLock = settings.auto_lock;
     } catch (e) {
       showToast('โหลดข้อมูลไม่สำเร็จ: ' + e.message);
     }
     S.busy = false; render();
+  }
+
+  async function loadNotifications() {
+    try {
+      const res = await Api.getNotifications();
+      S.notifications = res.items;
+      S.unreadCount = res.unread_count;
+      render();
+    } catch (e) { /* keep stale data */ }
   }
 
   // Quiet re-fetch of just the report summary after marking something paid, so the
@@ -150,6 +161,18 @@
     await refreshDebtDetail(id);
     render();
   }
+  function openDebtSettings(id) {
+    const d = S.debts.find((x) => x.id === id);
+    if (!d) return;
+    setState({
+      screen: 'debtSettings', editingDebtId: id, returnScreen: 'debtDetail',
+      forms: {
+        ...S.forms, name: d.name, total: String(d.total_amount),
+        remaining: String(d.remaining_amount), dueDay: String(d.due_day),
+        installmentAmount: String(d.installment_amount || ''),
+      },
+    });
+  }
   function openAdd(type, from) {
     setState({
       screen: 'addEdit', addType: type, returnScreen: from, fabMenuOpen: false,
@@ -171,52 +194,62 @@
   }
   function setPawnCategory(key) { setForms({ category: key }); }
 
-  // ---------------- Auth: single-user PIN ----------------
-  // First PIN ever entered on this device becomes the account's PIN (double-entry confirm).
-  // Every time after that, the same PIN just unlocks the app.
-  async function pinPress(d) {
-    if (S.pin.length >= 4 || S.busy) return;
-    const pin = [...S.pin, d];
-    setState({ pin, pinError: '' });
-    if (pin.length !== 4) return;
-    const entered = pin.join('');
-
-    if (S.hasAccount) { await submitPin(entered); return; }
-
-    // First-time setup: double-entry confirmation.
-    if (S.pinStage === 'enter') {
-      setState({ pin: [], pinStage: 'confirm', pinFirstEntry: entered });
-      return;
-    }
-    if (entered !== S.pinFirstEntry) {
-      setState({ pin: [], pinStage: 'enter', pinFirstEntry: '', pinError: 'PIN ไม่ตรงกัน กรุณาลองใหม่อีกครั้ง' });
-      return;
-    }
-    await submitPin(entered);
+  // ---------------- Auth: pick-a-username, no password ----------------
+  function saveSession(token, user, realUser) {
+    Api.setToken(token);
+    localStorage.setItem('dpt_user', JSON.stringify(user));
+    localStorage.setItem('dpt_real_user', JSON.stringify(realUser));
+    S.currentUser = user;
+    S.realUser = realUser;
   }
-  function pinBack() { setState({ pin: S.pin.slice(0, -1), pinError: '' }); }
+  function clearSession() {
+    Api.setToken(null);
+    localStorage.removeItem('dpt_user');
+    localStorage.removeItem('dpt_real_user');
+    S.currentUser = null;
+    S.realUser = null;
+    S.switchableUsers = [];
+  }
 
-  async function submitPin(pinStr) {
+  async function submitLogin() {
+    const username = S.forms.loginUsername.trim();
+    if (!username) { setState({ loginError: 'กรุณาพิมพ์ชื่อผู้ใช้' }); return; }
     S.busy = true; render();
     try {
-      const res = await Api.login(pinStr);
-      Api.setToken(res.token);
-      if (res.created) {
-        localStorage.setItem('dpt_has_account', '1');
-        S.hasAccount = true;
-      }
-      S.pin = []; S.busy = false;
-      setState({ screen: 'dashboard', pinStage: 'enter', pinFirstEntry: '' });
+      const res = await Api.login(username);
+      saveSession(res.token, res.user, res.user);
+      S.busy = false;
+      setState({ screen: 'dashboard', loginError: '', forms: { ...S.forms, loginUsername: '' } });
+      if (res.user.is_admin) loadSwitchableUsers();
       await loadAll();
-      if (res.created) showToast('ตั้ง PIN สำเร็จ');
+      loadNotifications();
       registerWebPush();
     } catch (e) {
       S.busy = false;
-      setState({ pin: [], pinError: e.message || 'PIN ไม่ถูกต้อง' });
+      setState({ loginError: e.message || 'ไม่พบผู้ใช้นี้' });
     }
   }
 
-  function relock() { setState({ screen: 'lock', pin: [], pinStage: 'enter', pinFirstEntry: '' }); }
+  async function loadSwitchableUsers() {
+    try { S.switchableUsers = await Api.getUsers(); render(); } catch (e) { /* ignore */ }
+  }
+
+  async function switchToUser(userId) {
+    if (S.currentUser && S.currentUser.id === userId) { setState({ userMenuOpen: false }); return; }
+    try {
+      const res = await Api.switchUser(userId);
+      saveSession(res.token, res.user, S.realUser);
+      setState({ userMenuOpen: false, screen: 'dashboard', fabMenuOpen: false });
+      await loadAll();
+      loadNotifications();
+      showToast('กำลังดูข้อมูลของ ' + res.user.username);
+    } catch (e) { showToast(e.message || 'สลับผู้ใช้ไม่สำเร็จ'); }
+  }
+
+  function logout() {
+    clearSession();
+    setState({ screen: 'login', userMenuOpen: false, debts: [], pawns: [], expenses: [], report: null, notifications: [], unreadCount: 0 });
+  }
 
   // ---------------- Actions ----------------
   async function markPaid(installmentId, debtId) {
@@ -278,6 +311,44 @@
       await loadAll();
       showToast('เพิ่มหนี้ใหม่แล้ว');
     } catch (e) { showToast(e.message || 'บันทึกไม่สำเร็จ'); }
+  }
+
+  async function editDebtSubmit() {
+    const f = S.forms;
+    const total = Number(f.total) || 0;
+    if (!f.name.trim() || !total) { showToast('กรอกชื่อและยอดหนี้ให้ครบ'); return; }
+    try {
+      await Api.updateDebt({
+        id: S.editingDebtId, name: f.name.trim(), total_amount: total,
+        remaining_amount: Number(f.remaining) || 0,
+        due_day: Number(f.dueDay) || 5,
+        installment_amount: Number(f.installmentAmount) || 0,
+      });
+      setState({ screen: 'debtDetail', editingDebtId: null });
+      await refreshDebtDetail(S.selectedDebtId);
+      await loadAll();
+      showToast('บันทึกการแก้ไขแล้ว');
+    } catch (e) { showToast(e.message || 'บันทึกไม่สำเร็จ'); }
+  }
+
+  async function closeDebt(id) {
+    if (!confirm('ยืนยันว่าปิดหนี้นี้แล้ว (ชำระครบแล้ว)?')) return;
+    try {
+      await Api.closeDebt(id);
+      setState({ screen: 'debtList', returnScreen: 'debtList', editingDebtId: null });
+      await loadAll();
+      showToast('ปิดหนี้แล้ว');
+    } catch (e) { showToast(e.message || 'ปิดหนี้ไม่สำเร็จ'); }
+  }
+
+  async function deleteDebt(id) {
+    if (!confirm('ยืนยันลบหนี้นี้ถาวร? ข้อมูลงวดผ่อนทั้งหมดจะหายไปด้วย')) return;
+    try {
+      await Api.deleteDebt(id);
+      setState({ screen: 'debtList', returnScreen: 'debtList', editingDebtId: null });
+      await loadAll();
+      showToast('ลบหนี้แล้ว');
+    } catch (e) { showToast(e.message || 'ลบไม่สำเร็จ'); }
   }
 
   async function addPawnSubmit() {
@@ -357,11 +428,26 @@
     setState({ warnDays: n });
     try { await Api.updateSettings({ warn_days: n }); } catch (e) { /* keep optimistic value */ }
   }
-  async function toggleAutoLock() {
-    setState({ autoLock: !S.autoLock });
-    try { await Api.updateSettings({ auto_lock: S.autoLock }); } catch (e) { /* ignore */ }
-  }
 
+  function openNotifications() {
+    setState({ screen: 'notifications', returnScreen: 'dashboard' });
+    loadNotifications();
+  }
+  async function markNotifRead(id) {
+    const n = S.notifications.find((x) => x.id === id);
+    if (n && !n.read_at) {
+      n.read_at = new Date().toISOString();
+      S.unreadCount = Math.max(0, S.unreadCount - 1);
+      render();
+      try { await Api.markNotificationRead(id); } catch (e) { /* keep optimistic */ }
+    }
+  }
+  async function markAllNotifsRead() {
+    S.notifications.forEach((n) => { n.read_at = n.read_at || new Date().toISOString(); });
+    S.unreadCount = 0;
+    render();
+    try { await Api.markAllNotificationsRead(); } catch (e) { /* keep optimistic */ }
+  }
   // ---------------- Web Push notifications ----------------
   // Uses the browser's own Push API + a service worker (no native app needed). Requires
   // Firebase's Web SDK + a VAPID key to be configured in index.html (see README).
@@ -378,60 +464,33 @@
     } catch (e) { /* push not available in this browser/setup */ }
   }
 
-  // ---------------- Auto-lock on background ----------------
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      if (S.autoLock && S.screen !== 'lock') S.wasBackgrounded = true;
-    } else if (S.wasBackgrounded) {
-      S.wasBackgrounded = false;
-      relock();
-    }
-  });
-
   // ---------------- Render ----------------
   function render() {
-    app.innerHTML = S.screen === 'lock' ? renderLock() : renderApp();
+    app.innerHTML = S.screen === 'login' ? renderLogin() : renderApp();
   }
 
   function toastHtml() { return S.toast ? `<div class="toast">${esc(S.toast)}</div>` : ''; }
 
-  function renderLock() {
-    const isSetup = !S.hasAccount;
-    const dots = [0, 1, 2, 3].map((i) => `<div class="pin-dot ${i < S.pin.length ? 'filled' : ''}"></div>`).join('');
-    const keys = ['1','2','3','4','5','6','7','8','9','','0','bs'];
-    const keyHtml = keys.map((k) => {
-      if (k === 'bs') return `<button class="keypad-key" data-action="bs">${svgBackspace()}</button>`;
-      if (k === '') return `<div class="keypad-key empty"></div>`;
-      return `<button class="keypad-key" data-action="digit" data-digit="${k}">${k}</button>`;
-    }).join('');
-
-    let title, sub;
-    if (isSetup) {
-      title = S.pinStage === 'enter' ? 'ตั้ง PIN ใหม่ (ขั้นตอน 1/2)' : 'ยืนยัน PIN อีกครั้ง (ขั้นตอน 2/2)';
-      sub = 'ใส่ PIN 4 หลักที่ต้องการใช้';
-    } else {
-      title = 'ปลดล็อกเพื่อดูข้อมูลหนี้สิน';
-      sub = 'ใส่ PIN 4 หลักของคุณ';
-    }
-
+  function renderLogin() {
     return `
     <div class="lock-screen">
       <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:20px">
         <div class="lock-icon">${svgLock()}</div>
-        <div class="lock-title">${title}</div>
-        <div class="lock-sub">${sub}</div>
-        <div class="lock-error">${esc(S.pinError)}</div>
+        <div class="lock-title">พิมพ์ชื่อผู้ใช้เพื่อเข้าแอป</div>
+        <div class="lock-sub">not หรือ lek</div>
+        <div class="lock-error">${esc(S.loginError)}</div>
       </div>
-      <div class="pin-dots">${dots}</div>
-      <div class="keypad">${keyHtml}</div>
-      <div></div>
+      <div style="padding:24px;display:flex;flex-direction:column;gap:14px">
+        <input class="field-input" data-bind="loginUsername" value="${esc(S.forms.loginUsername)}" placeholder="ชื่อผู้ใช้" autocapitalize="off" autocomplete="off"/>
+        <button class="submit-btn" data-action="submit-login" ${S.busy ? 'disabled' : ''}>เข้าแอป</button>
+      </div>
       ${toastHtml()}
     </div>`;
   }
 
   function renderApp() {
     const isMainTab = ['dashboard', 'debtList', 'pawnList', 'settings'].includes(S.screen);
-    const showBack = S.screen === 'debtDetail' || S.screen === 'addEdit' || S.screen === 'expenses';
+    const showBack = ['debtDetail', 'debtSettings', 'addEdit', 'expenses', 'notifications'].includes(S.screen);
     const showFab = ['dashboard', 'debtList', 'pawnList', 'expenses'].includes(S.screen);
 
     return `
@@ -453,22 +512,38 @@
 
   function headerCenter() {
     if (S.screen === 'dashboard') {
+      const isAdmin = S.realUser && S.realUser.is_admin;
+      const viewingOther = S.currentUser && S.realUser && S.currentUser.id !== S.realUser.id;
+      const userMenu = (isAdmin && S.userMenuOpen) ? `
+        <div class="fab-menu" style="position:absolute;top:44px;right:0;z-index:20">
+          ${S.switchableUsers.map((u) => `<div class="fab-menu-item" data-action="switch-user" data-id="${u.id}" style="${u.id === S.currentUser.id ? 'font-weight:700;color:#0E6B5C' : ''}">${u.id === S.currentUser.id ? '✓ ' : ''}${esc(u.username)}${u.is_admin ? ' (แอดมิน)' : ''}</div>`).join('')}
+        </div>` : '';
       return `
         <div style="flex:1">
-          <div class="header-greeting">สวัสดี 👋</div>
+          <div class="header-greeting">สวัสดี 👋 ${esc((S.currentUser || {}).username || '')}${viewingOther ? ' <span style="color:#92600A">(กำลังดูของคนอื่น)</span>' : ''}</div>
           <div class="header-title-lg">ภาพรวมของคุณ</div>
         </div>
-        <button class="icon-btn" data-action="relock">${svgLockSmall()}</button>`;
+        <div style="display:flex;align-items:center;gap:2px;position:relative">
+          ${isAdmin ? `<button class="icon-btn" data-action="toggle-user-menu">${svgSwap()}</button>` : ''}
+          <button class="icon-btn" style="position:relative" data-action="open-notifications">${svgBell()}${S.unreadCount ? `<span style="position:absolute;top:4px;right:4px;background:#D64545;color:#fff;border-radius:50%;min-width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;padding:0 3px">${S.unreadCount}</span>` : ''}</button>
+          <button class="icon-btn" data-action="logout">${svgLogout()}</button>
+          ${userMenu}
+        </div>`;
     }
     const addTypeTitle = { debt: 'เพิ่มหนี้ใหม่', pawn: 'เพิ่มตั๋วจำนำใหม่', expense: 'เพิ่มค่าใช้จ่ายประจำ' };
     const titleMap = {
       debtList: 'หนี้สินทั้งหมด', pawnList: 'ตั๋วจำนำ', settings: 'ตั้งค่า',
       expenses: 'ค่าใช้จ่ายประจำต่อเดือน',
       debtDetail: (S.debts.find((d) => d.id === S.selectedDebtId) || {}).name || 'รายละเอียดหนี้',
+      debtSettings: 'ตั้งค่าหนี้',
+      notifications: 'การแจ้งเตือน',
       addEdit: addTypeTitle[S.addType] || 'เพิ่มรายการใหม่',
     };
     const cls = (S.screen === 'debtList' || S.screen === 'pawnList' || S.screen === 'settings' || S.screen === 'expenses') ? 'header-title-md' : 'header-title';
-    return `<div class="${cls}">${esc(titleMap[S.screen] || '')}</div>`;
+    const trailing = S.screen === 'debtDetail'
+      ? `<button class="icon-btn" data-action="open-debt-settings" data-id="${S.selectedDebtId}">${svgGear('#1B2422')}</button>`
+      : (S.screen === 'notifications' && S.unreadCount ? `<button class="mark-paid-btn" style="padding:6px 10px;font-size:12px" data-action="mark-all-read">อ่านทั้งหมด</button>` : '');
+    return `<div class="${cls}" style="flex:1">${esc(titleMap[S.screen] || '')}</div>${trailing}`;
   }
 
   function screenBody() {
@@ -476,10 +551,12 @@
       case 'dashboard': return renderDashboard();
       case 'debtList': return renderDebtList();
       case 'debtDetail': return renderDebtDetail();
+      case 'debtSettings': return renderDebtSettings();
       case 'pawnList': return renderPawnList();
       case 'expenses': return renderExpenses();
       case 'addEdit': return renderAddEdit();
       case 'settings': return renderSettings();
+      case 'notifications': return renderNotifications();
       default: return '';
     }
   }
@@ -600,6 +677,35 @@
         </div>
         <div class="section-title">ตารางงวดผ่อน</div>
         <div style="display:flex;flex-direction:column;gap:10px">${installments}</div>
+      </div>`;
+  }
+
+  function renderDebtSettings() {
+    const id = S.editingDebtId;
+    const dayOptions = Array.from({ length: 28 }, (_, i) => i + 1)
+      .map((n) => `<option value="${n}" ${String(n) === S.forms.dueDay ? 'selected' : ''}>${n}</option>`).join('');
+    return `
+      <div class="screen-pad">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div><div class="field-label">ชื่อหนี้</div><input class="field-input" data-bind="name" value="${esc(S.forms.name)}"/></div>
+          <div class="field-row">
+            <div class="field-1"><div class="field-label">ยอดหนี้ทั้งหมด</div><input class="field-input" type="number" data-bind="total" value="${esc(S.forms.total)}"/></div>
+            <div class="field-1"><div class="field-label">ยอดคงเหลือ</div><input class="field-input" type="number" data-bind="remaining" value="${esc(S.forms.remaining)}"/></div>
+          </div>
+          <div class="field-row">
+            <div class="field-1">
+              <div class="field-label">จ่ายทุกวันที่</div>
+              <select class="field-input" data-bind="dueDay">${dayOptions}</select>
+            </div>
+            <div class="field-1"><div class="field-label">ยอดผ่อนต่อเดือน (งวดที่ยังไม่จ่ายจะถูกปรับตามนี้)</div><input class="field-input" type="number" data-bind="installmentAmount" value="${esc(S.forms.installmentAmount)}"/></div>
+          </div>
+          <button class="submit-btn" data-action="submit-edit-debt">บันทึกการแก้ไข</button>
+        </div>
+        <div class="section-title">การจัดการหนี้</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="mark-paid-btn" style="width:100%;background:#E7F5EE;color:#1F7A52" data-action="close-debt" data-id="${id}">✓ ปิดหนี้ (ชำระครบแล้ว)</button>
+          <button class="mark-paid-btn" style="width:100%;background:#FDEAEA;color:#B23B3B" data-action="delete-debt" data-id="${id}">🗑 ลบหนี้ถาวร</button>
+        </div>
       </div>`;
   }
 
@@ -821,12 +927,32 @@
         </div>
         <div class="card settings-row">
           <div>
-            <div class="settings-row-title">ล็อกอัตโนมัติเมื่อไม่ได้ใช้งาน</div>
-            <div class="settings-row-sub">ล็อกแอปเมื่อออกจากหน้าจอไปสักพัก</div>
+            <div class="settings-row-title">ผู้ใช้งาน</div>
+            <div class="settings-row-sub">${esc((S.currentUser || {}).username || '')}${(S.realUser || {}).is_admin ? ' (แอดมิน)' : ''}</div>
           </div>
-          <button class="switch ${S.autoLock ? 'on' : ''}" data-action="toggle-autolock"><div class="switch-knob"></div></button>
+          <button class="mark-paid-btn" data-action="logout">ออกจากระบบ</button>
         </div>
       </div>`;
+  }
+
+  function renderNotifications() {
+    const empty = !S.notifications.length ? `
+      <div class="empty-card"><div class="empty-emoji">🔔</div><div class="empty-text">ยังไม่มีการแจ้งเตือน</div></div>` : '';
+    const items = S.notifications.map((n) => {
+      const unread = !n.read_at;
+      const d = new Date(n.sent_at);
+      const dateLabel = formatDate(n.sent_at.slice(0, 10)) + ' ' + d.toTimeString().slice(0, 5);
+      return `
+        <div class="card" style="display:flex;flex-direction:column;gap:4px;${unread ? 'border-left:3px solid #0E6B5C' : 'opacity:0.7'}" data-action="${unread ? 'mark-notif-read' : ''}" data-id="${n.id}">
+          <div class="row-between">
+            <div style="font-weight:600;color:#1B2422">${esc(n.title)}</div>
+            ${unread ? `<div style="width:8px;height:8px;border-radius:50%;background:#0E6B5C;flex:none"></div>` : ''}
+          </div>
+          <div style="font-size:14px;color:#5C6C68">${esc(n.body)}</div>
+          <div style="font-size:12px;color:#A6ACAA">${dateLabel}</div>
+        </div>`;
+    }).join('');
+    return `<div class="screen-pad">${empty}${items}</div>`;
   }
 
   function renderFab() {
@@ -856,17 +982,18 @@
 
   // ---------------- Icons ----------------
   function svgLock() { return `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M7 7V5a5 5 0 0110 0v2"/></svg>`; }
-  function svgLockSmall() { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5C6C68" stroke-width="1.7"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M7 7V5a5 5 0 0110 0v2"/></svg>`; }
   function svgBack(c) { return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M15 18l-6-6 6-6"/></svg>`; }
   function svgChevron() { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A6ACAA" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>`; }
   function svgPlus() { return `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`; }
   function svgPawn() { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B8862F" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M8 12h8"/></svg>`; }
-  function svgBackspace() { return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><path d="M21 12H8l-4 0M12 8l-4 4 4 4M8 12h13"/></svg>`; }
   function svgTrash() { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B23B3B" stroke-width="1.8"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0v12a2 2 0 002 2h6a2 2 0 002-2V7"/></svg>`; }
   function svgHome(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h14v-9"/></svg>`; }
   function svgList(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg>`; }
   function svgTicket(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 12l6-8h9a3 3 0 013 3v3l-8 9a2 2 0 01-3 0l-7-6z"/><circle cx="15" cy="9" r="1.4"/></svg>`; }
   function svgGear(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.6 7.6 0 000-2l1.9-1.5-2-3.4-2.3.6a7.7 7.7 0 00-1.7-1l-.3-2.4h-4l-.3 2.4a7.7 7.7 0 00-1.7 1l-2.3-.6-2 3.4L4.6 11a7.6 7.6 0 000 2l-1.9 1.5 2 3.4 2.3-.6a7.7 7.7 0 001.7 1l.3 2.4h4l.3-2.4a7.7 7.7 0 001.7-1l2.3.6 2-3.4z"/></svg>`; }
+  function svgBell(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c || '#1B2422'}" stroke-width="1.8"><path d="M6 9a6 6 0 0112 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9z"/><path d="M9.5 17a2.5 2.5 0 005 0"/></svg>`; }
+  function svgLogout(c) { return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c || '#1B2422'}" stroke-width="1.8"><path d="M15 17l5-5-5-5M20 12H9"/><path d="M9 19H6a2 2 0 01-2-2V7a2 2 0 012-2h3"/></svg>`; }
+  function svgSwap(c) { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${c || '#0E6B5C'}" stroke-width="2"><path d="M7 4l-4 4 4 4M3 8h13M17 20l4-4-4-4M21 16H8"/></svg>`; }
 
   // ---------------- Event delegation ----------------
   app.addEventListener('click', (e) => {
@@ -874,12 +1001,20 @@
     if (!el) return;
     const action = el.dataset.action;
     switch (action) {
-      case 'digit': pinPress(el.dataset.digit); break;
-      case 'bs': pinBack(); break;
+      case 'submit-login': submitLogin(); break;
+      case 'logout': logout(); break;
+      case 'toggle-user-menu': setState({ userMenuOpen: !S.userMenuOpen }); break;
+      case 'switch-user': switchToUser(Number(el.dataset.id)); break;
+      case 'open-notifications': openNotifications(); break;
+      case 'mark-notif-read': markNotifRead(Number(el.dataset.id)); break;
+      case 'mark-all-read': markAllNotifsRead(); break;
       case 'back': goBack(); break;
-      case 'relock': relock(); break;
       case 'nav': nav(el.dataset.screen); break;
       case 'open-debt': openDebt(Number(el.dataset.id)); break;
+      case 'open-debt-settings': openDebtSettings(Number(el.dataset.id)); break;
+      case 'submit-edit-debt': editDebtSubmit(); break;
+      case 'close-debt': closeDebt(Number(el.dataset.id)); break;
+      case 'delete-debt': deleteDebt(Number(el.dataset.id)); break;
       case 'mark-paid': markPaid(Number(el.dataset.id), Number(el.dataset.debt)); break;
       case 'redeem': redeemPawn(Number(el.dataset.id)); break;
       case 'renew-open': toggleRenewPicker(Number(el.dataset.id)); break;
@@ -901,7 +1036,6 @@
       case 'delete-expense': deleteExpense(Number(el.dataset.id)); break;
       case 'goto-expenses': setState({ screen: 'expenses', returnScreen: 'dashboard' }); break;
       case 'warn-days': setWarnDays(Number(el.dataset.n)); break;
-      case 'toggle-autolock': toggleAutoLock(); break;
       case 'fab-click':
         if (S.screen === 'dashboard') setState({ fabMenuOpen: !S.fabMenuOpen });
         else if (S.screen === 'debtList') openAdd('debt', 'debtList');
@@ -920,10 +1054,17 @@
     const bind = e.target.dataset.bind;
     if (bind) S.forms[bind] = e.target.value;
   });
+  app.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.dataset.bind === 'loginUsername') submitLogin();
+  });
 
   // ---------------- Boot ----------------
   render();
-  if (S.hasAccount && Api.getToken()) {
-    // Returning user with a session already on this device — just needs their PIN.
+  if (S.currentUser && Api.getToken()) {
+    // Returning user — session already saved on this device, skip straight to the app.
+    setState({ screen: 'dashboard' });
+    if (S.realUser && S.realUser.is_admin) loadSwitchableUsers();
+    loadAll();
+    loadNotifications();
   }
 })();
