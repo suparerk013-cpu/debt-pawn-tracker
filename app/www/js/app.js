@@ -59,6 +59,7 @@
     toast: null,
     selectedDebtId: null,
     renewPickerFor: null,
+    expensePayFor: null,
     debts: [],
     pawns: [],
     expenses: [],
@@ -66,7 +67,7 @@
     forms: {
       name: '', total: '', remaining: '', dueDay: '5', installmentAmount: '',
       itemName: '', shop: '', ticketCode: '', category: 'jewelry', amount: '', dueDate: '', pawnPeriod: '1m',
-      expenseName: '', expenseAmount: '', expenseDueDay: '5',
+      expenseName: '', expenseType: 'fixed', expenseAmount: '', expenseDueDay: '5', expensePayAmount: '',
       pawnFinalDate: '',
     },
   };
@@ -157,7 +158,7 @@
         name: '', total: '', remaining: '', dueDay: '5', installmentAmount: '',
         itemName: '', shop: '', ticketCode: '', category: 'jewelry', amount: '',
         pawnPeriod: '1m', dueDate: computePeriodDate('month', 1),
-        expenseName: '', expenseAmount: '', expenseDueDay: '5',
+        expenseName: '', expenseType: 'fixed', expenseAmount: '', expenseDueDay: '5',
       },
     });
   }
@@ -297,27 +298,49 @@
     } catch (e) { showToast(e.message || 'บันทึกไม่สำเร็จ'); }
   }
 
+  function setExpenseType(type) { setForms({ expenseType: type }); }
+
   async function addExpenseSubmit() {
     const f = S.forms;
+    const isFixed = f.expenseType !== 'variable';
     const amount = Number(f.expenseAmount) || 0;
-    if (!f.expenseName.trim() || !amount) { showToast('กรอกชื่อและยอดค่าใช้จ่ายให้ครบ'); return; }
+    if (!f.expenseName.trim() || (isFixed && !amount)) { showToast('กรอกชื่อและยอดค่าใช้จ่ายให้ครบ'); return; }
     try {
-      await Api.createExpense({ name: f.expenseName.trim(), amount, due_day: Number(f.expenseDueDay) || 5 });
+      await Api.createExpense({
+        name: f.expenseName.trim(), expense_type: f.expenseType,
+        amount: isFixed ? amount : undefined, due_day: Number(f.expenseDueDay) || 5,
+      });
       setState({ screen: 'expenses', returnScreen: 'dashboard' });
       await loadAll();
       showToast('เพิ่มค่าใช้จ่ายประจำแล้ว');
     } catch (e) { showToast(e.message || 'บันทึกไม่สำเร็จ'); }
   }
 
-  async function markExpensePaid(id) {
+  // Fixed-amount expenses mark paid immediately; variable ones (water/electric/internet)
+  // need the actual bill amount entered first, since it changes every month.
+  function markExpensePaid(id, expenseType) {
+    if (expenseType === 'variable') {
+      setState({ expensePayFor: S.expensePayFor === id ? null : id, forms: { ...S.forms, expensePayAmount: '' } });
+      return;
+    }
+    submitMarkExpensePaid(id);
+  }
+
+  async function submitMarkExpensePaid(id, amount) {
     try {
-      await Api.markExpensePaid(id);
+      const res = await Api.markExpensePaid(id, amount);
       const exp = S.expenses.find((e) => e.id === id);
-      if (exp) exp.paid_this_month = true;
+      if (exp) { exp.paid_this_month = true; exp.last_amount = res.amount; }
+      setState({ expensePayFor: null, forms: { ...S.forms, expensePayAmount: '' } });
       showToast('บันทึกว่าจ่ายแล้ว');
-      render();
       refreshReport();
-    } catch (e) { showToast('บันทึกไม่สำเร็จ'); }
+    } catch (e) { showToast(e.message || 'บันทึกไม่สำเร็จ'); }
+  }
+
+  function confirmExpensePay(id) {
+    const amount = Number(S.forms.expensePayAmount) || 0;
+    if (!amount) { showToast('กรุณากรอกยอดที่จ่าย'); return; }
+    submitMarkExpensePaid(id, amount);
   }
 
   async function deleteExpense(id) {
@@ -486,10 +509,15 @@
       const action = it.type === 'installment'
         ? `<button class="mark-paid-btn" data-action="mark-paid" data-id="${it.ref_id}" data-debt="${it.debt_id}">บันทึกว่าจ่ายแล้ว</button>`
         : it.type === 'expense'
-        ? `<button class="mark-paid-btn" data-action="mark-expense-paid" data-id="${it.ref_id}">บันทึกว่าจ่ายแล้ว</button>`
+        ? `<button class="mark-paid-btn" data-action="mark-expense-paid" data-id="${it.ref_id}" data-expense-type="${it.expense_type}">บันทึกว่าจ่ายแล้ว</button>`
         : `<button class="mark-paid-btn" data-action="redeem" data-id="${it.ref_id}">ไถ่ถอนแล้ว</button>`;
+      const payPrompt = it.type === 'expense' && S.expensePayFor === it.ref_id ? `
+        <div class="warn-options" style="width:100%;margin-top:8px">
+          <input class="field-input" type="number" data-bind="expensePayAmount" value="${esc(S.forms.expensePayAmount)}" placeholder="ยอดที่จ่ายจริงเดือนนี้"/>
+          <button class="submit-btn" data-action="confirm-expense-pay" data-id="${it.ref_id}">ยืนยัน</button>
+        </div>` : '';
       return `
-        <div class="installment-row">
+        <div class="installment-row" style="flex-wrap:wrap">
           <div style="flex:1">
             <div style="display:flex;align-items:center;gap:6px">
               <span class="near-kind" style="background:${kindBg};color:${kindFg}">${kindLabel}</span>
@@ -498,6 +526,7 @@
             <div class="installment-amount">฿${formatMoney(it.amount)} · ครบกำหนด ${formatDate(it.due_date)}</div>
           </div>
           ${action}
+          ${payPrompt}
         </div>`;
     }).join('');
 
@@ -661,20 +690,33 @@
   function renderExpenses() {
     const empty = !S.expenses.length ? `
       <div class="empty-card"><div class="empty-emoji">🧾</div><div class="empty-text">ยังไม่มีค่าใช้จ่ายประจำ กดปุ่ม + เพื่อเพิ่ม</div></div>` : '';
-    const cards = S.expenses.map((e) => `
+    const cards = S.expenses.map((e) => {
+      const isVariable = e.expense_type === 'variable';
+      const typeLabel = isVariable ? 'ไม่คงที่ ต้องจ่ายทุกเดือน' : 'ยอดคงที่ทุกเดือน';
+      const amountLine = isVariable
+        ? (e.last_amount != null ? `฿${formatMoney(e.last_amount)} <span style="font-size:12px;color:#8A9490">(ล่าสุด)</span>` : `<span style="font-size:13px;color:#8A9490">ยังไม่มีข้อมูล</span>`)
+        : `฿${formatMoney(e.amount)}`;
+      const payPrompt = S.expensePayFor === e.id ? `
+        <div class="warn-options" style="width:100%">
+          <input class="field-input" type="number" data-bind="expensePayAmount" value="${esc(S.forms.expensePayAmount)}" placeholder="ยอดที่จ่ายจริงเดือนนี้"/>
+          <button class="submit-btn" data-action="confirm-expense-pay" data-id="${e.id}">ยืนยัน</button>
+        </div>` : '';
+      return `
       <div class="debt-card">
         <div class="row-between">
           <div class="debt-name">${esc(e.name)}</div>
           <button class="icon-btn" data-action="delete-expense" data-id="${e.id}" style="width:28px;height:28px">${svgTrash()}</button>
         </div>
         <div class="row-between">
-          <div class="debt-remaining">฿${formatMoney(e.amount)}</div>
-          <div class="debt-total">จ่ายทุกวันที่ ${e.due_day}</div>
+          <div class="debt-remaining">${amountLine}</div>
+          <div class="debt-total">${typeLabel} · จ่ายทุกวันที่ ${e.due_day}</div>
         </div>
         ${e.paid_this_month
           ? `<div class="status-badge" style="background:#E7F5EE;color:#1F7A52;align-self:flex-start">จ่ายแล้วเดือนนี้</div>`
-          : `<button class="mark-paid-btn" data-action="mark-expense-paid" data-id="${e.id}" style="align-self:flex-start">บันทึกว่าจ่ายแล้ว</button>`}
-      </div>`).join('');
+          : `<button class="mark-paid-btn" data-action="mark-expense-paid" data-id="${e.id}" data-expense-type="${e.expense_type}" style="align-self:flex-start">บันทึกว่าจ่ายแล้ว</button>`}
+        ${payPrompt}
+      </div>`;
+    }).join('');
     return `<div class="screen-pad">${empty}${cards}</div>`;
   }
 
@@ -736,16 +778,25 @@
         <button class="submit-btn" data-action="submit-pawn">บันทึกตั๋วจำนำ</button>
       </div>`;
 
+    const isVariableExpense = S.forms.expenseType === 'variable';
+    const expenseTypeChips = `
+      <button class="warn-opt ${!isVariableExpense ? 'selected' : ''}" data-action="expense-type" data-key="fixed">ยอดคงที่ทุกเดือน</button>
+      <button class="warn-opt ${isVariableExpense ? 'selected' : ''}" data-action="expense-type" data-key="variable">ไม่คงที่ ต้องจ่ายทุกเดือน</button>`;
     const expenseForm = `
       <div style="display:flex;flex-direction:column;gap:14px">
         <div><div class="field-label">ชื่อค่าใช้จ่าย</div><input class="field-input" data-bind="expenseName" value="${esc(S.forms.expenseName)}" placeholder="เช่น ค่าเช่าห้อง, ค่าไฟ, ค่าเน็ต"/></div>
+        <div>
+          <div class="field-label">ลักษณะค่าใช้จ่าย</div>
+          <div class="warn-options">${expenseTypeChips}</div>
+        </div>
         <div class="field-row">
-          <div class="field-1"><div class="field-label">ยอดต่อเดือน</div><input class="field-input" type="number" data-bind="expenseAmount" value="${esc(S.forms.expenseAmount)}" placeholder="0"/></div>
+          ${isVariableExpense ? '' : `<div class="field-1"><div class="field-label">ยอดต่อเดือน</div><input class="field-input" type="number" data-bind="expenseAmount" value="${esc(S.forms.expenseAmount)}" placeholder="0"/></div>`}
           <div class="field-1">
             <div class="field-label">จ่ายทุกวันที่</div>
             <select class="field-input" data-bind="expenseDueDay">${expenseDayOptions}</select>
           </div>
         </div>
+        ${isVariableExpense ? `<div class="field-label" style="color:#92600A">ยอดไม่คงที่ (เช่น ค่าน้ำ ค่าไฟ ค่าเน็ต): กรอกยอดจริงทุกครั้งตอนบันทึกว่าจ่ายแล้ว</div>` : ''}
         <button class="submit-btn" data-action="submit-expense">บันทึกค่าใช้จ่ายประจำ</button>
       </div>`;
 
@@ -840,11 +891,13 @@
       case 'renew-final-confirm': renewPawnFinal(Number(el.dataset.id)); break;
       case 'pawn-period': setPawnPeriod(el.dataset.key); break;
       case 'pawn-category': setPawnCategory(el.dataset.key); break;
+      case 'expense-type': setExpenseType(el.dataset.key); break;
       case 'add-type': setState({ addType: el.dataset.type }); break;
       case 'submit-debt': addDebtSubmit(); break;
       case 'submit-pawn': addPawnSubmit(); break;
       case 'submit-expense': addExpenseSubmit(); break;
-      case 'mark-expense-paid': markExpensePaid(Number(el.dataset.id)); break;
+      case 'mark-expense-paid': markExpensePaid(Number(el.dataset.id), el.dataset.expenseType); break;
+      case 'confirm-expense-pay': confirmExpensePay(Number(el.dataset.id)); break;
       case 'delete-expense': deleteExpense(Number(el.dataset.id)); break;
       case 'goto-expenses': setState({ screen: 'expenses', returnScreen: 'dashboard' }); break;
       case 'warn-days': setWarnDays(Number(el.dataset.n)); break;

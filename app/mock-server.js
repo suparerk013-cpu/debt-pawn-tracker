@@ -16,7 +16,8 @@ const users = [];        // {id, username, pin_hash, warn_days, auto_lock, faile
 const debts = [];        // {id, user_id, name, total_amount, remaining_amount, payment_type, due_day, installment_amount, created_at}
 const installments = []; // {id, debt_id, due_date, amount, paid, paid_at}
 const pawns = [];        // {id, user_id, ticket_code, shop_name, item_name, category, amount, due_date, period_unit, period_value, renewal_count, status, created_at}
-const expenses = [];     // {id, user_id, name, amount, due_day, last_paid_month, created_at}
+const expenses = [];     // {id, user_id, name, expense_type, amount, due_day, created_at}
+const expensePayments = []; // {expense_id, month 'YYYY-MM', amount, paid_at}
 const JEWELRY_MAX_RENEWALS = 4;
 
 // ---------------- Helpers ----------------
@@ -252,17 +253,25 @@ on('GET', '/expenses/index.php', async (req, res) => {
   const uid = requireAuth(req, res); if (!uid) return;
   const currentMonth = new Date().toISOString().slice(0, 7);
   const list = expenses.filter((e) => e.user_id === uid).sort((a, b) => a.due_day - b.due_day)
-    .map((e) => ({ ...e, paid_this_month: e.last_paid_month === currentMonth }));
+    .map((e) => {
+      const payments = expensePayments.filter((p) => p.expense_id === e.id).sort((a, b) => b.month.localeCompare(a.month));
+      return {
+        ...e,
+        paid_this_month: !!payments.length && payments[0].month === currentMonth,
+        last_amount: payments.length ? payments[0].amount : null,
+      };
+    });
   send(res, 200, list);
 });
 
 on('POST', '/expenses/index.php', async (req, res, q, body) => {
   const uid = requireAuth(req, res); if (!uid) return;
   const name = String(body.name || '').trim();
-  const amount = Number(body.amount) || 0;
+  const expenseType = body.expense_type === 'variable' ? 'variable' : 'fixed';
   const dueDay = Math.max(1, Math.min(28, Number(body.due_day) || 5));
-  if (!name || amount <= 0) return err(res, 'กรอกชื่อและยอดค่าใช้จ่ายให้ครบ');
-  const expense = { id: nextExpenseId++, user_id: uid, name, amount, due_day: dueDay, last_paid_month: null, created_at: new Date().toISOString() };
+  const amount = expenseType === 'fixed' ? (Number(body.amount) || 0) : null;
+  if (!name || (expenseType === 'fixed' && amount <= 0)) return err(res, 'กรอกชื่อและยอดค่าใช้จ่ายให้ครบ');
+  const expense = { id: nextExpenseId++, user_id: uid, name, expense_type: expenseType, amount, due_day: dueDay, created_at: new Date().toISOString() };
   expenses.push(expense);
   send(res, 201, { id: expense.id });
 });
@@ -271,15 +280,23 @@ on('PATCH', '/expenses/mark-paid.php', async (req, res, q, body) => {
   const uid = requireAuth(req, res); if (!uid) return;
   const expense = expenses.find((e) => e.id === Number(body.id) && e.user_id === uid);
   if (!expense) return err(res, 'Not found', 404);
-  expense.last_paid_month = new Date().toISOString().slice(0, 7);
-  send(res, 200, { ok: true });
+  const amount = body.amount !== undefined ? Number(body.amount) : Number(expense.amount);
+  if (!amount || amount <= 0) return err(res, 'กรุณากรอกยอดที่จ่ายให้ถูกต้อง');
+  const month = new Date().toISOString().slice(0, 7);
+  const existing = expensePayments.find((p) => p.expense_id === expense.id && p.month === month);
+  if (existing) { existing.amount = amount; existing.paid_at = new Date().toISOString(); }
+  else expensePayments.push({ expense_id: expense.id, month, amount, paid_at: new Date().toISOString() });
+  send(res, 200, { ok: true, amount });
 });
 
 on('DELETE', '/expenses/delete.php', async (req, res, q, body) => {
   const uid = requireAuth(req, res); if (!uid) return;
   const idx = expenses.findIndex((e) => e.id === Number(body.id) && e.user_id === uid);
   if (idx === -1) return err(res, 'Not found', 404);
-  expenses.splice(idx, 1);
+  const [removed] = expenses.splice(idx, 1);
+  for (let i = expensePayments.length - 1; i >= 0; i--) {
+    if (expensePayments[i].expense_id === removed.id) expensePayments.splice(i, 1);
+  }
   send(res, 200, { ok: true });
 });
 
@@ -294,7 +311,15 @@ on('GET', '/dashboard/report.php', async (req, res) => {
   const activePawns = pawns.filter((p) => p.user_id === uid && p.status === 'active');
   const totalPawn = activePawns.reduce((a, p) => a + p.amount, 0);
   const userExpenses = expenses.filter((e) => e.user_id === uid);
-  const totalRecurring = userExpenses.reduce((a, e) => a + e.amount, 0);
+  const latestPaymentFor = (expenseId) => {
+    const payments = expensePayments.filter((p) => p.expense_id === expenseId).sort((a, b) => b.month.localeCompare(a.month));
+    return payments.length ? payments[0] : null;
+  };
+  const totalRecurring = userExpenses.reduce((a, e) => {
+    if (e.expense_type === 'fixed') return a + e.amount;
+    const latest = latestPaymentFor(e.id);
+    return a + (latest ? latest.amount : 0);
+  }, 0);
 
   const dueInstallments = installments.filter((i) => {
     if (i.paid || i.due_date < monthStart || i.due_date > monthEnd) return false;
@@ -310,11 +335,14 @@ on('GET', '/dashboard/report.php', async (req, res) => {
     .map((p) => ({ type: 'pawn', ref_id: p.id, title: p.item_name, amount: p.amount, due_date: p.due_date }));
 
   const dueExpenses = userExpenses
-    .filter((e) => e.last_paid_month !== currentMonth)
-    .map((e) => ({
-      type: 'expense', ref_id: e.id, title: e.name, amount: e.amount,
-      due_date: currentMonth + '-' + String(e.due_day).padStart(2, '0'),
-    }));
+    .filter((e) => !expensePayments.some((p) => p.expense_id === e.id && p.month === currentMonth))
+    .map((e) => {
+      const displayAmount = e.expense_type === 'fixed' ? e.amount : (latestPaymentFor(e.id)?.amount || 0);
+      return {
+        type: 'expense', ref_id: e.id, expense_type: e.expense_type, title: e.name, amount: displayAmount,
+        due_date: currentMonth + '-' + String(e.due_day).padStart(2, '0'),
+      };
+    });
 
   const breakdown = [...dueInstallments, ...duePawns, ...dueExpenses].sort((a, b) => a.due_date < b.due_date ? -1 : 1);
   const totalDueThisMonth = breakdown.reduce((a, r) => a + r.amount, 0);

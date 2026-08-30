@@ -55,7 +55,7 @@ const Api = (() => {
 
     getExpenses: () => request('/expenses/index.php'),
     createExpense: (payload) => request('/expenses/index.php', { method: 'POST', body: payload }),
-    markExpensePaid: (id) => request('/expenses/mark-paid.php', { method: 'PATCH', body: { id } }),
+    markExpensePaid: (id, amount) => request('/expenses/mark-paid.php', { method: 'PATCH', body: amount !== undefined ? { id, amount } : { id } }),
     deleteExpense: (id) => request('/expenses/delete.php', { method: 'DELETE', body: { id } }),
 
     getSettings: () => request('/settings/update.php'),
