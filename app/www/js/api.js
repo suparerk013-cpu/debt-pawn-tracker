@@ -150,6 +150,7 @@ const Api = (() => {
       item_name: String(payload.item_name || '').trim(), category, amount: Number(payload.amount) || 0,
       interest: payload.interest != null ? Number(payload.interest) : null,
       due_date: payload.due_date, period_unit: payload.period_unit || null, period_value: payload.period_value || null,
+      pawn_date: payload.pawn_date || dateStr(new Date()), renew_url: payload.renew_url || null,
       renewal_count: 0, status: 'active', created_at: nowIso(),
     });
     return { id: ref.id };
@@ -168,6 +169,8 @@ const Api = (() => {
     if (payload.due_date !== undefined) patch.due_date = payload.due_date;
     if (payload.period_unit !== undefined) patch.period_unit = payload.period_unit || null;
     if (payload.period_value !== undefined) patch.period_value = payload.period_value || null;
+    if (payload.pawn_date !== undefined) patch.pawn_date = payload.pawn_date || null;
+    if (payload.renew_url !== undefined) patch.renew_url = payload.renew_url || null;
     await ref.update(patch);
     return { ok: true };
   }
@@ -191,7 +194,7 @@ const Api = (() => {
     if (!doc.exists || doc.data().user_id !== uid()) throw new Error('Not found');
     const p = doc.data();
     const isJewelry = p.category === 'jewelry';
-    const finalDue = new Date(p.created_at); finalDue.setMonth(finalDue.getMonth() + 5);
+    const finalDue = new Date((p.pawn_date || p.created_at.slice(0, 10)) + 'T00:00:00'); finalDue.setMonth(finalDue.getMonth() + 5);
 
     if (isJewelry && (p.renewal_count || 0) >= JEWELRY_MAX_RENEWALS + 1) {
       throw new Error('ตั๋วนี้ต่อดอก/เลื่อนกำหนดครบจำนวนสูงสุดแล้ว กรุณาไถ่ถอนก่อนวันครบกำหนดสุดท้าย');
@@ -357,7 +360,7 @@ const Api = (() => {
 
     pawns.forEach((p) => {
       const days = daysUntil(p.due_date);
-      const finalDue = new Date(p.created_at); finalDue.setMonth(finalDue.getMonth() + 5);
+      const finalDue = new Date((p.pawn_date || p.created_at.slice(0, 10)) + 'T00:00:00'); finalDue.setMonth(finalDue.getMonth() + 5);
       const finalDueStr = dateStr(finalDue);
       const isForfeit = p.category === 'jewelry' && todayStr >= finalDueStr;
       if (isForfeit) {

@@ -74,6 +74,7 @@
       loginUsername: '',
       name: '', total: '', remaining: '', dueDay: '5', installmentAmount: '',
       itemName: '', shop: '', ticketCode: '', category: 'jewelry', amount: '', interest: '', dueDate: '', pawnPeriod: '1m', pawnCustomDays: '',
+      pawnDate: '', renewUrl: '',
       expenseName: '', expenseType: 'fixed', expenseAmount: '', expenseDueDay: '5', expensePayAmount: '',
       pawnFinalDate: '',
     },
@@ -189,6 +190,7 @@
         category: p.category, amount: String(p.amount), interest: p.interest != null ? String(p.interest) : '',
         pawnPeriod: matchedOpt ? matchedOpt.key : 'custom', dueDate: p.due_date,
         pawnCustomDays: isCustomCycle ? String(p.period_value) : '',
+        pawnDate: p.pawn_date || (p.created_at || '').slice(0, 10), renewUrl: p.renew_url || '',
       },
     });
   }
@@ -200,6 +202,7 @@
         name: '', total: '', remaining: '', dueDay: '5', installmentAmount: '',
         itemName: '', shop: '', ticketCode: '', category: 'jewelry', amount: '', interest: '',
         pawnPeriod: '1m', dueDate: computePeriodDate('month', 1), pawnCustomDays: '',
+        pawnDate: todayISO(), renewUrl: '',
         expenseName: '', expenseType: 'fixed', expenseAmount: '', expenseDueDay: '5',
       },
     });
@@ -396,6 +399,7 @@
         item_name: f.itemName.trim(), shop_name: f.shop.trim(), ticket_code: f.ticketCode.trim(),
         category: f.category, amount, interest: f.interest !== '' ? Number(f.interest) : null,
         due_date: period.dueDate, period_unit: period.unit, period_value: period.value,
+        pawn_date: f.pawnDate || todayISO(), renew_url: f.renewUrl.trim() || null,
       });
       setState({ screen: 'pawnList', returnScreen: 'pawnList' });
       await loadAll();
@@ -415,6 +419,7 @@
         ticket_code: f.ticketCode.trim(), category: f.category, amount,
         interest: f.interest !== '' ? Number(f.interest) : null,
         due_date: period.dueDate, period_unit: period.unit, period_value: period.value,
+        pawn_date: f.pawnDate || todayISO(), renew_url: f.renewUrl.trim() || null,
       });
       setState({ screen: 'pawnList', returnScreen: 'pawnList', editingPawnId: null });
       await loadAll();
@@ -795,7 +800,7 @@
     const categoryMeta = PAWN_CATEGORIES.find((c) => c.key === p.category) || PAWN_CATEGORIES[3];
     const isJewelry = p.category === 'jewelry';
     const renewalCount = p.renewal_count || 0;
-    const finalDueDate = isJewelry ? addMonths((p.created_at || '').slice(0, 10), 5) : null;
+    const finalDueDate = isJewelry ? addMonths(p.pawn_date || (p.created_at || '').slice(0, 10), 5) : null;
     const pastFinal = isJewelry && finalDueDate && todayISO() >= finalDueDate;
     const atCap = isJewelry && renewalCount >= JEWELRY_MAX_RENEWALS;
     const usedFinalPick = isJewelry && renewalCount > JEWELRY_MAX_RENEWALS;
@@ -867,6 +872,7 @@
           <div class="pawn-amount">฿${formatMoney(p.amount)}${p.interest ? ` <span style="font-size:12px;color:#92600A;font-weight:400">(ดอก ฿${formatMoney(p.interest)})</span>` : ''}</div>
           <div class="pawn-due">ครบกำหนด ${formatDate(p.due_date)}</div>
         </div>
+        ${p.renew_url ? `<a href="${esc(p.renew_url)}" target="_blank" rel="noopener" class="pawn-btn renew" style="text-align:center;text-decoration:none;display:block">🔗 ต่อดอกออนไลน์ (จาก QR ตั๋ว)</a>` : ''}
         ${actionsHtml}
       </div>`;
   }
@@ -921,9 +927,14 @@
         <div><div class="field-label">ชื่อสินค้า</div><input class="field-input" data-bind="itemName" value="${esc(S.forms.itemName)}" placeholder="เช่น ทองคำแท่ง 1 บาท"/></div>
         <div><div class="field-label">ร้านจำนำ</div><input class="field-input" data-bind="shop" value="${esc(S.forms.shop)}" placeholder="ชื่อร้าน"/></div>
         <div><div class="field-label">รหัสตั๋ว (ถ้ามี)</div><input class="field-input" data-bind="ticketCode" value="${esc(S.forms.ticketCode)}" placeholder="เลขที่ตั๋วจำนำ"/></div>
+        <div><div class="field-label">ลิงก์ต่อดอกออนไลน์ (จาก QR code บนตั๋ว ถ้ามี)</div><input class="field-input" type="url" data-bind="renewUrl" value="${esc(S.forms.renewUrl)}" placeholder="https://..."/></div>
         <div class="field-row">
           <div class="field-1"><div class="field-label">ยอดเงินต้น</div><input class="field-input" type="number" data-bind="amount" value="${esc(S.forms.amount)}" placeholder="0"/></div>
           <div class="field-1"><div class="field-label">ยอดต่อดอก (ถ้ามี)</div><input class="field-input" type="number" data-bind="interest" value="${esc(S.forms.interest)}" placeholder="0"/></div>
+        </div>
+        <div>
+          <div class="field-label">วันที่จำนำ</div>
+          <input class="field-input" type="date" data-bind="pawnDate" value="${esc(S.forms.pawnDate)}"/>
         </div>
         <div>
           <div class="field-label">ครบกำหนดต่อดอก</div>
@@ -935,7 +946,7 @@
           <input class="field-input" type="date" data-bind="dueDate" value="${esc(S.forms.dueDate)}"/>
         </div>
         <div class="field-label">ไม่รู้ว่าจำนำมาวันไหน แต่รู้วันครบกำหนด (เช่น ร้านนัดจ่ายวันที่ 10) ก็เลือกวันนั้นเป็นงวดแรกได้เลย — งวดถัดไปจะนับต่อจากวันนี้ไปเรื่อยๆ ทุก${isCustomPeriod ? (S.forms.pawnCustomDays || 'N') + ' วัน' : ' ' + (PERIOD_OPTIONS.find((o) => o.key === S.forms.pawnPeriod) || {}).label}</div>
-        ${S.forms.category === 'jewelry' ? `<div class="field-label" style="color:#92600A">หมวดเครื่องประดับ: ต่อดอกได้สูงสุด 4 เดือน เดือนที่ 5 คือกำหนดสุดท้าย</div>` : ''}`;
+        ${S.forms.category === 'jewelry' ? `<div class="field-label" style="color:#92600A">หมวดเครื่องประดับ: ต่อดอกได้สูงสุด 4 เดือน นับจาก "วันที่จำนำ" — เดือนที่ 5 คือกำหนดสุดท้าย</div>` : ''}`;
   }
 
   function renderPawnSettings() {
