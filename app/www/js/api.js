@@ -311,7 +311,7 @@ const Api = (() => {
     const todayStr = dateStr(now);
     const duePawns = pawns
       .filter((p) => p.category !== 'jewelry' && p.due_date >= monthStart && p.due_date <= monthEnd)
-      .map((p) => ({ type: 'pawn', ref_id: p.id, title: p.item_name, amount: p.amount, due_date: p.due_date }));
+      .map((p) => ({ type: 'pawn', ref_id: p.id, title: p.item_name, amount: p.interest || 0, due_date: p.due_date }));
     // Jewelry: once accrued interest reaches month 4, it becomes a "due now" line item —
     // there's no calendar due_date to check against since renewal no longer shifts a date.
     pawns.filter((p) => p.category === 'jewelry').forEach((p) => {
