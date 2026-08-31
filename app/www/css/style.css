@@ -139,3 +139,16 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 .loading-overlay { position: absolute; inset: 0; background: rgba(245,247,246,0.7); display: flex; align-items: center; justify-content: center; z-index: 40; }
 .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid #DCE3E1; border-top-color: #0E6B5C; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Custom date picker (Buddhist-era calendar) ---------- */
+.date-field-btn { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+.cal-popup { margin-top: 8px; background: #fff; border-radius: 14px; padding: 12px; border: 1px solid #E7ECEA; box-shadow: 0 8px 20px rgba(0,0,0,0.08); position: relative; z-index: 15; }
+.cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cal-title { font-size: 14.5px; font-weight: 700; color: #1B2422; }
+.cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 11.5px; color: #A6ACAA; font-weight: 600; margin-bottom: 4px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-day { height: 36px; border-radius: 10px; border: none; background: transparent; font-size: 13.5px; color: #1B2422; cursor: pointer; }
+.cal-day:hover { background: #EEF2F1; }
+.cal-day.today { font-weight: 700; color: #0E6B5C; }
+.cal-day.selected { background: #0E6B5C; color: #fff; font-weight: 700; }
+.cal-today-btn { width: 100%; margin-top: 8px; padding: 9px; border-radius: 10px; border: 1px dashed #DCE3E1; background: transparent; color: #0E6B5C; font-size: 13px; font-weight: 600; cursor: pointer; }

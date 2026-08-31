@@ -4,6 +4,8 @@
   'use strict';
 
   const THAI_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  const THAI_MONTHS_FULL = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+  const THAI_WEEKDAYS = ['อา','จ','อ','พ','พฤ','ศ','ส'];
   const STATUS_META = {
     paid:      { label: 'จ่ายแล้ว',        bg: '#E7F5EE', fg: '#1F7A52', dot: '#2E9E6D' },
     overdue:   { label: 'ค้างชำระ',        bg: '#FDEAEA', fg: '#B23B3B', dot: '#D64545' },
@@ -27,7 +29,6 @@
     { key: 'electronics', label: 'อุปกรณ์อิเล็กทรอนิก', icon: '📱' },
     { key: 'other',       label: 'อื่นๆ',          icon: '📦' },
   ];
-  const JEWELRY_MAX_RENEWALS = 4;
 
   // Calendar dates use LOCAL Y/M/D, never toISOString() (which converts to UTC and can shift
   // the date by a day in timezones ahead of UTC, e.g. Thailand at UTC+7).
@@ -65,6 +66,8 @@
     editingExpenseId: null,
     renewPickerFor: null,
     expensePayFor: null,
+    datePickerFor: null,       // which form field's calendar popup is open, if any
+    datePickerView: { y: 0, m: 0 }, // {y,m} (Gregorian, m 0-indexed) the open popup's month grid is showing
     debts: [],
     pawns: [],
     expenses: [],
@@ -77,7 +80,6 @@
       itemName: '', shop: '', ticketCode: '', category: 'jewelry', amount: '', interest: '', dueDate: '', pawnPeriod: '1m', pawnCustomDays: '',
       pawnDate: '', renewUrl: '',
       expenseName: '', expenseType: 'fixed', expenseAmount: '', expenseDueDay: '5', expensePayAmount: '',
-      pawnFinalDate: '',
     },
   };
 
@@ -209,6 +211,62 @@
     });
   }
   function setForms(patch) { S.forms = { ...S.forms, ...patch }; render(); }
+
+  // ---------------- Custom Buddhist-era calendar (replaces native <input type="date">) ----------------
+  function openDatePicker(field) {
+    if (S.datePickerFor === field) { setState({ datePickerFor: null }); return; }
+    const current = S.forms[field];
+    const base = current ? new Date(current + 'T00:00:00') : new Date();
+    setState({ datePickerFor: field, datePickerView: { y: base.getFullYear(), m: base.getMonth() } });
+  }
+  function shiftDatePickerMonth(delta) {
+    let { y, m } = S.datePickerView;
+    m += delta;
+    if (m < 0) { m = 11; y--; } else if (m > 11) { m = 0; y++; }
+    setState({ datePickerView: { y, m } });
+  }
+  function pickDate(field, dateStr) {
+    S.forms = { ...S.forms, [field]: dateStr };
+    setState({ datePickerFor: null });
+  }
+  function renderDateField(field, label) {
+    const value = S.forms[field];
+    const isOpen = S.datePickerFor === field;
+    return `
+      <div>
+        <div class="field-label">${label}</div>
+        <button type="button" class="field-input date-field-btn" data-action="toggle-date-picker" data-field="${field}">
+          <span style="${value ? '' : 'color:#A6ACAA'}">${value ? formatDate(value) : 'เลือกวันที่'}</span>
+          ${svgCalendar()}
+        </button>
+        ${isOpen ? renderCalendarPopup(field) : ''}
+      </div>`;
+  }
+  function renderCalendarPopup(field) {
+    const { y, m } = S.datePickerView;
+    const selected = S.forms[field];
+    const startWeekday = new Date(y, m, 1).getDay();
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const todayStr = todayISO();
+    let cells = '';
+    for (let i = 0; i < startWeekday; i++) cells += `<div></div>`;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const cls = ['cal-day', dateStr === selected ? 'selected' : '', dateStr === todayStr ? 'today' : ''].filter(Boolean).join(' ');
+      cells += `<button type="button" class="${cls}" data-action="pick-date" data-field="${field}" data-date="${dateStr}">${d}</button>`;
+    }
+    return `
+      <div class="cal-popup">
+        <div class="cal-header">
+          <button type="button" class="icon-btn" data-action="shift-date-month" data-delta="-1">${svgChevronDir('left')}</button>
+          <div class="cal-title">${THAI_MONTHS_FULL[m]} ${y + 543}</div>
+          <button type="button" class="icon-btn" data-action="shift-date-month" data-delta="1">${svgChevronDir('right')}</button>
+        </div>
+        <div class="cal-weekdays">${THAI_WEEKDAYS.map((w) => `<div>${w}</div>`).join('')}</div>
+        <div class="cal-grid">${cells}</div>
+        <button type="button" class="cal-today-btn" data-action="pick-date" data-field="${field}" data-date="${todayStr}">วันนี้</button>
+      </div>`;
+  }
   function setPawnPeriod(key) {
     const opt = PERIOD_OPTIONS.find((o) => o.key === key);
     if (!opt) return;
@@ -292,8 +350,10 @@
       refreshReport();
     } catch (e) { showToast('ไถ่ถอนไม่สำเร็จ'); }
   }
-  function toggleRenewPicker(id) { setState({ renewPickerFor: S.renewPickerFor === id ? null : id, forms: { ...S.forms, pawnFinalDate: '' } }); }
+  function toggleRenewPicker(id) { setState({ renewPickerFor: S.renewPickerFor === id ? null : id }); }
 
+  // Only reached for non-jewelry categories now — jewelry's renewal_count-based cap and
+  // final-date-pick flow were replaced entirely by the monthly interest accrual model.
   async function renewPawn(id, opt) {
     const period = opt.unit === 'month' ? { months: opt.value } : { days: opt.value };
     try {
@@ -303,18 +363,6 @@
       setState({ renewPickerFor: null });
       showToast('ต่อดอกแล้ว เลื่อนกำหนดเป็น ' + formatDate(res.due_date));
     } catch (e) { showToast(e.message || 'ต่อดอกไม่สำเร็จ'); }
-  }
-
-  async function renewPawnFinal(id) {
-    const date = S.forms.pawnFinalDate;
-    if (!date) { showToast('กรุณาเลือกวันที่จะชำระ'); return; }
-    try {
-      const res = await Api.renewPawn(id, { due_date: date });
-      const p = S.pawns.find((x) => x.id === id);
-      if (p) { p.due_date = res.due_date; p.renewal_count = (p.renewal_count || 0) + 1; }
-      setState({ renewPickerFor: null, forms: { ...S.forms, pawnFinalDate: '' } });
-      showToast('บันทึกวันชำระเป็น ' + formatDate(res.due_date));
-    } catch (e) { showToast(e.message || 'บันทึกไม่สำเร็จ'); }
   }
 
   async function addDebtSubmit() {
@@ -379,6 +427,12 @@
   // clicked, but it stays editable, since the actual first due date (set by the pawnshop) may
   // not fall exactly N days from today, especially when entering a ticket pawned in the past.
   function resolvePawnPeriod(f) {
+    // Jewelry has no period/due-date UI at all — due date is always pawn_date+5 months,
+    // computed here rather than picked, since the monthly interest model replaced renewal.
+    if (f.category === 'jewelry') {
+      const pawnDate = f.pawnDate || todayISO();
+      return { unit: null, value: null, dueDate: addMonths(pawnDate, 5) };
+    }
     if (f.pawnPeriod === 'custom') {
       const days = Number(f.pawnCustomDays) || 0;
       if (days <= 0) return null;
@@ -963,51 +1017,69 @@
     return `<div class="screen-pad">${empty}${cards}</div>`;
   }
 
+  // Whole calendar months between two 'YYYY-MM-DD' dates (0 until the day-of-month is reached again).
+  function monthsBetween(fromStr, toStr) {
+    const from = new Date(fromStr + 'T00:00:00');
+    const to = new Date(toStr + 'T00:00:00');
+    let months = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+    if (to.getDate() < from.getDate()) months--;
+    return Math.max(0, months);
+  }
+
   function renderPawnCard(p, from) {
     const categoryMeta = PAWN_CATEGORIES.find((c) => c.key === p.category) || PAWN_CATEGORIES[3];
     const isJewelry = p.category === 'jewelry';
-    const renewalCount = p.renewal_count || 0;
-    const finalDueDate = isJewelry ? addMonths(p.pawn_date || (p.created_at || '').slice(0, 10), 5) : null;
-    const pastFinal = isJewelry && finalDueDate && todayISO() >= finalDueDate;
-    const atCap = isJewelry && renewalCount >= JEWELRY_MAX_RENEWALS;
-    const usedFinalPick = isJewelry && renewalCount > JEWELRY_MAX_RENEWALS;
+    const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
+    const shopLine = esc(p.shop_name || 'ไม่ระบุร้าน') + (p.ticket_code ? ' · เลขที่ตั๋ว ' + esc(p.ticket_code) : '');
+    const pawnDateLine = `<div class="pawn-shop">จำนำเมื่อ ${formatDate(pawnDate)}</div>`;
 
-    const days = daysUntil(p.due_date);
-    let badgeLabel, badgeBg, badgeFg;
-    if (pastFinal) {
-      badgeLabel = '⚠️ ใกล้ขาดจำนำ'; badgeBg = '#D64545'; badgeFg = '#fff';
+    let badgeLabel, badgeBg, badgeFg, bodyHtml, actionsHtml;
+
+    if (isJewelry) {
+      // New model (replaces the old renewal_count-based cap entirely): interest accrues by
+      // calendar month from the pawn date — "ยอดต่อดอก" is a per-month rate, not a flat fee.
+      // Month 4 triggers the "approaching final month" warning; the 5th month is still the
+      // hard forfeit deadline, computed the same way as before.
+      const finalDueDate = addMonths(pawnDate, 5);
+      const pastFinal = todayISO() >= finalDueDate;
+      const monthNumber = monthsBetween(pawnDate, todayISO()) + 1;
+      const atFourMonths = monthNumber >= 4;
+      const accrued = (p.interest || 0) * monthNumber;
+
+      if (pastFinal) {
+        badgeLabel = '⚠️ ใกล้ขาดจำนำ'; badgeBg = '#D64545'; badgeFg = '#fff';
+      } else if (atFourMonths) {
+        badgeLabel = '⚠️ ครบ 4 เดือนแล้ว'; badgeBg = '#FFF3DD'; badgeFg = '#92600A';
+      } else {
+        badgeLabel = `จำนำมาแล้ว ${monthNumber} เดือน`; badgeBg = '#EFEFEF'; badgeFg = '#6B6B6B';
+      }
+
+      bodyHtml = `
+        <div class="pawn-footer">
+          <div class="pawn-amount">฿${formatMoney(p.amount)}</div>
+          <div class="pawn-due">ครบกำหนดสุดท้าย ${formatDate(finalDueDate)}</div>
+        </div>
+        ${p.interest ? `<div class="field-label" style="margin-bottom:0${pastFinal ? ';color:#B23B3B' : atFourMonths ? ';color:#92600A' : ''}">ดอกเบี้ย ฿${formatMoney(p.interest)}/เดือน × ${monthNumber} เดือน = สะสม ฿${formatMoney(accrued)}</div>` : ''}
+        ${pastFinal ? `<div class="field-label" style="color:#B23B3B;margin-bottom:0">เลยกำหนดสุดท้ายแล้ว กรุณาไถ่ถอนโดยเร็ว มิฉะนั้นจะเสียสิทธิ์</div>`
+          : atFourMonths ? `<div class="field-label" style="color:#92600A;margin-bottom:0">ครบ 4 เดือนแล้ว เข้าสู่เดือนสุดท้าย (ไม่เกิน ${formatDate(finalDueDate)})</div>` : ''}`;
+      actionsHtml = `<div class="pawn-actions"><button class="pawn-btn redeem" data-action="redeem" data-id="${p.id}">ไถ่ถอนแล้ว</button></div>`;
     } else {
+      // Unchanged for non-jewelry: pick-a-period renewal pushes the due date forward.
+      const days = daysUntil(p.due_date);
       const status = days < 0 ? 'overdue' : (days <= S.warnDays ? 'due_soon' : 'upcoming');
       const meta = STATUS_META[status];
       badgeLabel = daysLabel(days, status); badgeBg = meta.bg; badgeFg = meta.fg;
-    }
 
-    const shopLine = esc(p.shop_name || 'ไม่ระบุร้าน') + (p.ticket_code ? ' · เลขที่ตั๋ว ' + esc(p.ticket_code) : '');
-
-    let actionsHtml;
-    if (usedFinalPick) {
-      actionsHtml = `
-        <div class="pawn-actions"><button class="pawn-btn redeem" data-action="redeem" data-id="${p.id}">ไถ่ถอนแล้ว</button></div>
-        <div class="field-label" style="color:#B23B3B;margin-bottom:0">ต่อดอก/เลื่อนกำหนดครบสูงสุดแล้ว กรุณาไถ่ถอนก่อนวันครบกำหนดสุดท้าย</div>`;
-    } else if (atCap) {
-      actionsHtml = `
-        <div class="pawn-actions">
-          <button class="pawn-btn redeem" data-action="redeem" data-id="${p.id}">ไถ่ถอนแล้ว</button>
-          <button class="pawn-btn renew" data-action="renew-open" data-id="${p.id}">เลือกวันชำระ</button>
-        </div>
-        <div class="field-label" style="color:#92600A;margin-bottom:0">ต่อดอกครบ 4 เดือนแล้ว เข้าสู่เดือนสุดท้าย — เลือกวันที่จะชำระได้ ไม่เกิน ${formatDate(finalDueDate)}</div>
-        ${S.renewPickerFor === p.id ? `
-          <div style="display:flex;gap:8px;align-items:flex-end;padding-top:2px">
-            <div style="flex:1"><div class="field-label">เลือกวันที่จะชำระ</div><input class="field-input" type="date" data-bind="pawnFinalDate" value="${esc(S.forms.pawnFinalDate)}" min="${todayISO()}" max="${finalDueDate}"/></div>
-            <button class="submit-btn" style="width:auto;padding:13px 18px" data-action="renew-final-confirm" data-id="${p.id}">ยืนยัน</button>
-          </div>` : ''}`;
-    } else {
+      bodyHtml = `
+        <div class="pawn-footer">
+          <div class="pawn-amount">฿${formatMoney(p.amount)}${p.interest ? ` <span style="font-size:12px;color:#92600A;font-weight:400">(ดอก ฿${formatMoney(p.interest)})</span>` : ''}</div>
+          <div class="pawn-due">ครบกำหนด ${formatDate(p.due_date)}</div>
+        </div>`;
       actionsHtml = `
         <div class="pawn-actions">
           <button class="pawn-btn redeem" data-action="redeem" data-id="${p.id}">ไถ่ถอนแล้ว</button>
           <button class="pawn-btn renew" data-action="renew-open" data-id="${p.id}">ต่อดอก</button>
         </div>
-        ${isJewelry ? `<div class="field-label" style="margin-bottom:0">ต่อดอกแล้ว ${renewalCount}/${JEWELRY_MAX_RENEWALS} ครั้ง</div>` : ''}
         ${S.renewPickerFor === p.id ? `
           <div style="display:flex;flex-direction:column;gap:6px;padding-top:2px">
             <div class="field-label" style="margin-bottom:0">เลือกระยะเวลาต่อดอก</div>
@@ -1029,16 +1101,14 @@
             </div>
             <div class="pawn-item">${esc(p.item_name)}</div>
             <div class="pawn-shop">${shopLine}</div>
+            ${pawnDateLine}
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
             <div class="near-badge" style="background:${badgeBg};color:${badgeFg}">${badgeLabel}</div>
             <button class="icon-btn" data-action="open-pawn-settings" data-id="${p.id}" data-from="${from || ''}" style="width:28px;height:28px">${svgGear('#5C6C68')}</button>
           </div>
         </div>
-        <div class="pawn-footer">
-          <div class="pawn-amount">฿${formatMoney(p.amount)}${p.interest ? ` <span style="font-size:12px;color:#92600A;font-weight:400">(ดอก ฿${formatMoney(p.interest)})</span>` : ''}</div>
-          <div class="pawn-due">ครบกำหนด ${formatDate(p.due_date)}</div>
-        </div>
+        ${bodyHtml}
         ${p.renew_url ? `<a href="${esc(p.renew_url)}" target="_blank" rel="noopener" class="pawn-btn renew" style="text-align:center;text-decoration:none;display:block">🔗 ต่อดอกออนไลน์ (จาก QR ตั๋ว)</a>` : ''}
         ${actionsHtml}
       </div>`;
@@ -1082,6 +1152,7 @@
 
   // Shared by the "add pawn" form and the pawn settings screen — same fields either way.
   function renderPawnFormFields() {
+    const isJewelry = S.forms.category === 'jewelry';
     const isCustomPeriod = S.forms.pawnPeriod === 'custom';
     const periodChips = PERIOD_OPTIONS.map((o) =>
       `<button class="warn-opt ${o.key === S.forms.pawnPeriod ? 'selected' : ''}" data-action="pawn-period" data-key="${o.key}">${o.label}</button>`
@@ -1089,6 +1160,17 @@
     const categoryChips = PAWN_CATEGORIES.map((c) =>
       `<button class="warn-opt ${c.key === S.forms.category ? 'selected' : ''}" data-action="pawn-category" data-key="${c.key}">${c.icon} ${c.label}</button>`
     ).join('');
+    // Jewelry doesn't use the period/due-date renewal system at all — its due date is always
+    // pawn_date+5 months, computed automatically, and interest accrues monthly instead (see
+    // renderPawnCard). Every other category keeps the original pick-a-period flow unchanged.
+    const periodSection = isJewelry ? '' : `
+        <div>
+          <div class="field-label">ครบกำหนดต่อดอก</div>
+          <div class="warn-options">${periodChips}</div>
+        </div>
+        ${isCustomPeriod ? `<div><div class="field-label">ระบุจำนวนวันต่อรอบ</div><input class="field-input" type="number" min="1" data-bind="pawnCustomDays" value="${esc(S.forms.pawnCustomDays)}" placeholder="เช่น 7, 10, 20"/></div>` : ''}
+        ${renderDateField('dueDate', 'วันครบกำหนดงวดแรก')}
+        <div class="field-label">ไม่รู้ว่าจำนำมาวันไหน แต่รู้วันครบกำหนด (เช่น ร้านนัดจ่ายวันที่ 10) ก็เลือกวันนั้นเป็นงวดแรกได้เลย — งวดถัดไปจะนับต่อจากวันนี้ไปเรื่อยๆ ทุก${isCustomPeriod ? (S.forms.pawnCustomDays || 'N') + ' วัน' : ' ' + (PERIOD_OPTIONS.find((o) => o.key === S.forms.pawnPeriod) || {}).label}</div>`;
     return `
         <div>
           <div class="field-label">หมวดหมู่</div>
@@ -1100,23 +1182,11 @@
         <div><div class="field-label">ลิงก์ต่อดอกออนไลน์ (จาก QR code บนตั๋ว ถ้ามี)</div><input class="field-input" type="url" data-bind="renewUrl" value="${esc(S.forms.renewUrl)}" placeholder="https://..."/></div>
         <div class="field-row">
           <div class="field-1"><div class="field-label">ยอดเงินต้น</div><input class="field-input" type="number" data-bind="amount" value="${esc(S.forms.amount)}" placeholder="0"/></div>
-          <div class="field-1"><div class="field-label">ยอดต่อดอก (ถ้ามี)</div><input class="field-input" type="number" data-bind="interest" value="${esc(S.forms.interest)}" placeholder="0"/></div>
+          <div class="field-1"><div class="field-label">${isJewelry ? 'อัตราดอกเบี้ยต่อเดือน' : 'ยอดต่อดอก (ถ้ามี)'}</div><input class="field-input" type="number" data-bind="interest" value="${esc(S.forms.interest)}" placeholder="0"/></div>
         </div>
-        <div>
-          <div class="field-label">วันที่จำนำ</div>
-          <input class="field-input" type="date" data-bind="pawnDate" value="${esc(S.forms.pawnDate)}"/>
-        </div>
-        <div>
-          <div class="field-label">ครบกำหนดต่อดอก</div>
-          <div class="warn-options">${periodChips}</div>
-        </div>
-        ${isCustomPeriod ? `<div><div class="field-label">ระบุจำนวนวันต่อรอบ</div><input class="field-input" type="number" min="1" data-bind="pawnCustomDays" value="${esc(S.forms.pawnCustomDays)}" placeholder="เช่น 7, 10, 20"/></div>` : ''}
-        <div>
-          <div class="field-label">วันครบกำหนดงวดแรก</div>
-          <input class="field-input" type="date" data-bind="dueDate" value="${esc(S.forms.dueDate)}"/>
-        </div>
-        <div class="field-label">ไม่รู้ว่าจำนำมาวันไหน แต่รู้วันครบกำหนด (เช่น ร้านนัดจ่ายวันที่ 10) ก็เลือกวันนั้นเป็นงวดแรกได้เลย — งวดถัดไปจะนับต่อจากวันนี้ไปเรื่อยๆ ทุก${isCustomPeriod ? (S.forms.pawnCustomDays || 'N') + ' วัน' : ' ' + (PERIOD_OPTIONS.find((o) => o.key === S.forms.pawnPeriod) || {}).label}</div>
-        ${S.forms.category === 'jewelry' ? `<div class="field-label" style="color:#92600A">หมวดเครื่องประดับ: ต่อดอกได้สูงสุด 4 เดือน นับจาก "วันที่จำนำ" — เดือนที่ 5 คือกำหนดสุดท้าย</div>` : ''}`;
+        ${renderDateField('pawnDate', 'วันที่จำนำ')}
+        ${periodSection}
+        ${isJewelry ? `<div class="field-label" style="color:#92600A">หมวดเครื่องประดับ: ดอกเบี้ยคิดเป็นรายเดือนจาก "วันที่จำนำ" (เดือนละเท่ากับอัตราที่กรอกไว้ สะสมไปเรื่อยๆ) ครบเดือนที่ 4 จะเตือน เดือนที่ 5 คือกำหนดไถ่ถอนสุดท้าย</div>` : ''}`;
   }
 
   function renderPawnSettings() {
@@ -1351,6 +1421,8 @@
   function svgLock() { return `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M7 7V5a5 5 0 0110 0v2"/></svg>`; }
   function svgBack(c) { return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M15 18l-6-6 6-6"/></svg>`; }
   function svgChevron() { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A6ACAA" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>`; }
+  function svgChevronDir(dir) { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1B2422" stroke-width="2"><path d="${dir === 'left' ? 'M15 18l-6-6 6-6' : 'M9 18l6-6-6-6'}"/></svg>`; }
+  function svgCalendar() { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5C6C68" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke-linecap="round"/></svg>`; }
   function svgPlus() { return `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`; }
   function svgPawn() { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B8862F" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M8 12h8"/></svg>`; }
   function svgTrash() { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B23B3B" stroke-width="1.8"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0v12a2 2 0 002 2h6a2 2 0 002-2V7"/></svg>`; }
@@ -1394,7 +1466,6 @@
         if (opt && opt.unit) renewPawn(el.dataset.id, opt);
         break;
       }
-      case 'renew-final-confirm': renewPawnFinal(el.dataset.id); break;
       case 'pawn-period': setPawnPeriod(el.dataset.key); break;
       case 'pawn-category': setPawnCategory(el.dataset.key); break;
       case 'expense-type': setExpenseType(el.dataset.key); break;
@@ -1410,6 +1481,9 @@
       case 'goto-expenses': setState({ screen: 'expenses', returnScreen: 'dashboard' }); break;
       case 'warn-days': setWarnDays(Number(el.dataset.n)); break;
       case 'export-excel': exportReportToExcel(); break;
+      case 'toggle-date-picker': openDatePicker(el.dataset.field); break;
+      case 'shift-date-month': shiftDatePickerMonth(Number(el.dataset.delta)); break;
+      case 'pick-date': pickDate(el.dataset.field, el.dataset.date); break;
       case 'test-notification': testNotification(); break;
       case 'fab-click':
         if (S.screen === 'dashboard') setState({ fabMenuOpen: !S.fabMenuOpen });

@@ -12,6 +12,14 @@ const Api = (() => {
   // shift the date by a day in timezones ahead of UTC, e.g. Thailand at UTC+7).
   const dateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const monthStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  // Whole calendar months between two 'YYYY-MM-DD' dates (0 until the day-of-month recurs).
+  function monthsBetween(fromStr, toStr) {
+    const from = new Date(fromStr + 'T00:00:00');
+    const to = new Date(toStr + 'T00:00:00');
+    let months = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+    if (to.getDate() < from.getDate()) months--;
+    return Math.max(0, months);
+  }
 
   async function ensureAuth() {
     if (!firebase.auth().currentUser) await firebase.auth().signInAnonymously();
@@ -137,7 +145,6 @@ const Api = (() => {
   }
 
   // ---------------- Pawns ----------------
-  const JEWELRY_MAX_RENEWALS = 4;
   function pawnOut(doc) { return { id: doc.id, ...doc.data() }; }
   async function getPawns() {
     const snap = await db().collection('pawns').where('user_id', '==', uid()).where('status', '==', 'active').get();
@@ -188,28 +195,15 @@ const Api = (() => {
     await ref.update({ status: 'redeemed' });
     return { ok: true };
   }
+  // Jewelry no longer renews this way — its due date is fixed to pawn_date+5 months and
+  // interest accrues monthly instead (see app.js renderPawnCard); this endpoint is only for
+  // the other categories' pick-a-period renewal.
   async function renewPawn(id, period) {
     const ref = db().collection('pawns').doc(id);
     const doc = await ref.get();
     if (!doc.exists || doc.data().user_id !== uid()) throw new Error('Not found');
     const p = doc.data();
-    const isJewelry = p.category === 'jewelry';
-    const finalDue = new Date((p.pawn_date || p.created_at.slice(0, 10)) + 'T00:00:00'); finalDue.setMonth(finalDue.getMonth() + 5);
-
-    if (isJewelry && (p.renewal_count || 0) >= JEWELRY_MAX_RENEWALS + 1) {
-      throw new Error('ตั๋วนี้ต่อดอก/เลื่อนกำหนดครบจำนวนสูงสุดแล้ว กรุณาไถ่ถอนก่อนวันครบกำหนดสุดท้าย');
-    }
-    if (isJewelry && (p.renewal_count || 0) >= JEWELRY_MAX_RENEWALS) {
-      const requested = String(period.due_date || '').trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(requested)) throw new Error('กรุณาเลือกวันที่จะชำระ (ไม่เกินวันครบกำหนดสุดท้าย)');
-      const newDue = new Date(requested + 'T00:00:00');
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      if (newDue < today) throw new Error('เลือกวันที่ในอดีตไม่ได้');
-      if (newDue > finalDue) throw new Error('เลือกวันเกินวันครบกำหนดสุดท้าย (' + dateStr(finalDue) + ') ไม่ได้');
-      const dueDate = dateStr(newDue);
-      await ref.update({ due_date: dueDate, renewal_count: (p.renewal_count || 0) + 1, status: 'active' });
-      return { ok: true, due_date: dueDate, final: true };
-    }
+    if (p.category === 'jewelry') throw new Error('เครื่องประดับไม่ใช้การต่อดอกแบบนี้แล้ว ดูดอกเบี้ยสะสมที่การ์ดตั๋วแทน');
 
     const d = new Date(p.due_date + 'T00:00:00');
     let periodUnit, periodValue;
@@ -314,9 +308,18 @@ const Api = (() => {
       if (i.paid || i.due_date < monthStart || i.due_date > monthEnd) return;
       dueInstallments.push({ type: 'installment', ref_id: i.id, debt_id: d.id, title: d.name, amount: i.amount, due_date: i.due_date });
     }));
+    const todayStr = dateStr(now);
     const duePawns = pawns
-      .filter((p) => p.due_date >= monthStart && p.due_date <= monthEnd)
+      .filter((p) => p.category !== 'jewelry' && p.due_date >= monthStart && p.due_date <= monthEnd)
       .map((p) => ({ type: 'pawn', ref_id: p.id, title: p.item_name, amount: p.amount, due_date: p.due_date }));
+    // Jewelry: once accrued interest reaches month 4, it becomes a "due now" line item —
+    // there's no calendar due_date to check against since renewal no longer shifts a date.
+    pawns.filter((p) => p.category === 'jewelry').forEach((p) => {
+      const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
+      const monthNumber = monthsBetween(pawnDate, todayStr) + 1;
+      if (monthNumber < 4 || !p.interest) return;
+      duePawns.push({ type: 'pawn', ref_id: p.id, title: `${p.item_name} (ดอกเบี้ยสะสม)`, amount: p.interest * monthNumber, due_date: todayStr });
+    });
     const dueExpenses = expenses
       .filter((e) => !(e.payments && e.payments[currentMonth]))
       .map((e) => {
@@ -376,13 +379,23 @@ const Api = (() => {
     }));
 
     pawns.forEach((p) => {
+      const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
+      if (p.category === 'jewelry') {
+        const finalDue = new Date(pawnDate + 'T00:00:00'); finalDue.setMonth(finalDue.getMonth() + 5);
+        const finalDueStr = dateStr(finalDue);
+        if (todayStr >= finalDueStr) {
+          items.push({ id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id, title: '⚠️ ตั๋วจำนำใกล้ขาดแล้ว!', body: `${p.item_name} — ครบกำหนดไถ่ถอนสุดท้ายวันนี้ (${finalDueStr})`, sent_at: todayStr + 'T00:00:00' });
+          return;
+        }
+        const monthNumber = monthsBetween(pawnDate, todayStr) + 1;
+        if (monthNumber >= 4 && p.interest) {
+          const accrued = p.interest * monthNumber;
+          items.push({ id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id, title: '⚠️ ครบ 4 เดือนแล้ว', body: `${p.item_name} — ดอกเบี้ยสะสม ฿${Math.round(accrued).toLocaleString('th-TH')} ใกล้ครบกำหนดสุดท้าย (${finalDueStr})`, sent_at: todayStr + 'T00:00:00' });
+        }
+        return;
+      }
       const days = daysUntil(p.due_date);
-      const finalDue = new Date((p.pawn_date || p.created_at.slice(0, 10)) + 'T00:00:00'); finalDue.setMonth(finalDue.getMonth() + 5);
-      const finalDueStr = dateStr(finalDue);
-      const isForfeit = p.category === 'jewelry' && todayStr >= finalDueStr;
-      if (isForfeit) {
-        items.push({ id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id, title: '⚠️ ตั๋วจำนำใกล้ขาดแล้ว!', body: `${p.item_name} — ครบกำหนดไถ่ถอนสุดท้ายวันนี้ (${finalDueStr})`, sent_at: todayStr + 'T00:00:00' });
-      } else if (days <= warnDays) {
+      if (days <= warnDays) {
         const title = days < 0 ? 'ตั๋วจำนำเลยกำหนด' : 'ตั๋วจำนำใกล้ครบกำหนด';
         const body = `${p.item_name} — ฿${Math.round(p.amount).toLocaleString('th-TH')} ครบกำหนด ${p.due_date}`;
         items.push({ id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id, title, body, sent_at: todayStr + 'T00:00:00' });
