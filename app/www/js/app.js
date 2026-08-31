@@ -856,13 +856,6 @@
     return `
       <div class="screen-pad">
         ${stats}
-        <button class="card" data-action="export-excel" style="width:100%;border:none;cursor:pointer;background:linear-gradient(135deg,#0E6B5C,#123F35);display:flex;align-items:center;gap:14px;text-align:left;font:inherit;margin-bottom:16px">
-          <div style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,0.16);display:flex;align-items:center;justify-content:center;flex:none">${svgDownload()}</div>
-          <div style="flex:1;min-width:0">
-            <div style="color:#fff;font-weight:700;font-size:15px">ดาวน์โหลดรายงาน Excel</div>
-            <div style="color:rgba(255,255,255,0.78);font-size:12.5px">หนี้สิน · ตั๋วจำนำ · ค่าใช้จ่ายประจำ ทั้งหมด</div>
-          </div>
-        </button>
         <div class="section-title">รายการที่ต้องชำระเดือนนี้</div>
         ${r.breakdown.length ? `<div style="display:flex;flex-direction:column;gap:10px">${rows}</div>` : `
           <div class="empty-card"><div class="empty-emoji">✅</div><div class="empty-text">ชำระครบทุกรายการของเดือนนี้แล้ว</div></div>`}
@@ -1283,6 +1276,13 @@
     const opts = [1, 3, 5, 7, 14].map((n) => `<button class="warn-opt ${n === S.warnDays ? 'selected' : ''}" data-action="warn-days" data-n="${n}">${n} วัน</button>`).join('');
     return `
       <div class="screen-pad">
+        <button class="card" data-action="export-excel" style="width:100%;border:none;cursor:pointer;background:linear-gradient(135deg,#0E6B5C,#123F35);display:flex;align-items:center;gap:14px;text-align:left;font:inherit">
+          <div style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,0.16);display:flex;align-items:center;justify-content:center;flex:none">${svgDownload()}</div>
+          <div style="flex:1;min-width:0">
+            <div style="color:#fff;font-weight:700;font-size:15px">ดาวน์โหลดรายงาน Excel</div>
+            <div style="color:rgba(255,255,255,0.78);font-size:12.5px">หนี้สิน · ตั๋วจำนำ · ค่าใช้จ่ายประจำ ทั้งหมด</div>
+          </div>
+        </button>
         <div class="card" style="display:flex;flex-direction:column;gap:12px">
           <div class="settings-row-title">แจ้งเตือนล่วงหน้ากี่วันก่อนครบกำหนด</div>
           <div class="warn-options">${opts}</div>
