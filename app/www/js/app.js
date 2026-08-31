@@ -362,6 +362,7 @@
       if (p) { p.due_date = res.due_date; p.renewal_count = (p.renewal_count || 0) + 1; }
       setState({ renewPickerFor: null });
       showToast('ต่อดอกแล้ว เลื่อนกำหนดเป็น ' + formatDate(res.due_date));
+      refreshReport();
     } catch (e) { showToast(e.message || 'ต่อดอกไม่สำเร็จ'); }
   }
 
@@ -887,11 +888,23 @@
         ? `<button class="mark-paid-btn" data-action="mark-paid" data-id="${it.ref_id}" data-debt="${it.debt_id}">บันทึกว่าจ่ายแล้ว</button>`
         : it.type === 'expense'
         ? `<button class="mark-paid-btn" data-action="mark-expense-paid" data-id="${it.ref_id}" data-expense-type="${it.expense_type}">บันทึกว่าจ่ายแล้ว</button>`
-        : `<button class="mark-paid-btn" data-action="redeem" data-id="${it.ref_id}">ไถ่ถอนแล้ว</button>`;
+        : `<div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="mark-paid-btn" data-action="redeem" data-id="${it.ref_id}">ไถ่ถอนแล้ว</button>
+            ${it.category !== 'jewelry' ? `<button class="pawn-btn renew" data-action="renew-open" data-id="${it.ref_id}">ต่อดอก</button>` : ''}
+          </div>`;
       const payPrompt = it.type === 'expense' && S.expensePayFor === it.ref_id ? `
         <div class="warn-options" style="width:100%;margin-top:8px">
           <input class="field-input" type="number" data-bind="expensePayAmount" value="${esc(S.forms.expensePayAmount)}" placeholder="ยอดที่จ่ายจริงเดือนนี้"/>
           <button class="submit-btn" data-action="confirm-expense-pay" data-id="${it.ref_id}">ยืนยัน</button>
+        </div>` : '';
+      const renewPrompt = it.type === 'pawn' && it.category !== 'jewelry' && S.renewPickerFor === it.ref_id ? `
+        <div style="display:flex;flex-direction:column;gap:6px;padding-top:2px;width:100%">
+          <div class="field-label" style="margin-bottom:0">เลือกระยะเวลาต่อดอก</div>
+          <div class="warn-options">
+            ${PERIOD_OPTIONS.filter((o) => o.unit && o.key !== 'custom').map((o) =>
+              `<button class="warn-opt" data-action="renew-confirm" data-id="${it.ref_id}" data-key="${o.key}">${o.label}</button>`
+            ).join('')}
+          </div>
         </div>` : '';
       return `
         <div class="installment-row" style="flex-wrap:wrap">
@@ -904,6 +917,7 @@
           </div>
           ${action}
           ${payPrompt}
+          ${renewPrompt}
         </div>`;
     }).join('');
 
