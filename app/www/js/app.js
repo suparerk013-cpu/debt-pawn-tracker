@@ -46,7 +46,7 @@
   function todayISO() { return dateStr(new Date()); }
 
   const S = {
-    screen: 'login',           // login | dashboard | debtList | debtDetail | debtSettings | pawnList | pawnSettings | expenses | addEdit | settings | notifications
+    screen: 'login',           // login | dashboard | debtList | debtDetail | debtSettings | pawnList | pawnSettings | expenses | expenseSettings | addEdit | settings | notifications
     currentUser: JSON.parse(localStorage.getItem('dpt_user') || 'null'), // {id, username, is_admin} — the user whose data is being viewed
     realUser: JSON.parse(localStorage.getItem('dpt_real_user') || 'null'), // the account that actually logged in (only differs from currentUser while an admin is "viewing as" someone else)
     switchableUsers: [],
@@ -608,7 +608,7 @@
   }
 
   function renderApp() {
-    const isMainTab = ['dashboard', 'debtList', 'pawnList', 'report', 'settings'].includes(S.screen);
+    const isMainTab = ['dashboard', 'debtList', 'pawnList', 'settings'].includes(S.screen);
     const showBack = ['debtDetail', 'debtSettings', 'pawnSettings', 'expenseSettings', 'addEdit', 'expenses', 'notifications'].includes(S.screen);
     const showFab = ['dashboard', 'debtList', 'pawnList', 'expenses'].includes(S.screen);
 
@@ -652,7 +652,7 @@
     const addTypeTitle = { debt: 'เพิ่มหนี้ใหม่', pawn: 'เพิ่มตั๋วจำนำใหม่', expense: 'เพิ่มค่าใช้จ่ายประจำ' };
     const titleMap = {
       debtList: 'หนี้สินทั้งหมด', pawnList: 'ตั๋วจำนำ', settings: 'ตั้งค่า',
-      expenses: 'ค่าใช้จ่ายประจำต่อเดือน', report: 'รายงานภาพรวม',
+      expenses: 'ค่าใช้จ่ายประจำต่อเดือน',
       debtDetail: (S.debts.find((d) => d.id === S.selectedDebtId) || {}).name || 'รายละเอียดหนี้',
       debtSettings: 'ตั้งค่าหนี้',
       pawnSettings: 'ตั้งค่าตั๋วจำนำ',
@@ -660,7 +660,7 @@
       notifications: 'การแจ้งเตือน',
       addEdit: addTypeTitle[S.addType] || 'เพิ่มรายการใหม่',
     };
-    const cls = ['debtList', 'pawnList', 'settings', 'expenses', 'report'].includes(S.screen) ? 'header-title-md' : 'header-title';
+    const cls = ['debtList', 'pawnList', 'settings', 'expenses'].includes(S.screen) ? 'header-title-md' : 'header-title';
     const trailing = S.screen === 'debtDetail'
       ? `<button class="icon-btn" data-action="open-debt-settings" data-id="${S.selectedDebtId}">${svgGear('#1B2422')}</button>`
       : (S.screen === 'notifications' && S.unreadCount ? `<button class="mark-paid-btn" style="padding:6px 10px;font-size:12px" data-action="mark-all-read">อ่านทั้งหมด</button>` : '');
@@ -676,7 +676,6 @@
       case 'pawnList': return renderPawnList();
       case 'pawnSettings': return renderPawnSettings();
       case 'expenseSettings': return renderExpenseSettings();
-      case 'report': return renderReport();
       case 'expenses': return renderExpenses();
       case 'addEdit': return renderAddEdit();
       case 'settings': return renderSettings();
@@ -744,6 +743,7 @@
           </div>
           ${svgChevron()}
         </div>
+        ${renderCategorizedBreakdown()}
       </div>`;
   }
 
@@ -1014,10 +1014,12 @@
   // screens (tapping a debt goes to its detail page); pawns are grouped by category so
   // jewelry and electronics (different renewal rules) never get mixed in one list, each
   // still using the same card/actions as the pawn list (tap the gear to edit).
-  function renderReport() {
-    if (!S.debts.length && !S.pawns.length && !S.expenses.length) {
-      return `<div class="screen-pad"><div class="empty-card"><div class="empty-emoji">📊</div><div class="empty-text">ยังไม่มีข้อมูลให้แสดงรายงาน</div></div></div>`;
-    }
+  // Full breakdown by type, appended below the dashboard's own summary — debts and expenses
+  // render the same card as their own list screens (tapping one goes to its detail page);
+  // pawns are grouped by category so jewelry and electronics (different renewal rules) never
+  // get mixed in one list, each still using the same card/actions as the pawn list.
+  function renderCategorizedBreakdown() {
+    if (!S.debts.length && !S.pawns.length && !S.expenses.length) return '';
 
     const debtSection = S.debts.length ? `
       <div class="section-title">หนี้สิน (${S.debts.length})</div>
@@ -1025,7 +1027,7 @@
         ${S.debts.map((d) => {
           const paidPercent = d.total_amount ? Math.min(100, Math.round((d.total_amount - d.remaining_amount) / d.total_amount * 100)) : 0;
           return `
-            <div class="debt-card" data-action="open-debt" data-id="${d.id}" data-from="report">
+            <div class="debt-card" data-action="open-debt" data-id="${d.id}" data-from="dashboard">
               <div class="row-between">
                 <div class="debt-name">${esc(d.name)}</div>
                 ${svgChevron()}
@@ -1046,17 +1048,17 @@
       return `
       <div class="section-title">${c.icon} ตั๋วจำนำ — ${c.label} (${items.length})</div>
       <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px">
-        ${items.map((p) => renderPawnCard(p, 'report')).join('')}
+        ${items.map((p) => renderPawnCard(p, 'dashboard')).join('')}
       </div>`;
     }).join('');
 
     const expenseSection = S.expenses.length ? `
       <div class="section-title">ค่าใช้จ่ายประจำ (${S.expenses.length})</div>
       <div style="display:flex;flex-direction:column;gap:10px">
-        ${S.expenses.map((e) => renderExpenseCard(e, 'report')).join('')}
+        ${S.expenses.map((e) => renderExpenseCard(e, 'dashboard')).join('')}
       </div>` : '';
 
-    return `<div class="screen-pad">${debtSection}${pawnSections}${expenseSection}</div>`;
+    return `${debtSection}${pawnSections}${expenseSection}`;
   }
 
   // Shared by the "add expense" form and the expense settings screen — same fields either way.
@@ -1206,7 +1208,6 @@
       { key: 'dashboard', label: 'หน้าแรก', icon: svgHome },
       { key: 'debtList', label: 'หนี้สิน', icon: svgList },
       { key: 'pawnList', label: 'ตั๋วจำนำ', icon: svgTicket },
-      { key: 'report', label: 'รายงาน', icon: svgReport },
       { key: 'settings', label: 'ตั้งค่า', icon: svgGear },
     ];
     return `<div class="bottom-nav">${items.map((it) => {
@@ -1227,7 +1228,6 @@
   function svgList(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg>`; }
   function svgTicket(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 12l6-8h9a3 3 0 013 3v3l-8 9a2 2 0 01-3 0l-7-6z"/><circle cx="15" cy="9" r="1.4"/></svg>`; }
   function svgGear(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.6 7.6 0 000-2l1.9-1.5-2-3.4-2.3.6a7.7 7.7 0 00-1.7-1l-.3-2.4h-4l-.3 2.4a7.7 7.7 0 00-1.7 1l-2.3-.6-2 3.4L4.6 11a7.6 7.6 0 000 2l-1.9 1.5 2 3.4 2.3-.6a7.7 7.7 0 001.7 1l.3 2.4h4l.3-2.4a7.7 7.7 0 001.7-1l2.3.6 2-3.4z"/></svg>`; }
-  function svgReport(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M4 20V11M10 20V4M16 20v-6M22 20H2" stroke-linecap="round"/></svg>`; }
   function svgBell(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c || '#1B2422'}" stroke-width="1.8"><path d="M6 9a6 6 0 0112 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9z"/><path d="M9.5 17a2.5 2.5 0 005 0"/></svg>`; }
   function svgLogout(c) { return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c || '#1B2422'}" stroke-width="1.8"><path d="M15 17l5-5-5-5M20 12H9"/><path d="M9 19H6a2 2 0 01-2-2V7a2 2 0 012-2h3"/></svg>`; }
   function svgSwap(c) { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${c || '#0E6B5C'}" stroke-width="2"><path d="M7 4l-4 4 4 4M3 8h13M17 20l4-4-4-4M21 16H8"/></svg>`; }
