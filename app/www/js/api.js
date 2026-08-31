@@ -148,10 +148,35 @@ const Api = (() => {
     const ref = await db().collection('pawns').add({
       user_id: uid(), ticket_code: payload.ticket_code || null, shop_name: payload.shop_name || null,
       item_name: String(payload.item_name || '').trim(), category, amount: Number(payload.amount) || 0,
+      interest: payload.interest != null ? Number(payload.interest) : null,
       due_date: payload.due_date, period_unit: payload.period_unit || null, period_value: payload.period_value || null,
       renewal_count: 0, status: 'active', created_at: nowIso(),
     });
     return { id: ref.id };
+  }
+  async function updatePawn(payload) {
+    const ref = db().collection('pawns').doc(payload.id);
+    const doc = await ref.get();
+    if (!doc.exists || doc.data().user_id !== uid()) throw new Error('Not found');
+    const patch = {};
+    if (payload.item_name !== undefined) patch.item_name = String(payload.item_name).trim();
+    if (payload.shop_name !== undefined) patch.shop_name = payload.shop_name || null;
+    if (payload.ticket_code !== undefined) patch.ticket_code = payload.ticket_code || null;
+    if (payload.category !== undefined) patch.category = ['jewelry', 'car', 'electronics', 'other'].includes(payload.category) ? payload.category : 'other';
+    if (payload.amount !== undefined) patch.amount = Number(payload.amount) || 0;
+    if (payload.interest !== undefined) patch.interest = payload.interest != null ? Number(payload.interest) : null;
+    if (payload.due_date !== undefined) patch.due_date = payload.due_date;
+    if (payload.period_unit !== undefined) patch.period_unit = payload.period_unit || null;
+    if (payload.period_value !== undefined) patch.period_value = payload.period_value || null;
+    await ref.update(patch);
+    return { ok: true };
+  }
+  async function deletePawn(id) {
+    const ref = db().collection('pawns').doc(id);
+    const doc = await ref.get();
+    if (!doc.exists || doc.data().user_id !== uid()) throw new Error('Not found');
+    await ref.delete();
+    return { ok: true };
   }
   async function redeemPawn(id) {
     const ref = db().collection('pawns').doc(id);
@@ -376,7 +401,7 @@ const Api = (() => {
     setActiveUser,
     login, switchUser, getUsers,
     getDebts, getDebtDetail, createDebt, updateDebt, closeDebt, deleteDebt, markInstallmentPaid,
-    getPawns, createPawn, redeemPawn, renewPawn,
+    getPawns, createPawn, updatePawn, deletePawn, redeemPawn, renewPawn,
     getReport,
     getExpenses, createExpense, markExpensePaid, deleteExpense,
     getSettings, updateSettings,

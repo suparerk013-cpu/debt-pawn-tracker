@@ -19,7 +19,7 @@
     { key: '2m',  label: '2 เดือน',  unit: 'month', value: 2 },
     { key: '3m',  label: '3 เดือน',  unit: 'month', value: 3 },
     { key: '4m',  label: '4 เดือน',  unit: 'month', value: 4 },
-    { key: 'custom', label: 'กำหนดเอง', unit: null, value: null },
+    { key: 'custom', label: 'กำหนดเอง (ระบุวัน)', unit: 'day', value: null },
   ];
   const PAWN_CATEGORIES = [
     { key: 'jewelry',     label: 'เครื่องประดับ', icon: '💍' },
@@ -46,7 +46,7 @@
   function todayISO() { return dateStr(new Date()); }
 
   const S = {
-    screen: 'login',           // login | dashboard | debtList | debtDetail | debtSettings | pawnList | expenses | addEdit | settings | notifications
+    screen: 'login',           // login | dashboard | debtList | debtDetail | debtSettings | pawnList | pawnSettings | expenses | addEdit | settings | notifications
     currentUser: JSON.parse(localStorage.getItem('dpt_user') || 'null'), // {id, username, is_admin} — the user whose data is being viewed
     realUser: JSON.parse(localStorage.getItem('dpt_real_user') || 'null'), // the account that actually logged in (only differs from currentUser while an admin is "viewing as" someone else)
     switchableUsers: [],
@@ -61,6 +61,7 @@
     toast: null,
     selectedDebtId: null,
     editingDebtId: null,
+    editingPawnId: null,
     renewPickerFor: null,
     expensePayFor: null,
     debts: [],
@@ -72,7 +73,7 @@
     forms: {
       loginUsername: '',
       name: '', total: '', remaining: '', dueDay: '5', installmentAmount: '',
-      itemName: '', shop: '', ticketCode: '', category: 'jewelry', amount: '', dueDate: '', pawnPeriod: '1m',
+      itemName: '', shop: '', ticketCode: '', category: 'jewelry', amount: '', interest: '', dueDate: '', pawnPeriod: '1m', pawnCustomDays: '',
       expenseName: '', expenseType: 'fixed', expenseAmount: '', expenseDueDay: '5', expensePayAmount: '',
       pawnFinalDate: '',
     },
@@ -176,14 +177,29 @@
       },
     });
   }
+  function openPawnSettings(id) {
+    const p = S.pawns.find((x) => x.id === id);
+    if (!p) return;
+    const matchedOpt = PERIOD_OPTIONS.find((o) => o.key !== 'custom' && o.unit === p.period_unit && o.value === p.period_value);
+    const isCustomCycle = !matchedOpt && p.period_unit === 'day' && p.period_value;
+    setState({
+      screen: 'pawnSettings', editingPawnId: id, returnScreen: 'pawnList',
+      forms: {
+        ...S.forms, itemName: p.item_name, shop: p.shop_name || '', ticketCode: p.ticket_code || '',
+        category: p.category, amount: String(p.amount), interest: p.interest != null ? String(p.interest) : '',
+        pawnPeriod: matchedOpt ? matchedOpt.key : 'custom', dueDate: p.due_date,
+        pawnCustomDays: isCustomCycle ? String(p.period_value) : '',
+      },
+    });
+  }
   function openAdd(type, from) {
     setState({
       screen: 'addEdit', addType: type, returnScreen: from, fabMenuOpen: false,
       forms: {
         ...S.forms,
         name: '', total: '', remaining: '', dueDay: '5', installmentAmount: '',
-        itemName: '', shop: '', ticketCode: '', category: 'jewelry', amount: '',
-        pawnPeriod: '1m', dueDate: computePeriodDate('month', 1),
+        itemName: '', shop: '', ticketCode: '', category: 'jewelry', amount: '', interest: '',
+        pawnPeriod: '1m', dueDate: computePeriodDate('month', 1), pawnCustomDays: '',
         expenseName: '', expenseType: 'fixed', expenseAmount: '', expenseDueDay: '5',
       },
     });
@@ -352,22 +368,65 @@
     } catch (e) { showToast(e.message || 'ลบไม่สำเร็จ'); }
   }
 
+  // Custom period: user types a raw day count (e.g. 10, 20, 45) instead of picking a preset —
+  // resolves to the same {unit:'day', value:N} shape the presets use, so renewals/notifications
+  // treat it identically (renew again N days later, repeating).
+  function resolvePawnPeriod(f) {
+    if (f.pawnPeriod === 'custom') {
+      const days = Number(f.pawnCustomDays) || 0;
+      if (days <= 0) return null;
+      return { unit: 'day', value: days, dueDate: computePeriodDate('day', days) };
+    }
+    const opt = PERIOD_OPTIONS.find((o) => o.key === f.pawnPeriod);
+    if (!opt) return null;
+    return { unit: opt.unit, value: opt.value, dueDate: f.dueDate };
+  }
+
   async function addPawnSubmit() {
     const f = S.forms;
     const amount = Number(f.amount) || 0;
-    if (!f.itemName.trim() || !amount || !f.dueDate) { showToast('กรอกข้อมูลตั๋วจำนำให้ครบ'); return; }
-    const opt = PERIOD_OPTIONS.find((o) => o.key === f.pawnPeriod);
+    if (!f.itemName.trim() || !amount) { showToast('กรอกข้อมูลตั๋วจำนำให้ครบ'); return; }
+    const period = resolvePawnPeriod(f);
+    if (!period || !period.dueDate) { showToast('กรอกข้อมูลตั๋วจำนำให้ครบ (ระบุจำนวนวันให้ถูกต้อง)'); return; }
     try {
       await Api.createPawn({
         item_name: f.itemName.trim(), shop_name: f.shop.trim(), ticket_code: f.ticketCode.trim(),
-        category: f.category, amount, due_date: f.dueDate,
-        period_unit: opt && opt.unit ? opt.unit : null,
-        period_value: opt && opt.value ? opt.value : null,
+        category: f.category, amount, interest: f.interest !== '' ? Number(f.interest) : null,
+        due_date: period.dueDate, period_unit: period.unit, period_value: period.value,
       });
       setState({ screen: 'pawnList', returnScreen: 'pawnList' });
       await loadAll();
       showToast('เพิ่มตั๋วจำนำแล้ว');
     } catch (e) { showToast(e.message || 'บันทึกไม่สำเร็จ'); }
+  }
+
+  async function editPawnSubmit() {
+    const f = S.forms;
+    const amount = Number(f.amount) || 0;
+    if (!f.itemName.trim() || !amount) { showToast('กรอกข้อมูลตั๋วจำนำให้ครบ'); return; }
+    const period = resolvePawnPeriod(f);
+    if (!period || !period.dueDate) { showToast('กรอกข้อมูลตั๋วจำนำให้ครบ (ระบุจำนวนวันให้ถูกต้อง)'); return; }
+    try {
+      await Api.updatePawn({
+        id: S.editingPawnId, item_name: f.itemName.trim(), shop_name: f.shop.trim(),
+        ticket_code: f.ticketCode.trim(), category: f.category, amount,
+        interest: f.interest !== '' ? Number(f.interest) : null,
+        due_date: period.dueDate, period_unit: period.unit, period_value: period.value,
+      });
+      setState({ screen: 'pawnList', returnScreen: 'pawnList', editingPawnId: null });
+      await loadAll();
+      showToast('บันทึกการแก้ไขแล้ว');
+    } catch (e) { showToast(e.message || 'บันทึกไม่สำเร็จ'); }
+  }
+
+  async function deletePawnAction(id) {
+    if (!confirm('ยืนยันลบตั๋วจำนำนี้ถาวร?')) return;
+    try {
+      await Api.deletePawn(id);
+      setState({ screen: 'pawnList', returnScreen: 'pawnList', editingPawnId: null });
+      await loadAll();
+      showToast('ลบตั๋วจำนำแล้ว');
+    } catch (e) { showToast(e.message || 'ลบไม่สำเร็จ'); }
   }
 
   function setExpenseType(type) { setForms({ expenseType: type }); }
@@ -476,7 +535,7 @@
 
   function renderApp() {
     const isMainTab = ['dashboard', 'debtList', 'pawnList', 'settings'].includes(S.screen);
-    const showBack = ['debtDetail', 'debtSettings', 'addEdit', 'expenses', 'notifications'].includes(S.screen);
+    const showBack = ['debtDetail', 'debtSettings', 'pawnSettings', 'addEdit', 'expenses', 'notifications'].includes(S.screen);
     const showFab = ['dashboard', 'debtList', 'pawnList', 'expenses'].includes(S.screen);
 
     return `
@@ -522,6 +581,7 @@
       expenses: 'ค่าใช้จ่ายประจำต่อเดือน',
       debtDetail: (S.debts.find((d) => d.id === S.selectedDebtId) || {}).name || 'รายละเอียดหนี้',
       debtSettings: 'ตั้งค่าหนี้',
+      pawnSettings: 'ตั้งค่าตั๋วจำนำ',
       notifications: 'การแจ้งเตือน',
       addEdit: addTypeTitle[S.addType] || 'เพิ่มรายการใหม่',
     };
@@ -539,6 +599,7 @@
       case 'debtDetail': return renderDebtDetail();
       case 'debtSettings': return renderDebtSettings();
       case 'pawnList': return renderPawnList();
+      case 'pawnSettings': return renderPawnSettings();
       case 'expenses': return renderExpenses();
       case 'addEdit': return renderAddEdit();
       case 'settings': return renderSettings();
@@ -751,7 +812,7 @@
           <div style="display:flex;flex-direction:column;gap:6px;padding-top:2px">
             <div class="field-label" style="margin-bottom:0">เลือกระยะเวลาต่อดอก</div>
             <div class="warn-options">
-              ${PERIOD_OPTIONS.filter((o) => o.unit).map((o) =>
+              ${PERIOD_OPTIONS.filter((o) => o.unit && o.key !== 'custom').map((o) =>
                 `<button class="warn-opt" data-action="renew-confirm" data-id="${p.id}" data-key="${o.key}">${o.label}</button>`
               ).join('')}
             </div>
@@ -769,10 +830,13 @@
             <div class="pawn-item">${esc(p.item_name)}</div>
             <div class="pawn-shop">${shopLine}</div>
           </div>
-          <div class="near-badge" style="background:${badgeBg};color:${badgeFg}">${badgeLabel}</div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+            <div class="near-badge" style="background:${badgeBg};color:${badgeFg}">${badgeLabel}</div>
+            <button class="icon-btn" data-action="open-pawn-settings" data-id="${p.id}" style="width:28px;height:28px">${svgGear('#5C6C68')}</button>
+          </div>
         </div>
         <div class="pawn-footer">
-          <div class="pawn-amount">฿${formatMoney(p.amount)}</div>
+          <div class="pawn-amount">฿${formatMoney(p.amount)}${p.interest ? ` <span style="font-size:12px;color:#92600A;font-weight:400">(ดอก ฿${formatMoney(p.interest)})</span>` : ''}</div>
           <div class="pawn-due">ครบกำหนด ${formatDate(p.due_date)}</div>
         </div>
         ${actionsHtml}
@@ -812,6 +876,52 @@
     return `<div class="screen-pad">${empty}${cards}</div>`;
   }
 
+  // Shared by the "add pawn" form and the pawn settings screen — same fields either way.
+  function renderPawnFormFields() {
+    const isCustomPeriod = S.forms.pawnPeriod === 'custom';
+    const periodChips = PERIOD_OPTIONS.map((o) =>
+      `<button class="warn-opt ${o.key === S.forms.pawnPeriod ? 'selected' : ''}" data-action="pawn-period" data-key="${o.key}">${o.label}</button>`
+    ).join('');
+    const categoryChips = PAWN_CATEGORIES.map((c) =>
+      `<button class="warn-opt ${c.key === S.forms.category ? 'selected' : ''}" data-action="pawn-category" data-key="${c.key}">${c.icon} ${c.label}</button>`
+    ).join('');
+    return `
+        <div>
+          <div class="field-label">หมวดหมู่</div>
+          <div class="warn-options">${categoryChips}</div>
+        </div>
+        <div><div class="field-label">ชื่อสินค้า</div><input class="field-input" data-bind="itemName" value="${esc(S.forms.itemName)}" placeholder="เช่น ทองคำแท่ง 1 บาท"/></div>
+        <div><div class="field-label">ร้านจำนำ</div><input class="field-input" data-bind="shop" value="${esc(S.forms.shop)}" placeholder="ชื่อร้าน"/></div>
+        <div><div class="field-label">รหัสตั๋ว (ถ้ามี)</div><input class="field-input" data-bind="ticketCode" value="${esc(S.forms.ticketCode)}" placeholder="เลขที่ตั๋วจำนำ"/></div>
+        <div class="field-row">
+          <div class="field-1"><div class="field-label">ยอดเงินต้น</div><input class="field-input" type="number" data-bind="amount" value="${esc(S.forms.amount)}" placeholder="0"/></div>
+          <div class="field-1"><div class="field-label">ยอดต่อดอก (ถ้ามี)</div><input class="field-input" type="number" data-bind="interest" value="${esc(S.forms.interest)}" placeholder="0"/></div>
+        </div>
+        <div>
+          <div class="field-label">ครบกำหนดต่อดอก</div>
+          <div class="warn-options">${periodChips}</div>
+        </div>
+        ${isCustomPeriod
+          ? `<div><div class="field-label">ระบุจำนวนวัน</div><input class="field-input" type="number" min="1" data-bind="pawnCustomDays" value="${esc(S.forms.pawnCustomDays)}" placeholder="เช่น 7, 10, 20"/></div>
+             <div class="field-label">ตั๋วจะครบกำหนดต่อดอกทุกๆ ${S.forms.pawnCustomDays || 'N'} วัน เริ่มนับจากวันนี้ แล้ววนซ้ำแบบนี้ไปเรื่อยๆ ทุกครั้งที่ต่อดอก</div>`
+          : `<div class="field-label">ครบกำหนดต่อดอก: ${S.forms.dueDate ? formatDate(S.forms.dueDate) : '-'}</div>`}
+        ${S.forms.category === 'jewelry' ? `<div class="field-label" style="color:#92600A">หมวดเครื่องประดับ: ต่อดอกได้สูงสุด 4 เดือน เดือนที่ 5 คือกำหนดสุดท้าย</div>` : ''}`;
+  }
+
+  function renderPawnSettings() {
+    return `
+      <div class="screen-pad">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          ${renderPawnFormFields()}
+          <button class="submit-btn" data-action="submit-edit-pawn">บันทึกการแก้ไข</button>
+        </div>
+        <div class="section-title">การจัดการตั๋วจำนำ</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="mark-paid-btn" style="width:100%;background:#FDEAEA;color:#B23B3B" data-action="delete-pawn" data-id="${S.editingPawnId}">🗑 ลบตั๋วจำนำถาวร</button>
+        </div>
+      </div>`;
+  }
+
   function renderAddEdit() {
     const isDebt = S.addType === 'debt';
     const isPawn = S.addType === 'pawn';
@@ -841,32 +951,9 @@
         <button class="submit-btn" data-action="submit-debt">บันทึกหนี้ใหม่</button>
       </div>`;
 
-    const isCustomPeriod = S.forms.pawnPeriod === 'custom';
-    const periodChips = PERIOD_OPTIONS.map((o) =>
-      `<button class="warn-opt ${o.key === S.forms.pawnPeriod ? 'selected' : ''}" data-action="pawn-period" data-key="${o.key}">${o.label}</button>`
-    ).join('');
-    const categoryChips = PAWN_CATEGORIES.map((c) =>
-      `<button class="warn-opt ${c.key === S.forms.category ? 'selected' : ''}" data-action="pawn-category" data-key="${c.key}">${c.icon} ${c.label}</button>`
-    ).join('');
-
     const pawnForm = `
       <div style="display:flex;flex-direction:column;gap:14px">
-        <div>
-          <div class="field-label">หมวดหมู่</div>
-          <div class="warn-options">${categoryChips}</div>
-        </div>
-        <div><div class="field-label">ชื่อสินค้า</div><input class="field-input" data-bind="itemName" value="${esc(S.forms.itemName)}" placeholder="เช่น ทองคำแท่ง 1 บาท"/></div>
-        <div><div class="field-label">ร้านจำนำ</div><input class="field-input" data-bind="shop" value="${esc(S.forms.shop)}" placeholder="ชื่อร้าน"/></div>
-        <div><div class="field-label">รหัสตั๋ว (ถ้ามี)</div><input class="field-input" data-bind="ticketCode" value="${esc(S.forms.ticketCode)}" placeholder="เลขที่ตั๋วจำนำ"/></div>
-        <div><div class="field-label">ยอดเงิน</div><input class="field-input" type="number" data-bind="amount" value="${esc(S.forms.amount)}" placeholder="0"/></div>
-        <div>
-          <div class="field-label">ครบกำหนดต่อดอก</div>
-          <div class="warn-options">${periodChips}</div>
-        </div>
-        ${isCustomPeriod
-          ? `<div><div class="field-label">วันครบกำหนด</div><input class="field-input" type="date" data-bind="dueDate" value="${esc(S.forms.dueDate)}"/></div>`
-          : `<div class="field-label">ครบกำหนดต่อดอก: ${S.forms.dueDate ? formatDate(S.forms.dueDate) : '-'}${S.forms.pawnPeriod !== 'custom' ? ' (แจ้งเตือนซ้ำทุกรอบถ้ายังไม่ต่อดอก)' : ''}</div>`}
-        ${S.forms.category === 'jewelry' ? `<div class="field-label" style="color:#92600A">หมวดเครื่องประดับ: ต่อดอกได้สูงสุด 4 เดือน เดือนที่ 5 คือกำหนดสุดท้าย</div>` : ''}
+        ${renderPawnFormFields()}
         <button class="submit-btn" data-action="submit-pawn">บันทึกตั๋วจำนำ</button>
       </div>`;
 
@@ -1003,6 +1090,9 @@
       case 'delete-debt': deleteDebt(el.dataset.id); break;
       case 'mark-paid': markPaid(el.dataset.id, el.dataset.debt); break;
       case 'redeem': redeemPawn(el.dataset.id); break;
+      case 'open-pawn-settings': openPawnSettings(el.dataset.id); break;
+      case 'submit-edit-pawn': editPawnSubmit(); break;
+      case 'delete-pawn': deletePawnAction(el.dataset.id); break;
       case 'renew-open': toggleRenewPicker(el.dataset.id); break;
       case 'renew-confirm': {
         const opt = PERIOD_OPTIONS.find((o) => o.key === el.dataset.key);
