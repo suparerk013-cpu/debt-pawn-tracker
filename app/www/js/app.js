@@ -65,6 +65,7 @@
     editingPawnId: null,
     editingExpenseId: null,
     renewPickerFor: null,
+    redeemPromptFor: null,
     expensePayFor: null,
     datePickerFor: null,       // which form field's calendar popup is open, if any
     datePickerView: { y: 0, m: 0 }, // {y,m} (Gregorian, m 0-indexed) the open popup's month grid is showing
@@ -80,6 +81,7 @@
       itemName: '', shop: '', ticketCode: '', category: 'jewelry', amount: '', interest: '', dueDate: '', pawnPeriod: '1m', pawnCustomDays: '',
       pawnDate: '', renewUrl: '',
       expenseName: '', expenseType: 'fixed', expenseAmount: '', expenseDueDay: '5', expensePayAmount: '',
+      redeemAmount: '',
     },
   };
 
@@ -341,14 +343,24 @@
     } catch (e) { showToast('บันทึกไม่สำเร็จ'); }
   }
 
-  async function redeemPawn(id) {
+  function openRedeemPrompt(id) {
+    if (S.redeemPromptFor === id) { setState({ redeemPromptFor: null }); return; }
+    const p = S.pawns.find((x) => x.id === id);
+    setState({ redeemPromptFor: id, forms: { ...S.forms, redeemAmount: p ? String(p.amount) : '' } });
+  }
+  async function redeemPawn(id, amount) {
     try {
-      await Api.redeemPawn(id);
+      await Api.redeemPawn(id, amount);
       S.pawns = S.pawns.filter((p) => p.id !== id);
+      setState({ redeemPromptFor: null, forms: { ...S.forms, redeemAmount: '' } });
       showToast('ไถ่ถอนสำเร็จ');
       render();
       refreshReport();
     } catch (e) { showToast('ไถ่ถอนไม่สำเร็จ'); }
+  }
+  function confirmRedeem(id) {
+    const amount = Number(S.forms.redeemAmount) || 0;
+    redeemPawn(id, amount || null);
   }
   function toggleRenewPicker(id) { setState({ renewPickerFor: S.renewPickerFor === id ? null : id }); }
 
@@ -889,7 +901,7 @@
         : it.type === 'expense'
         ? `<button class="mark-paid-btn" data-action="mark-expense-paid" data-id="${it.ref_id}" data-expense-type="${it.expense_type}">บันทึกว่าจ่ายแล้ว</button>`
         : `<div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="mark-paid-btn" data-action="redeem" data-id="${it.ref_id}">ไถ่ถอนแล้ว</button>
+            <button class="mark-paid-btn" data-action="redeem-open" data-id="${it.ref_id}">ไถ่ถอนแล้ว</button>
             ${it.category !== 'jewelry' ? `<button class="pawn-btn renew" data-action="renew-open" data-id="${it.ref_id}">ต่อดอก</button>` : ''}
           </div>`;
       const payPrompt = it.type === 'expense' && S.expensePayFor === it.ref_id ? `
@@ -917,6 +929,7 @@
           </div>
           ${action}
           ${payPrompt}
+          ${it.type === 'pawn' ? renderRedeemPrompt(it.ref_id) : ''}
           ${renewPrompt}
         </div>`;
     }).join('');
@@ -1040,6 +1053,17 @@
     return Math.max(0, months);
   }
 
+  // Shared by pawn cards and the dashboard's due-this-month list — lets the redeem amount
+  // be typed in (the payout can differ from the recorded pawn amount) instead of assuming it.
+  function renderRedeemPrompt(id) {
+    if (S.redeemPromptFor !== id) return '';
+    return `
+      <div class="warn-options" style="width:100%;margin-top:8px">
+        <input class="field-input" type="number" data-bind="redeemAmount" value="${esc(S.forms.redeemAmount)}" placeholder="จำนวนเงินไถ่ถอน"/>
+        <button class="submit-btn" data-action="redeem-confirm" data-id="${id}">ยืนยันไถ่ถอน</button>
+      </div>`;
+  }
+
   function renderPawnCard(p, from) {
     const categoryMeta = PAWN_CATEGORIES.find((c) => c.key === p.category) || PAWN_CATEGORIES[3];
     const isJewelry = p.category === 'jewelry';
@@ -1076,7 +1100,7 @@
         ${p.interest ? `<div class="field-label" style="margin-bottom:0${pastFinal ? ';color:#B23B3B' : atFourMonths ? ';color:#92600A' : ''}">ดอกเบี้ย ฿${formatMoney(p.interest)}/เดือน × ${monthNumber} เดือน = สะสม ฿${formatMoney(accrued)}</div>` : ''}
         ${pastFinal ? `<div class="field-label" style="color:#B23B3B;margin-bottom:0">เลยกำหนดสุดท้ายแล้ว กรุณาไถ่ถอนโดยเร็ว มิฉะนั้นจะเสียสิทธิ์</div>`
           : atFourMonths ? `<div class="field-label" style="color:#92600A;margin-bottom:0">ครบ 4 เดือนแล้ว เข้าสู่เดือนสุดท้าย (ไม่เกิน ${formatDate(finalDueDate)})</div>` : ''}`;
-      actionsHtml = `<div class="pawn-actions"><button class="pawn-btn redeem" data-action="redeem" data-id="${p.id}">ไถ่ถอนแล้ว</button></div>`;
+      actionsHtml = `<div class="pawn-actions"><button class="pawn-btn redeem" data-action="redeem-open" data-id="${p.id}">ไถ่ถอนแล้ว</button></div>${renderRedeemPrompt(p.id)}`;
     } else {
       // Unchanged for non-jewelry: pick-a-period renewal pushes the due date forward.
       const days = daysUntil(p.due_date);
@@ -1091,9 +1115,10 @@
         </div>`;
       actionsHtml = `
         <div class="pawn-actions">
-          <button class="pawn-btn redeem" data-action="redeem" data-id="${p.id}">ไถ่ถอนแล้ว</button>
+          <button class="pawn-btn redeem" data-action="redeem-open" data-id="${p.id}">ไถ่ถอนแล้ว</button>
           <button class="pawn-btn renew" data-action="renew-open" data-id="${p.id}">ต่อดอก</button>
         </div>
+        ${renderRedeemPrompt(p.id)}
         ${S.renewPickerFor === p.id ? `
           <div style="display:flex;flex-direction:column;gap:6px;padding-top:2px">
             <div class="field-label" style="margin-bottom:0">เลือกระยะเวลาต่อดอก</div>
@@ -1470,7 +1495,8 @@
       case 'close-debt': closeDebt(el.dataset.id); break;
       case 'delete-debt': deleteDebt(el.dataset.id); break;
       case 'mark-paid': markPaid(el.dataset.id, el.dataset.debt); break;
-      case 'redeem': redeemPawn(el.dataset.id); break;
+      case 'redeem-open': openRedeemPrompt(el.dataset.id); break;
+      case 'redeem-confirm': confirmRedeem(el.dataset.id); break;
       case 'open-pawn-settings': openPawnSettings(el.dataset.id, el.dataset.from); break;
       case 'submit-edit-pawn': editPawnSubmit(); break;
       case 'delete-pawn': deletePawnAction(el.dataset.id); break;

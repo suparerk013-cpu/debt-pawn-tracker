@@ -188,11 +188,13 @@ const Api = (() => {
     await ref.delete();
     return { ok: true };
   }
-  async function redeemPawn(id) {
+  async function redeemPawn(id, amount) {
     const ref = db().collection('pawns').doc(id);
     const doc = await ref.get();
     if (!doc.exists || doc.data().user_id !== uid()) throw new Error('Not found');
-    await ref.update({ status: 'redeemed' });
+    const patch = { status: 'redeemed' };
+    if (amount != null && amount !== '') patch.redeemed_amount = Number(amount);
+    await ref.update(patch);
     return { ok: true };
   }
   // Jewelry no longer renews this way — its due date is fixed to pawn_date+5 months and
@@ -394,6 +396,19 @@ const Api = (() => {
         }
         return;
       }
+      // Electronics: warn starting 1 day before due (not the general warnDays setting), and
+      // keep it unread every load (persistent: true skips the read-id filter below) until the
+      // due_date actually moves — i.e. it's renewed — rather than going quiet once dismissed.
+      // Copy always pushes toward renewing, never redeeming.
+      if (p.category === 'electronics') {
+        const days = daysUntil(p.due_date);
+        if (days <= 1) {
+          const title = days < 0 ? '⚠️ ตั๋วจำนำเลยกำหนดแล้ว ต่อดอกด่วน!' : days === 0 ? '⚠️ ตั๋วจำนำครบกำหนดวันนี้ ต่อดอกด่วน!' : '⚠️ ตั๋วจำนำใกล้ครบกำหนด เตรียมต่อดอก';
+          const body = `${p.item_name} — ดอก ฿${Math.round(p.interest || 0).toLocaleString('th-TH')} ครบกำหนด ${p.due_date} (ยังไม่ได้ต่อดอก)`;
+          items.push({ id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id, title, body, sent_at: todayStr + 'T00:00:00', persistent: true });
+        }
+        return;
+      }
       const days = daysUntil(p.due_date);
       if (days <= warnDays) {
         const title = days < 0 ? 'ตั๋วจำนำเลยกำหนด' : 'ตั๋วจำนำใกล้ครบกำหนด';
@@ -414,7 +429,7 @@ const Api = (() => {
     });
 
     const readIds = readNotifIds();
-    const withRead = items.map((it) => ({ ...it, read_at: readIds.includes(it.id) ? todayStr : null }));
+    const withRead = items.map((it) => ({ ...it, read_at: it.persistent ? null : (readIds.includes(it.id) ? todayStr : null) }));
     withRead.sort((a, b) => a.title < b.title ? -1 : 1);
     return { items: withRead, unread_count: withRead.filter((it) => !it.read_at).length };
   }
