@@ -310,7 +310,6 @@ const Api = (() => {
   async function getReport(debts, pawns, expenses) {
     [debts, pawns, expenses] = await Promise.all([debts || getDebts(), pawns || getPawns(), expenses || getExpenses()]);
     const now = new Date();
-    const monthStart = dateStr(new Date(now.getFullYear(), now.getMonth(), 1));
     const monthEnd = dateStr(new Date(now.getFullYear(), now.getMonth() + 1, 0));
     const currentMonth = monthStr(now);
 
@@ -322,14 +321,17 @@ const Api = (() => {
       return a + (latest ? latest.amount : 0);
     }, 0);
 
+    // No lower bound on due_date here — an unpaid installment or un-renewed pawn from a
+    // PAST month must keep showing (now doubly overdue) once the calendar rolls over, not
+    // silently fall out of the window just because it's no longer "this month's" due date.
     const dueInstallments = [];
     debts.forEach((d) => (d.installments || []).forEach((i) => {
-      if (i.paid || i.due_date < monthStart || i.due_date > monthEnd) return;
+      if (i.paid || i.due_date > monthEnd) return;
       dueInstallments.push({ type: 'installment', ref_id: i.id, debt_id: d.id, title: d.name, amount: i.amount, due_date: i.due_date });
     }));
     const todayStr = dateStr(now);
     const duePawns = pawns
-      .filter((p) => p.category !== 'jewelry' && p.due_date >= monthStart && p.due_date <= monthEnd)
+      .filter((p) => p.category !== 'jewelry' && p.due_date <= monthEnd)
       .map((p) => ({ type: 'pawn', ref_id: p.id, title: p.item_name, amount: p.interest || 0, due_date: p.due_date, category: p.category }));
     // Jewelry: once accrued interest reaches month 4, it becomes a "due now" line item —
     // there's no calendar due_date to check against since renewal no longer shifts a date.
