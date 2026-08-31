@@ -257,6 +257,23 @@ const Api = (() => {
     });
     return { id: ref.id };
   }
+  async function updateExpense(payload) {
+    const ref = db().collection('expenses').doc(payload.id);
+    const doc = await ref.get();
+    if (!doc.exists || doc.data().user_id !== uid()) throw new Error('Not found');
+    const patch = {};
+    if (payload.name !== undefined) patch.name = String(payload.name).trim();
+    if (payload.expense_type !== undefined) {
+      const expenseType = payload.expense_type === 'variable' ? 'variable' : 'fixed';
+      patch.expense_type = expenseType;
+      patch.amount = expenseType === 'fixed' ? (Number(payload.amount) || 0) : null;
+    } else if (payload.amount !== undefined) {
+      patch.amount = Number(payload.amount) || 0;
+    }
+    if (payload.due_day !== undefined) patch.due_day = Math.max(1, Math.min(28, Number(payload.due_day) || 5));
+    await ref.update(patch);
+    return { ok: true };
+  }
   async function markExpensePaid(id, amount) {
     const ref = db().collection('expenses').doc(id);
     const doc = await ref.get();
@@ -406,7 +423,7 @@ const Api = (() => {
     getDebts, getDebtDetail, createDebt, updateDebt, closeDebt, deleteDebt, markInstallmentPaid,
     getPawns, createPawn, updatePawn, deletePawn, redeemPawn, renewPawn,
     getReport,
-    getExpenses, createExpense, markExpensePaid, deleteExpense,
+    getExpenses, createExpense, updateExpense, markExpensePaid, deleteExpense,
     getSettings, updateSettings,
     getNotifications, markNotificationRead, markAllNotificationsRead,
   };

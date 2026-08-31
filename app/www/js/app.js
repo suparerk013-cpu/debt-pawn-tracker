@@ -62,6 +62,7 @@
     selectedDebtId: null,
     editingDebtId: null,
     editingPawnId: null,
+    editingExpenseId: null,
     renewPickerFor: null,
     expensePayFor: null,
     debts: [],
@@ -482,14 +483,54 @@
     submitMarkExpensePaid(id, amount);
   }
 
+  // Landing back on 'expenses' needs its own back button re-armed (it always comes from the
+  // dashboard) — otherwise it's still pointed at whatever screen we just left, and pressing
+  // back there would just reopen the settings screen we came from.
+  function backToExpenseList(target) {
+    return target === 'expenses' ? { screen: 'expenses', returnScreen: 'dashboard' } : { screen: target };
+  }
+
   async function deleteExpense(id) {
     try {
       await Api.deleteExpense(id);
       S.expenses = S.expenses.filter((e) => e.id !== id);
+      if (S.screen === 'expenseSettings') {
+        setState({ ...backToExpenseList(S.returnScreen || 'expenses'), editingExpenseId: null });
+      } else {
+        render();
+      }
       showToast('ลบค่าใช้จ่ายแล้ว');
-      render();
       refreshReport();
     } catch (e) { showToast('ลบไม่สำเร็จ'); }
+  }
+
+  function openExpenseSettings(id, from) {
+    const e = S.expenses.find((x) => x.id === id);
+    if (!e) return;
+    setState({
+      screen: 'expenseSettings', editingExpenseId: id, returnScreen: from || 'expenses',
+      forms: {
+        ...S.forms, expenseName: e.name, expenseType: e.expense_type,
+        expenseAmount: e.expense_type === 'fixed' ? String(e.amount) : '',
+        expenseDueDay: String(e.due_day),
+      },
+    });
+  }
+
+  async function editExpenseSubmit() {
+    const f = S.forms;
+    const isFixed = f.expenseType !== 'variable';
+    const amount = Number(f.expenseAmount) || 0;
+    if (!f.expenseName.trim() || (isFixed && !amount)) { showToast('กรอกชื่อและยอดค่าใช้จ่ายให้ครบ'); return; }
+    try {
+      await Api.updateExpense({
+        id: S.editingExpenseId, name: f.expenseName.trim(), expense_type: f.expenseType,
+        amount: isFixed ? amount : undefined, due_day: Number(f.expenseDueDay) || 5,
+      });
+      setState({ ...backToExpenseList(S.returnScreen || 'expenses'), editingExpenseId: null });
+      await loadAll();
+      showToast('บันทึกการแก้ไขแล้ว');
+    } catch (e) { showToast(e.message || 'บันทึกไม่สำเร็จ'); }
   }
 
   async function setWarnDays(n) {
@@ -568,7 +609,7 @@
 
   function renderApp() {
     const isMainTab = ['dashboard', 'debtList', 'pawnList', 'report', 'settings'].includes(S.screen);
-    const showBack = ['debtDetail', 'debtSettings', 'pawnSettings', 'addEdit', 'expenses', 'notifications'].includes(S.screen);
+    const showBack = ['debtDetail', 'debtSettings', 'pawnSettings', 'expenseSettings', 'addEdit', 'expenses', 'notifications'].includes(S.screen);
     const showFab = ['dashboard', 'debtList', 'pawnList', 'expenses'].includes(S.screen);
 
     return `
@@ -615,6 +656,7 @@
       debtDetail: (S.debts.find((d) => d.id === S.selectedDebtId) || {}).name || 'รายละเอียดหนี้',
       debtSettings: 'ตั้งค่าหนี้',
       pawnSettings: 'ตั้งค่าตั๋วจำนำ',
+      expenseSettings: 'ตั้งค่าค่าใช้จ่าย',
       notifications: 'การแจ้งเตือน',
       addEdit: addTypeTitle[S.addType] || 'เพิ่มรายการใหม่',
     };
@@ -633,6 +675,7 @@
       case 'debtSettings': return renderDebtSettings();
       case 'pawnList': return renderPawnList();
       case 'pawnSettings': return renderPawnSettings();
+      case 'expenseSettings': return renderExpenseSettings();
       case 'report': return renderReport();
       case 'expenses': return renderExpenses();
       case 'addEdit': return renderAddEdit();
@@ -879,7 +922,7 @@
   }
 
   // Shared by the expenses list and the report screen's expense section.
-  function renderExpenseCard(e) {
+  function renderExpenseCard(e, from) {
     const isVariable = e.expense_type === 'variable';
     const typeLabel = isVariable ? 'ไม่คงที่ ต้องจ่ายทุกเดือน' : 'ยอดคงที่ทุกเดือน';
     const amountLine = isVariable
@@ -894,7 +937,7 @@
       <div class="debt-card">
         <div class="row-between">
           <div class="debt-name">${esc(e.name)}</div>
-          <button class="icon-btn" data-action="delete-expense" data-id="${e.id}" style="width:28px;height:28px">${svgTrash()}</button>
+          <button class="icon-btn" data-action="open-expense-settings" data-id="${e.id}" data-from="${from || ''}" style="width:28px;height:28px">${svgGear('#5C6C68')}</button>
         </div>
         <div class="row-between">
           <div class="debt-remaining">${amountLine}</div>
@@ -910,7 +953,7 @@
   function renderExpenses() {
     const empty = !S.expenses.length ? `
       <div class="empty-card"><div class="empty-emoji">🧾</div><div class="empty-text">ยังไม่มีค่าใช้จ่ายประจำ กดปุ่ม + เพื่อเพิ่ม</div></div>` : '';
-    const cards = S.expenses.map(renderExpenseCard).join('');
+    const cards = S.expenses.map((e) => renderExpenseCard(e)).join('');
     return `<div class="screen-pad">${empty}${cards}</div>`;
   }
 
@@ -1010,10 +1053,48 @@
     const expenseSection = S.expenses.length ? `
       <div class="section-title">ค่าใช้จ่ายประจำ (${S.expenses.length})</div>
       <div style="display:flex;flex-direction:column;gap:10px">
-        ${S.expenses.map(renderExpenseCard).join('')}
+        ${S.expenses.map((e) => renderExpenseCard(e, 'report')).join('')}
       </div>` : '';
 
     return `<div class="screen-pad">${debtSection}${pawnSections}${expenseSection}</div>`;
+  }
+
+  // Shared by the "add expense" form and the expense settings screen — same fields either way.
+  function renderExpenseFormFields() {
+    const isVariableExpense = S.forms.expenseType === 'variable';
+    const expenseDayOptions = Array.from({ length: 28 }, (_, i) => i + 1)
+      .map((n) => `<option value="${n}" ${String(n) === S.forms.expenseDueDay ? 'selected' : ''}>${n}</option>`).join('');
+    const expenseTypeChips = `
+      <button class="warn-opt ${!isVariableExpense ? 'selected' : ''}" data-action="expense-type" data-key="fixed">ยอดคงที่ทุกเดือน</button>
+      <button class="warn-opt ${isVariableExpense ? 'selected' : ''}" data-action="expense-type" data-key="variable">ไม่คงที่ ต้องจ่ายทุกเดือน</button>`;
+    return `
+        <div><div class="field-label">ชื่อค่าใช้จ่าย</div><input class="field-input" data-bind="expenseName" value="${esc(S.forms.expenseName)}" placeholder="เช่น ค่าเช่าห้อง, ค่าไฟ, ค่าเน็ต"/></div>
+        <div>
+          <div class="field-label">ลักษณะค่าใช้จ่าย</div>
+          <div class="warn-options">${expenseTypeChips}</div>
+        </div>
+        <div class="field-row">
+          ${isVariableExpense ? '' : `<div class="field-1"><div class="field-label">ยอดต่อเดือน</div><input class="field-input" type="number" data-bind="expenseAmount" value="${esc(S.forms.expenseAmount)}" placeholder="0"/></div>`}
+          <div class="field-1">
+            <div class="field-label">จ่ายทุกวันที่</div>
+            <select class="field-input" data-bind="expenseDueDay">${expenseDayOptions}</select>
+          </div>
+        </div>
+        ${isVariableExpense ? `<div class="field-label" style="color:#92600A">ยอดไม่คงที่ (เช่น ค่าน้ำ ค่าไฟ ค่าเน็ต): กรอกยอดจริงทุกครั้งตอนบันทึกว่าจ่ายแล้ว</div>` : ''}`;
+  }
+
+  function renderExpenseSettings() {
+    return `
+      <div class="screen-pad">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          ${renderExpenseFormFields()}
+          <button class="submit-btn" data-action="submit-edit-expense">บันทึกการแก้ไข</button>
+        </div>
+        <div class="section-title">การจัดการค่าใช้จ่าย</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="mark-paid-btn" style="width:100%;background:#FDEAEA;color:#B23B3B" data-action="delete-expense" data-id="${S.editingExpenseId}">🗑 ลบค่าใช้จ่ายนี้ถาวร</button>
+        </div>
+      </div>`;
   }
 
   function renderAddEdit() {
@@ -1022,8 +1103,6 @@
     const isExpense = S.addType === 'expense';
     const dayOptions = Array.from({ length: 28 }, (_, i) => i + 1)
       .map((n) => `<option value="${n}" ${String(n) === S.forms.dueDay ? 'selected' : ''}>${n}</option>`).join('');
-    const expenseDayOptions = Array.from({ length: 28 }, (_, i) => i + 1)
-      .map((n) => `<option value="${n}" ${String(n) === S.forms.expenseDueDay ? 'selected' : ''}>${n}</option>`).join('');
 
     const debtForm = `
       <div style="display:flex;flex-direction:column;gap:14px">
@@ -1051,25 +1130,9 @@
         <button class="submit-btn" data-action="submit-pawn">บันทึกตั๋วจำนำ</button>
       </div>`;
 
-    const isVariableExpense = S.forms.expenseType === 'variable';
-    const expenseTypeChips = `
-      <button class="warn-opt ${!isVariableExpense ? 'selected' : ''}" data-action="expense-type" data-key="fixed">ยอดคงที่ทุกเดือน</button>
-      <button class="warn-opt ${isVariableExpense ? 'selected' : ''}" data-action="expense-type" data-key="variable">ไม่คงที่ ต้องจ่ายทุกเดือน</button>`;
     const expenseForm = `
       <div style="display:flex;flex-direction:column;gap:14px">
-        <div><div class="field-label">ชื่อค่าใช้จ่าย</div><input class="field-input" data-bind="expenseName" value="${esc(S.forms.expenseName)}" placeholder="เช่น ค่าเช่าห้อง, ค่าไฟ, ค่าเน็ต"/></div>
-        <div>
-          <div class="field-label">ลักษณะค่าใช้จ่าย</div>
-          <div class="warn-options">${expenseTypeChips}</div>
-        </div>
-        <div class="field-row">
-          ${isVariableExpense ? '' : `<div class="field-1"><div class="field-label">ยอดต่อเดือน</div><input class="field-input" type="number" data-bind="expenseAmount" value="${esc(S.forms.expenseAmount)}" placeholder="0"/></div>`}
-          <div class="field-1">
-            <div class="field-label">จ่ายทุกวันที่</div>
-            <select class="field-input" data-bind="expenseDueDay">${expenseDayOptions}</select>
-          </div>
-        </div>
-        ${isVariableExpense ? `<div class="field-label" style="color:#92600A">ยอดไม่คงที่ (เช่น ค่าน้ำ ค่าไฟ ค่าเน็ต): กรอกยอดจริงทุกครั้งตอนบันทึกว่าจ่ายแล้ว</div>` : ''}
+        ${renderExpenseFormFields()}
         <button class="submit-btn" data-action="submit-expense">บันทึกค่าใช้จ่ายประจำ</button>
       </div>`;
 
@@ -1208,6 +1271,8 @@
       case 'submit-debt': addDebtSubmit(); break;
       case 'submit-pawn': addPawnSubmit(); break;
       case 'submit-expense': addExpenseSubmit(); break;
+      case 'open-expense-settings': openExpenseSettings(el.dataset.id, el.dataset.from); break;
+      case 'submit-edit-expense': editExpenseSubmit(); break;
       case 'mark-expense-paid': markExpensePaid(el.dataset.id, el.dataset.expenseType); break;
       case 'confirm-expense-pay': confirmExpensePay(el.dataset.id); break;
       case 'delete-expense': deleteExpense(el.dataset.id); break;
