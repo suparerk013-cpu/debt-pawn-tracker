@@ -252,6 +252,7 @@ const Api = (() => {
         id: doc.id, name: d.name, expense_type: d.expense_type, amount: d.amount, due_day: d.due_day,
         paid_this_month: !!(d.payments && d.payments[currentMonth]),
         last_amount: latest ? latest.amount : null,
+        payments: d.payments || {},
       };
     }).sort((a, b) => a.due_day - b.due_day);
   }
@@ -290,8 +291,9 @@ const Api = (() => {
     const amt = amount !== undefined ? Number(amount) : Number(d.amount);
     if (!amt || amt <= 0) throw new Error('กรุณากรอกยอดที่จ่ายให้ถูกต้อง');
     const month = monthStr(new Date());
-    await ref.update({ [`payments.${month}`]: { amount: amt, paid_at: nowIso() } });
-    return { ok: true, amount: amt };
+    const paidAt = nowIso();
+    await ref.update({ [`payments.${month}`]: { amount: amt, paid_at: paidAt } });
+    return { ok: true, amount: amt, month, paid_at: paidAt };
   }
   async function deleteExpense(id) {
     const ref = db().collection('expenses').doc(id);
@@ -302,8 +304,11 @@ const Api = (() => {
   }
 
   // ---------------- Dashboard report ----------------
-  async function getReport() {
-    const [debts, pawns, expenses] = await Promise.all([getDebts(), getPawns(), rawExpenses()]);
+  // Accepts already-loaded debts/pawns/expenses (the shapes getDebts/getPawns/getExpenses
+  // return) so callers that already have fresh data in memory — which is every caller except
+  // the very first load — can recompute the report without re-querying Firestore at all.
+  async function getReport(debts, pawns, expenses) {
+    [debts, pawns, expenses] = await Promise.all([debts || getDebts(), pawns || getPawns(), expenses || getExpenses()]);
     const now = new Date();
     const monthStart = dateStr(new Date(now.getFullYear(), now.getMonth(), 1));
     const monthEnd = dateStr(new Date(now.getFullYear(), now.getMonth() + 1, 0));
@@ -348,21 +353,20 @@ const Api = (() => {
     const totalDueThisMonth = breakdown.reduce((a, r) => a + r.amount, 0);
     return { total_debt: totalDebt, total_pawn: totalPawn, total_recurring: totalRecurring, total_due_this_month: totalDueThisMonth, breakdown };
   }
-  async function rawExpenses() {
-    const snap = await db().collection('expenses').where('user_id', '==', uid()).get();
-    return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-  }
-
   // Combines the pawn renew/redeem log with installments (already carry paid_at) and expense
   // payments (already carry a payments.{month} map) into one chronological list, plus a
   // this-month summary. Redeemed pawn principal is tracked separately from net_spend — it's
   // cash coming back with the item, not a real cost, unlike interest/installments/expenses.
-  async function getHistory() {
-    const [debtsSnap, historySnap, expenses] = await Promise.all([
+  // debts/history always need a fresh query (debts must include closed ones too, for their
+  // past payment history, unlike getDebts() which is active-only; history has no local cache
+  // at all) — only expenses can be reused from an already-loaded getExpenses() array.
+  async function getHistory(expenses) {
+    const [debtsSnap, historySnap, expensesResolved] = await Promise.all([
       db().collection('debts').where('user_id', '==', uid()).get(),
       db().collection('history').where('user_id', '==', uid()).get(),
-      rawExpenses(),
+      expenses || getExpenses(),
     ]);
+    expenses = expensesResolved;
     const items = [];
 
     debtsSnap.docs.forEach((doc) => {
@@ -427,8 +431,10 @@ const Api = (() => {
   }
   function saveNotifIds(ids) { localStorage.setItem('dpt_read_notifs', JSON.stringify(ids)); }
 
-  async function getNotifications() {
-    const [debts, pawns, expenses, settings] = await Promise.all([getDebts(), getPawns(), rawExpenses(), getSettings()]);
+  async function getNotifications(debts, pawns, expenses, settings) {
+    [debts, pawns, expenses, settings] = await Promise.all([
+      debts || getDebts(), pawns || getPawns(), expenses || getExpenses(), settings || getSettings(),
+    ]);
     const warnDays = settings.warn_days;
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const todayStr = dateStr(today);

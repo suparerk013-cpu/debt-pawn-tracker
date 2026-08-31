@@ -127,14 +127,16 @@
   async function loadAll() {
     S.busy = true; render();
     try {
-      const [debts, pawns, expenses, report, settings] = await Promise.all([
-        Api.getDebts(), Api.getPawns(), Api.getExpenses(), Api.getReport(), Api.getSettings(),
+      const [debts, pawns, expenses, settings] = await Promise.all([
+        Api.getDebts(), Api.getPawns(), Api.getExpenses(), Api.getSettings(),
       ]);
       S.debts = debts;
       S.pawns = pawns;
       S.expenses = expenses;
-      S.report = report;
       S.warnDays = settings.warn_days;
+      // Report is recomputed from the data just fetched above instead of its own parallel
+      // fetch — getReport() would otherwise re-query debts/pawns/expenses from scratch.
+      S.report = await Api.getReport(debts, pawns, expenses);
     } catch (e) {
       showToast('โหลดข้อมูลไม่สำเร็จ: ' + e.message);
     }
@@ -143,17 +145,49 @@
 
   async function loadNotifications() {
     try {
-      const res = await Api.getNotifications();
+      // S.report is only set once loadAll() has actually populated S.debts/S.pawns/S.expenses
+      // — before that they're just the initial empty arrays, so pass nothing and let it fetch
+      // fresh rather than reading a truthy-but-empty [] as "there's really nothing here yet".
+      const res = S.report
+        ? await Api.getNotifications(S.debts, S.pawns, S.expenses, { warn_days: S.warnDays })
+        : await Api.getNotifications();
       S.notifications = res.items;
       S.unreadCount = res.unread_count;
       render();
     } catch (e) { /* keep stale data */ }
   }
 
+  // Fires a real phone notification for whatever's unread right when the app is opened —
+  // separate from loadNotifications() itself so opening the bell manually (which also calls
+  // loadNotifications()) doesn't re-fire one every time. Never prompts for permission; only
+  // acts if it's already granted (from the manual test button in Settings). Foreground-only —
+  // there's no server here to push while the app/tab isn't open at all.
+  async function alertUrgentNotifications() {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const unread = S.notifications.filter((n) => !n.read_at);
+    if (!unread.length) return;
+    const title = unread.length === 1 ? unread[0].title : `มีรายการด่วน ${unread.length} รายการ`;
+    const body = unread.length === 1 ? unread[0].body : unread.map((n) => n.title).join(' · ');
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification(title, { body, icon: 'icons/icon.svg', tag: 'dpt-urgent' });
+      } else {
+        new Notification(title, { body, icon: 'icons/icon.svg', tag: 'dpt-urgent' });
+      }
+    } catch (e) { /* best effort, no UI feedback needed here */ }
+  }
+  async function loadNotificationsAndAlert() {
+    await loadNotifications();
+    await alertUrgentNotifications();
+  }
+
   // Quiet re-fetch of just the report summary after marking something paid, so the
-  // dashboard's totals stay accurate without a full-screen loading spinner.
+  // dashboard's totals stay accurate without a full-screen loading spinner. Reuses whatever's
+  // already in S.debts/S.pawns/S.expenses — those are kept in sync by each action that calls
+  // this — instead of re-querying Firestore for data already sitting in memory.
   async function refreshReport() {
-    try { S.report = await Api.getReport(); render(); } catch (e) { /* keep stale data */ }
+    try { S.report = await Api.getReport(S.debts, S.pawns, S.expenses); render(); } catch (e) { /* keep stale data */ }
   }
 
   async function refreshDebtDetail(id) {
@@ -172,7 +206,7 @@
   function navFromManage(screen) { setState({ screen, returnScreen: 'manage', fabMenuOpen: false }); }
   function goBack() { setState({ screen: S.returnScreen, fabMenuOpen: false }); }
   async function loadHistory() {
-    try { S.history = await Api.getHistory(); render(); } catch (e) { /* keep stale data */ }
+    try { S.history = await Api.getHistory(S.report ? S.expenses : undefined); render(); } catch (e) { /* keep stale data */ }
   }
   async function openDebt(id, from) {
     setState({ screen: 'debtDetail', selectedDebtId: id, returnScreen: from || 'debtList' });
@@ -312,7 +346,7 @@
       setState({ screen: 'dashboard', loginError: '', forms: { ...S.forms, loginUsername: '' } });
       if (res.user.is_admin) loadSwitchableUsers();
       await loadAll();
-      loadNotifications();
+      loadNotificationsAndAlert();
     } catch (e) {
       S.busy = false;
       setState({ loginError: e.message || 'ไม่พบผู้ใช้นี้' });
@@ -330,7 +364,7 @@
       saveSession(res.user, S.realUser);
       setState({ userMenuOpen: false, screen: 'dashboard', fabMenuOpen: false });
       await loadAll();
-      loadNotifications();
+      loadNotificationsAndAlert();
       showToast('กำลังดูข้อมูลของ ' + res.user.username);
     } catch (e) { showToast(e.message || 'สลับผู้ใช้ไม่สำเร็จ'); }
   }
@@ -545,7 +579,10 @@
     try {
       const res = await Api.markExpensePaid(id, amount);
       const exp = S.expenses.find((e) => e.id === id);
-      if (exp) { exp.paid_this_month = true; exp.last_amount = res.amount; }
+      if (exp) {
+        exp.paid_this_month = true; exp.last_amount = res.amount;
+        exp.payments = { ...(exp.payments || {}), [res.month]: { amount: res.amount, paid_at: res.paid_at } };
+      }
       setState({ expensePayFor: null, forms: { ...S.forms, expensePayAmount: '' } });
       showToast('บันทึกว่าจ่ายแล้ว');
       refreshReport();
@@ -902,54 +939,65 @@
         ${stat('ต้องชำระเดือนนี้', r.total_due_this_month, '#FDEAEA', '#B23B3B')}
       </div>`;
 
-    const rows = r.breakdown.map((it) => {
-      const kindLabel = { installment: 'งวดผ่อน', pawn: 'ตั๋วจำนำ', expense: 'ค่าใช้จ่ายประจำ' }[it.type];
-      const kindBg = { installment: '#E3F3EF', pawn: '#EFE7F8', expense: '#FFF3DD' }[it.type];
-      const kindFg = { installment: '#0E6B5C', pawn: '#6B3FA0', expense: '#92600A' }[it.type];
-      const action = it.type === 'installment'
-        ? `<button class="mark-paid-btn" data-action="mark-paid" data-id="${it.ref_id}" data-debt="${it.debt_id}">บันทึกว่าจ่ายแล้ว</button>`
-        : it.type === 'expense'
-        ? `<button class="mark-paid-btn" data-action="mark-expense-paid" data-id="${it.ref_id}" data-expense-type="${it.expense_type}">บันทึกว่าจ่ายแล้ว</button>`
-        : `<div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="mark-paid-btn" data-action="redeem-open" data-id="${it.ref_id}">ไถ่ถอนแล้ว</button>
-            ${it.category !== 'jewelry' ? `<button class="pawn-btn renew" data-action="renew-open" data-id="${it.ref_id}">ต่อดอก</button>` : ''}
-          </div>`;
-      const payPrompt = it.type === 'expense' && S.expensePayFor === it.ref_id ? `
-        <div class="warn-options" style="width:100%;margin-top:8px">
-          <input class="field-input" type="number" data-bind="expensePayAmount" value="${esc(S.forms.expensePayAmount)}" placeholder="ยอดที่จ่ายจริงเดือนนี้"/>
-          <button class="submit-btn" data-action="confirm-expense-pay" data-id="${it.ref_id}">ยืนยัน</button>
-        </div>` : '';
-      const renewPrompt = it.type === 'pawn' && it.category !== 'jewelry' && S.renewPickerFor === it.ref_id ? `
-        <div style="display:flex;flex-direction:column;gap:6px;padding-top:2px;width:100%">
-          <div class="field-label" style="margin-bottom:0">เลือกระยะเวลาต่อดอก</div>
-          <div class="warn-options">
-            ${PERIOD_OPTIONS.filter((o) => o.unit && o.key !== 'custom').map((o) =>
-              `<button class="warn-opt" data-action="renew-confirm" data-id="${it.ref_id}" data-key="${o.key}">${o.label}</button>`
-            ).join('')}
-          </div>
-        </div>` : '';
-      return `
-        <div class="installment-row" style="flex-wrap:wrap">
-          <div style="flex:1">
-            <div style="display:flex;align-items:center;gap:6px">
-              <span class="near-kind" style="background:${kindBg};color:${kindFg}">${kindLabel}</span>
-              <span class="installment-date">${esc(it.title)}</span>
-            </div>
-            <div class="installment-amount">฿${formatMoney(it.amount)} · ครบกำหนด ${formatDate(it.due_date)}</div>
-          </div>
-          ${action}
-          ${payPrompt}
-          ${it.type === 'pawn' ? renderRedeemPrompt(it.ref_id) : ''}
-          ${renewPrompt}
-        </div>`;
-    }).join('');
+    // Overdue or due within 2 days is treated as needing action right now, split into its own
+    // "ครบกำหนดชำระ (ด่วน)" section above the regular monthly list so it can't get buried among
+    // items that still have weeks to go.
+    const urgent = r.breakdown.filter((it) => daysUntil(it.due_date) <= 2);
+    const normal = r.breakdown.filter((it) => daysUntil(it.due_date) > 2);
+    const rowsHtml = (list) => `<div style="display:flex;flex-direction:column;gap:10px">${list.map(renderDueRow).join('')}</div>`;
 
     return `
       <div class="screen-pad">
         ${stats}
+        ${urgent.length ? `
+          <div class="section-title" style="color:#B23B3B">⚠️ ครบกำหนดชำระ (ด่วน)</div>
+          ${rowsHtml(urgent)}
+        ` : ''}
         <div class="section-title">รายการที่ต้องชำระเดือนนี้</div>
-        ${r.breakdown.length ? `<div style="display:flex;flex-direction:column;gap:10px">${rows}</div>` : `
-          <div class="empty-card"><div class="empty-emoji">✅</div><div class="empty-text">ชำระครบทุกรายการของเดือนนี้แล้ว</div></div>`}
+        ${normal.length ? rowsHtml(normal) : (urgent.length ? '' : `
+          <div class="empty-card"><div class="empty-emoji">✅</div><div class="empty-text">ชำระครบทุกรายการของเดือนนี้แล้ว</div></div>`)}
+      </div>`;
+  }
+
+  function renderDueRow(it) {
+    const kindLabel = { installment: 'งวดผ่อน', pawn: 'ตั๋วจำนำ', expense: 'ค่าใช้จ่ายประจำ' }[it.type];
+    const kindBg = { installment: '#E3F3EF', pawn: '#EFE7F8', expense: '#FFF3DD' }[it.type];
+    const kindFg = { installment: '#0E6B5C', pawn: '#6B3FA0', expense: '#92600A' }[it.type];
+    const action = it.type === 'installment'
+      ? `<button class="mark-paid-btn" data-action="mark-paid" data-id="${it.ref_id}" data-debt="${it.debt_id}">บันทึกว่าจ่ายแล้ว</button>`
+      : it.type === 'expense'
+      ? `<button class="mark-paid-btn" data-action="mark-expense-paid" data-id="${it.ref_id}" data-expense-type="${it.expense_type}">บันทึกว่าจ่ายแล้ว</button>`
+      : `<div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="mark-paid-btn" data-action="redeem-open" data-id="${it.ref_id}">ไถ่ถอนแล้ว</button>
+          ${it.category !== 'jewelry' ? `<button class="pawn-btn renew" data-action="renew-open" data-id="${it.ref_id}">ต่อดอก</button>` : ''}
+        </div>`;
+    const payPrompt = it.type === 'expense' && S.expensePayFor === it.ref_id ? `
+      <div class="warn-options" style="width:100%;margin-top:8px">
+        <input class="field-input" type="number" data-bind="expensePayAmount" value="${esc(S.forms.expensePayAmount)}" placeholder="ยอดที่จ่ายจริงเดือนนี้"/>
+        <button class="submit-btn" data-action="confirm-expense-pay" data-id="${it.ref_id}">ยืนยัน</button>
+      </div>` : '';
+    const renewPrompt = it.type === 'pawn' && it.category !== 'jewelry' && S.renewPickerFor === it.ref_id ? `
+      <div style="display:flex;flex-direction:column;gap:6px;padding-top:2px;width:100%">
+        <div class="field-label" style="margin-bottom:0">เลือกระยะเวลาต่อดอก</div>
+        <div class="warn-options">
+          ${PERIOD_OPTIONS.filter((o) => o.unit && o.key !== 'custom').map((o) =>
+            `<button class="warn-opt" data-action="renew-confirm" data-id="${it.ref_id}" data-key="${o.key}">${o.label}</button>`
+          ).join('')}
+        </div>
+      </div>` : '';
+    return `
+      <div class="installment-row" style="flex-wrap:wrap">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="near-kind" style="background:${kindBg};color:${kindFg}">${kindLabel}</span>
+            <span class="installment-date">${esc(it.title)}</span>
+          </div>
+          <div class="installment-amount">฿${formatMoney(it.amount)} · ครบกำหนด ${formatDate(it.due_date)}</div>
+        </div>
+        ${action}
+        ${payPrompt}
+        ${it.type === 'pawn' ? renderRedeemPrompt(it.ref_id) : ''}
+        ${renewPrompt}
       </div>`;
   }
 
@@ -1591,8 +1639,8 @@
       Api.setActiveUser(S.currentUser.id);
       setState({ screen: 'dashboard' });
       if (S.realUser && S.realUser.is_admin) loadSwitchableUsers();
-      loadAll();
-      loadNotifications();
+      await loadAll();
+      loadNotificationsAndAlert();
     }
   })();
 })();
