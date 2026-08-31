@@ -492,6 +492,31 @@
     try { await Api.updateSettings({ warn_days: n }); } catch (e) { /* keep optimistic value */ }
   }
 
+  // No server ever sends a real push (see README) — this just proves the browser/OS side of
+  // notifications works on this device, triggered locally right here, right now.
+  async function testNotification() {
+    if (!('Notification' in window)) { showToast('เบราว์เซอร์นี้ไม่รองรับการแจ้งเตือน'); return; }
+    if (Notification.permission === 'denied') {
+      showToast('การแจ้งเตือนถูกปิดไว้ — ไปเปิดเองที่การตั้งค่าเบราว์เซอร์/แอปของเครื่อง');
+      return;
+    }
+    let permission = Notification.permission;
+    if (permission === 'default') permission = await Notification.requestPermission();
+    if (permission !== 'granted') { showToast('ไม่ได้รับอนุญาตให้แจ้งเตือน'); return; }
+
+    const title = 'ทดสอบการแจ้งเตือน 🔔';
+    const body = 'ถ้าเห็นข้อความนี้บนมือถือ แปลว่าการแจ้งเตือนทำงานได้จริง';
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification(title, { body, icon: 'icons/icon.svg' });
+      } else {
+        new Notification(title, { body, icon: 'icons/icon.svg' });
+      }
+      showToast('ส่งแจ้งเตือนทดสอบแล้ว ลองดูที่มือถือ');
+    } catch (e) { showToast('ส่งแจ้งเตือนไม่สำเร็จ: ' + (e.message || '')); }
+  }
+
   function openNotifications() {
     setState({ screen: 'notifications', returnScreen: 'dashboard' });
     loadNotifications();
@@ -1003,6 +1028,11 @@
           <div class="settings-row-title">แจ้งเตือนล่วงหน้ากี่วันก่อนครบกำหนด</div>
           <div class="warn-options">${opts}</div>
         </div>
+        <div class="card" style="display:flex;flex-direction:column;gap:8px">
+          <div class="settings-row-title">ทดสอบการแจ้งเตือน</div>
+          <div class="settings-row-sub">แอปนี้ไม่มีการแจ้งเตือนอัตโนมัติตอนปิดแอป (ดูกระดิ่งแจ้งเตือนในแอปแทน) กดปุ่มนี้เพื่อทดสอบว่าเบราว์เซอร์/มือถือของคุณแสดงการแจ้งเตือนได้จริง</div>
+          <button class="mark-paid-btn" style="align-self:flex-start" data-action="test-notification">🔔 ทดสอบส่งแจ้งเตือน</button>
+        </div>
         <div class="card settings-row">
           <div>
             <div class="settings-row-title">ผู้ใช้งาน</div>
@@ -1117,6 +1147,7 @@
       case 'delete-expense': deleteExpense(el.dataset.id); break;
       case 'goto-expenses': setState({ screen: 'expenses', returnScreen: 'dashboard' }); break;
       case 'warn-days': setWarnDays(Number(el.dataset.n)); break;
+      case 'test-notification': testNotification(); break;
       case 'fab-click':
         if (S.screen === 'dashboard') setState({ fabMenuOpen: !S.fabMenuOpen });
         else if (S.screen === 'debtList') openAdd('debt', 'debtList');
