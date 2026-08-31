@@ -1,7 +1,7 @@
 // Service worker: offline caching so the PWA installs/works like a real app.
 // Data lives in Firestore (its own network layer), so this only caches this app's own
 // same-origin static files — Firestore/Auth/font requests always go straight to the network.
-const CACHE_NAME = 'debtpawn-v3';
+const CACHE_NAME = 'debtpawn-v4';
 const PRECACHE = ['./', 'index.html', 'css/style.css', 'js/api.js', 'js/app.js', 'firebase-config.js', 'manifest.json', 'icons/icon.svg'];
 
 self.addEventListener('install', (e) => {

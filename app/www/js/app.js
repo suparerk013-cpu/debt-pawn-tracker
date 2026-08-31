@@ -370,12 +370,15 @@
 
   // Custom period: user types a raw day count (e.g. 10, 20, 45) instead of picking a preset —
   // resolves to the same {unit:'day', value:N} shape the presets use, so renewals/notifications
-  // treat it identically (renew again N days later, repeating).
+  // treat it identically (renew again N days later, repeating). The first due date is always
+  // whatever's in the date field — presets fill it in as a default (today + period) when
+  // clicked, but it stays editable, since the actual first due date (set by the pawnshop) may
+  // not fall exactly N days from today, especially when entering a ticket pawned in the past.
   function resolvePawnPeriod(f) {
     if (f.pawnPeriod === 'custom') {
       const days = Number(f.pawnCustomDays) || 0;
       if (days <= 0) return null;
-      return { unit: 'day', value: days, dueDate: computePeriodDate('day', days) };
+      return { unit: 'day', value: days, dueDate: f.dueDate };
     }
     const opt = PERIOD_OPTIONS.find((o) => o.key === f.pawnPeriod);
     if (!opt) return null;
@@ -387,7 +390,7 @@
     const amount = Number(f.amount) || 0;
     if (!f.itemName.trim() || !amount) { showToast('กรอกข้อมูลตั๋วจำนำให้ครบ'); return; }
     const period = resolvePawnPeriod(f);
-    if (!period || !period.dueDate) { showToast('กรอกข้อมูลตั๋วจำนำให้ครบ (ระบุจำนวนวันให้ถูกต้อง)'); return; }
+    if (!period || !period.dueDate) { showToast('กรอกข้อมูลตั๋วจำนำให้ครบ (เลือกวันครบกำหนดงวดแรก)'); return; }
     try {
       await Api.createPawn({
         item_name: f.itemName.trim(), shop_name: f.shop.trim(), ticket_code: f.ticketCode.trim(),
@@ -405,7 +408,7 @@
     const amount = Number(f.amount) || 0;
     if (!f.itemName.trim() || !amount) { showToast('กรอกข้อมูลตั๋วจำนำให้ครบ'); return; }
     const period = resolvePawnPeriod(f);
-    if (!period || !period.dueDate) { showToast('กรอกข้อมูลตั๋วจำนำให้ครบ (ระบุจำนวนวันให้ถูกต้อง)'); return; }
+    if (!period || !period.dueDate) { showToast('กรอกข้อมูลตั๋วจำนำให้ครบ (เลือกวันครบกำหนดงวดแรก)'); return; }
     try {
       await Api.updatePawn({
         id: S.editingPawnId, item_name: f.itemName.trim(), shop_name: f.shop.trim(),
@@ -901,10 +904,12 @@
           <div class="field-label">ครบกำหนดต่อดอก</div>
           <div class="warn-options">${periodChips}</div>
         </div>
-        ${isCustomPeriod
-          ? `<div><div class="field-label">ระบุจำนวนวัน</div><input class="field-input" type="number" min="1" data-bind="pawnCustomDays" value="${esc(S.forms.pawnCustomDays)}" placeholder="เช่น 7, 10, 20"/></div>
-             <div class="field-label">ตั๋วจะครบกำหนดต่อดอกทุกๆ ${S.forms.pawnCustomDays || 'N'} วัน เริ่มนับจากวันนี้ แล้ววนซ้ำแบบนี้ไปเรื่อยๆ ทุกครั้งที่ต่อดอก</div>`
-          : `<div class="field-label">ครบกำหนดต่อดอก: ${S.forms.dueDate ? formatDate(S.forms.dueDate) : '-'}</div>`}
+        ${isCustomPeriod ? `<div><div class="field-label">ระบุจำนวนวันต่อรอบ</div><input class="field-input" type="number" min="1" data-bind="pawnCustomDays" value="${esc(S.forms.pawnCustomDays)}" placeholder="เช่น 7, 10, 20"/></div>` : ''}
+        <div>
+          <div class="field-label">วันครบกำหนดงวดแรก</div>
+          <input class="field-input" type="date" data-bind="dueDate" value="${esc(S.forms.dueDate)}"/>
+        </div>
+        <div class="field-label">ไม่รู้ว่าจำนำมาวันไหน แต่รู้วันครบกำหนด (เช่น ร้านนัดจ่ายวันที่ 10) ก็เลือกวันนั้นเป็นงวดแรกได้เลย — งวดถัดไปจะนับต่อจากวันนี้ไปเรื่อยๆ ทุก${isCustomPeriod ? (S.forms.pawnCustomDays || 'N') + ' วัน' : ' ' + (PERIOD_OPTIONS.find((o) => o.key === S.forms.pawnPeriod) || {}).label}</div>
         ${S.forms.category === 'jewelry' ? `<div class="field-label" style="color:#92600A">หมวดเครื่องประดับ: ต่อดอกได้สูงสุด 4 เดือน เดือนที่ 5 คือกำหนดสุดท้าย</div>` : ''}`;
   }
 
@@ -1128,7 +1133,14 @@
   });
   app.addEventListener('change', (e) => {
     const bind = e.target.dataset.bind;
-    if (bind) S.forms[bind] = e.target.value;
+    if (!bind) return;
+    S.forms[bind] = e.target.value;
+    // Convenience default: once a custom day count is entered, suggest today+N as the first
+    // due date (still fully editable) instead of leaving the date picker blank.
+    if (bind === 'pawnCustomDays' && !S.forms.dueDate) {
+      const days = Number(e.target.value) || 0;
+      if (days > 0) setForms({ dueDate: computePeriodDate('day', days) });
+    }
   });
   app.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target.dataset.bind === 'loginUsername') submitLogin();
