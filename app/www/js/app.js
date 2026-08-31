@@ -73,6 +73,7 @@
     pawns: [],
     expenses: [],
     report: null,
+    history: null,
     notifications: [],
     unreadCount: 0,
     forms: {
@@ -164,8 +165,15 @@
   }
 
   // ---------------- Navigation ----------------
-  function nav(screen) { setState({ screen, fabMenuOpen: false }); }
+  function nav(screen) {
+    setState({ screen, fabMenuOpen: false });
+    if (screen === 'history') loadHistory();
+  }
+  function navFromManage(screen) { setState({ screen, returnScreen: 'manage', fabMenuOpen: false }); }
   function goBack() { setState({ screen: S.returnScreen, fabMenuOpen: false }); }
+  async function loadHistory() {
+    try { S.history = await Api.getHistory(); render(); } catch (e) { /* keep stale data */ }
+  }
   async function openDebt(id, from) {
     setState({ screen: 'debtDetail', selectedDebtId: id, returnScreen: from || 'debtList' });
     await refreshDebtDetail(id);
@@ -798,8 +806,8 @@
   }
 
   function renderApp() {
-    const isMainTab = ['dashboard', 'debtList', 'pawnList', 'expenses', 'settings'].includes(S.screen);
-    const showBack = ['debtDetail', 'debtSettings', 'pawnSettings', 'expenseSettings', 'addEdit', 'notifications'].includes(S.screen);
+    const isMainTab = ['dashboard', 'manage', 'history', 'settings'].includes(S.screen);
+    const showBack = ['debtDetail', 'debtSettings', 'pawnSettings', 'expenseSettings', 'addEdit', 'notifications', 'debtList', 'pawnList', 'expenses'].includes(S.screen);
     const showFab = ['dashboard', 'debtList', 'pawnList', 'expenses'].includes(S.screen);
 
     return `
@@ -842,7 +850,7 @@
     const addTypeTitle = { debt: 'เพิ่มหนี้ใหม่', pawn: 'เพิ่มตั๋วจำนำใหม่', expense: 'เพิ่มค่าใช้จ่ายประจำ' };
     const titleMap = {
       debtList: 'หนี้สินทั้งหมด', pawnList: 'ตั๋วจำนำ', settings: 'ตั้งค่า',
-      expenses: 'ค่าใช้จ่ายประจำต่อเดือน',
+      expenses: 'ค่าใช้จ่ายประจำต่อเดือน', manage: 'จัดการ', history: 'ประวัติ',
       debtDetail: (S.debts.find((d) => d.id === S.selectedDebtId) || {}).name || 'รายละเอียดหนี้',
       debtSettings: 'ตั้งค่าหนี้',
       pawnSettings: 'ตั้งค่าตั๋วจำนำ',
@@ -850,7 +858,7 @@
       notifications: 'การแจ้งเตือน',
       addEdit: addTypeTitle[S.addType] || 'เพิ่มรายการใหม่',
     };
-    const cls = ['debtList', 'pawnList', 'settings', 'expenses'].includes(S.screen) ? 'header-title-md' : 'header-title';
+    const cls = ['debtList', 'pawnList', 'settings', 'expenses', 'manage', 'history'].includes(S.screen) ? 'header-title-md' : 'header-title';
     const trailing = S.screen === 'debtDetail'
       ? `<button class="icon-btn" data-action="open-debt-settings" data-id="${S.selectedDebtId}">${svgGear('#1B2422')}</button>`
       : (S.screen === 'notifications' && S.unreadCount ? `<button class="mark-paid-btn" style="padding:6px 10px;font-size:12px" data-action="mark-all-read">อ่านทั้งหมด</button>` : '');
@@ -860,6 +868,8 @@
   function screenBody() {
     switch (S.screen) {
       case 'dashboard': return renderDashboard();
+      case 'manage': return renderManage();
+      case 'history': return renderHistory();
       case 'debtList': return renderDebtList();
       case 'debtDetail': return renderDebtDetail();
       case 'debtSettings': return renderDebtSettings();
@@ -940,15 +950,82 @@
         <div class="section-title">รายการที่ต้องชำระเดือนนี้</div>
         ${r.breakdown.length ? `<div style="display:flex;flex-direction:column;gap:10px">${rows}</div>` : `
           <div class="empty-card"><div class="empty-emoji">✅</div><div class="empty-text">ชำระครบทุกรายการของเดือนนี้แล้ว</div></div>`}
-        <div class="card" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" data-action="goto-expenses">
-          <div>
-            <div class="settings-row-title">ค่าใช้จ่ายประจำต่อเดือน</div>
-            <div class="settings-row-sub">${S.expenses.length} รายการ · จัดการ/เพิ่มรายการ</div>
-          </div>
-          ${svgChevron()}
-        </div>
-        ${renderCategorizedBreakdown()}
       </div>`;
+  }
+
+  function renderManage() {
+    const r = S.report || {};
+    const cards = [
+      { screen: 'debtList', icon: svgList('#0E6B5C'), label: 'หนี้สิน', sub: `คงเหลือ ฿${formatMoney(r.total_debt || 0)}`, bg: '#E3F3EF' },
+      { screen: 'pawnList', icon: svgTicket('#6B3FA0'), label: 'ตั๋วจำนำ', sub: `มูลค่ารวม ฿${formatMoney(r.total_pawn || 0)}`, bg: '#EFE7F8' },
+      { screen: 'expenses', icon: svgWallet('#92600A'), label: 'ค่าใช้จ่ายประจำ', sub: `฿${formatMoney(r.total_recurring || 0)}/เดือน`, bg: '#FFF3DD' },
+    ];
+    return `<div class="screen-pad">${cards.map((c) => `
+      <div class="card" style="display:flex;align-items:center;gap:14px;cursor:pointer" data-action="nav-manage" data-screen="${c.screen}">
+        <div style="width:44px;height:44px;border-radius:12px;background:${c.bg};display:flex;align-items:center;justify-content:center;flex:none">${c.icon}</div>
+        <div style="flex:1">
+          <div class="settings-row-title">${c.label}</div>
+          <div style="font-size:13px;color:#5C6C68">${esc(c.sub)}</div>
+        </div>
+        ${svgChevron()}
+      </div>`).join('')}</div>`;
+  }
+
+  function formatMonthLabel(monthStr) {
+    const [y, m] = monthStr.split('-').map(Number);
+    return `${THAI_MONTHS_FULL[m - 1]} ${y + 543}`;
+  }
+
+  function historyItemAction(it) {
+    if (it.type === 'installment') return `data-action="open-debt" data-id="${it.debt_id}" data-from="history"`;
+    if (it.type === 'expense') return `data-action="open-expense-settings" data-id="${it.ref_id}" data-from="history"`;
+    if (it.type === 'renew') return `data-action="open-pawn-settings" data-id="${it.ref_id}" data-from="history"`;
+    return '';
+  }
+
+  function renderHistoryItem(it) {
+    const typeMeta = {
+      renew: { label: 'ต่อดอก', bg: '#EFE7F8', fg: '#6B3FA0' },
+      redeem: { label: 'ไถ่ถอน', bg: '#E3F3EF', fg: '#0E6B5C' },
+      installment: { label: 'ผ่อนหนี้', bg: '#E3F3EF', fg: '#0E6B5C' },
+      expense: { label: 'ค่าใช้จ่าย', bg: '#FFF3DD', fg: '#92600A' },
+    }[it.type];
+    const clickable = it.type === 'installment' || it.type === 'expense' || it.type === 'renew';
+    return `
+      <div class="installment-row" ${clickable ? historyItemAction(it) + ' style="cursor:pointer"' : ''}>
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="near-kind" style="background:${typeMeta.bg};color:${typeMeta.fg}">${typeMeta.label}</span>
+            <span class="installment-date">${esc(it.title)}</span>
+          </div>
+          <div class="installment-amount">฿${formatMoney(it.amount)} · ${it.date ? formatDate(it.date) : '-'}</div>
+        </div>
+        ${clickable ? svgChevron() : ''}
+      </div>`;
+  }
+
+  function renderHistory() {
+    const h = S.history;
+    if (!h) return `<div class="screen-pad"><div class="empty-card"><div class="empty-text">กำลังโหลด...</div></div></div>`;
+    const s = h.summary;
+    const summaryCard = `
+      <div class="card" style="display:flex;flex-direction:column;gap:8px">
+        <div class="section-title" style="margin:0">สรุปเดือนนี้ (${formatMonthLabel(s.month)})</div>
+        <div class="row-between"><span style="color:#5C6C68">ดอกเบี้ยต่อดอก</span><span style="font-weight:600">฿${formatMoney(s.interest_paid)}</span></div>
+        <div class="row-between"><span style="color:#5C6C68">งวดผ่อนหนี้</span><span style="font-weight:600">฿${formatMoney(s.installments_paid)}</span></div>
+        <div class="row-between"><span style="color:#5C6C68">ค่าใช้จ่ายประจำ</span><span style="font-weight:600">฿${formatMoney(s.expenses_paid)}</span></div>
+        <div class="row-between" style="border-top:1px solid #E7ECEA;padding-top:8px">
+          <span style="font-weight:700">รวมใช้จ่ายจริง</span><span style="font-weight:700;color:#B23B3B">฿${formatMoney(s.net_spend)}</span>
+        </div>
+        ${s.redeemed_cash ? `<div style="font-size:12px;color:#A6ACAA">+ เงินต้นไถ่ถอนคืน ฿${formatMoney(s.redeemed_cash)} (ได้ของคืน ไม่นับเป็นค่าใช้จ่าย) · เงินสดจ่ายออกทั้งหมด ฿${formatMoney(s.total_cash_out)}</div>` : ''}
+      </div>`;
+    const empty = !h.items.length ? `<div class="empty-card"><div class="empty-emoji">🕐</div><div class="empty-text">ยังไม่มีประวัติ</div></div>` : '';
+    const rows = h.items.map(renderHistoryItem).join('');
+    return `<div class="screen-pad">
+      ${summaryCard}
+      <div class="section-title">ประวัติทั้งหมด</div>
+      ${empty}${h.items.length ? `<div style="display:flex;flex-direction:column;gap:10px">${rows}</div>` : ''}
+    </div>`;
   }
 
   function renderDebtList() {
@@ -1242,57 +1319,6 @@
       </div>`;
   }
 
-  // Full breakdown by type — debts and expenses render the same card as their own list
-  // screens (tapping a debt goes to its detail page); pawns are grouped by category so
-  // jewelry and electronics (different renewal rules) never get mixed in one list, each
-  // still using the same card/actions as the pawn list (tap the gear to edit).
-  // Full breakdown by type, appended below the dashboard's own summary — debts and expenses
-  // render the same card as their own list screens (tapping one goes to its detail page);
-  // pawns are grouped by category so jewelry and electronics (different renewal rules) never
-  // get mixed in one list, each still using the same card/actions as the pawn list.
-  function renderCategorizedBreakdown() {
-    if (!S.debts.length && !S.pawns.length && !S.expenses.length) return '';
-
-    const debtSection = S.debts.length ? `
-      <div class="section-title">หนี้สิน (${S.debts.length})</div>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px">
-        ${S.debts.map((d) => {
-          const paidPercent = d.total_amount ? Math.min(100, Math.round((d.total_amount - d.remaining_amount) / d.total_amount * 100)) : 0;
-          return `
-            <div class="debt-card" data-action="open-debt" data-id="${d.id}" data-from="dashboard">
-              <div class="row-between">
-                <div class="debt-name">${esc(d.name)}</div>
-                ${svgChevron()}
-              </div>
-              <div class="row-between">
-                <div class="debt-remaining">฿${formatMoney(d.remaining_amount)}</div>
-                <div class="debt-total">จาก ฿${formatMoney(d.total_amount)}</div>
-              </div>
-              <div class="progress-track"><div class="progress-fill" style="width:${paidPercent}%"></div></div>
-              <div class="progress-label">ผ่อนแล้ว ${paidPercent}%</div>
-            </div>`;
-        }).join('')}
-      </div>` : '';
-
-    const pawnSections = PAWN_CATEGORIES.map((c) => {
-      const items = S.pawns.filter((p) => p.category === c.key);
-      if (!items.length) return '';
-      return `
-      <div class="section-title">${c.icon} ตั๋วจำนำ — ${c.label} (${items.length})</div>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px">
-        ${items.map((p) => renderPawnCard(p, 'dashboard')).join('')}
-      </div>`;
-    }).join('');
-
-    const expenseSection = S.expenses.length ? `
-      <div class="section-title">ค่าใช้จ่ายประจำ (${S.expenses.length})</div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        ${S.expenses.map((e) => renderExpenseCard(e, 'dashboard')).join('')}
-      </div>` : '';
-
-    return `${debtSection}${pawnSections}${expenseSection}`;
-  }
-
   // Shared by the "add expense" form and the expense settings screen — same fields either way.
   function renderExpenseFormFields() {
     const isVariableExpense = S.forms.expenseType === 'variable';
@@ -1444,14 +1470,13 @@
 
   function renderBottomNav() {
     const items = [
-      { key: 'dashboard', label: 'หน้าแรก', icon: svgHome },
-      { key: 'debtList', label: 'หนี้สิน', icon: svgList },
-      { key: 'pawnList', label: 'ตั๋วจำนำ', icon: svgTicket },
-      { key: 'expenses', label: 'ค่าใช้จ่าย', icon: svgWallet },
-      { key: 'settings', label: 'ตั้งค่า', icon: svgGear },
+      { key: 'dashboard', label: 'หน้าแรก', icon: svgHome, match: ['dashboard'] },
+      { key: 'manage', label: 'จัดการ', icon: svgList, match: ['manage', 'debtList', 'pawnList', 'expenses'] },
+      { key: 'history', label: 'ประวัติ', icon: svgHistory, match: ['history'] },
+      { key: 'settings', label: 'ตั้งค่า', icon: svgGear, match: ['settings'] },
     ];
     return `<div class="bottom-nav">${items.map((it) => {
-      const active = S.screen === it.key;
+      const active = it.match.includes(S.screen);
       const color = active ? '#0E6B5C' : '#A6ACAA';
       return `<button class="nav-item" data-action="nav" data-screen="${it.key}">${it.icon(color)}<span class="nav-label" style="color:${color}">${it.label}</span></button>`;
     }).join('')}</div>`;
@@ -1470,6 +1495,7 @@
   function svgList(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg>`; }
   function svgTicket(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 12l6-8h9a3 3 0 013 3v3l-8 9a2 2 0 01-3 0l-7-6z"/><circle cx="15" cy="9" r="1.4"/></svg>`; }
   function svgWallet(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 7a2 2 0 012-2h13a1 1 0 011 1v2"/><path d="M3 7v11a2 2 0 002 2h14a1 1 0 001-1v-4"/><rect x="14" y="11" width="7" height="5" rx="1"/><circle cx="17" cy="13.5" r="0.8" fill="${c}"/></svg>`; }
+  function svgHistory(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 12a9 9 0 109-9" stroke-linecap="round"/><path d="M3 4v5h5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 7v5l4 2" stroke-linecap="round" stroke-linejoin="round"/></svg>`; }
   function svgGear(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.6 7.6 0 000-2l1.9-1.5-2-3.4-2.3.6a7.7 7.7 0 00-1.7-1l-.3-2.4h-4l-.3 2.4a7.7 7.7 0 00-1.7 1l-2.3-.6-2 3.4L4.6 11a7.6 7.6 0 000 2l-1.9 1.5 2 3.4 2.3-.6a7.7 7.7 0 001.7 1l.3 2.4h4l.3-2.4a7.7 7.7 0 001.7-1l2.3.6 2-3.4z"/></svg>`; }
   function svgDownload() { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 19h16" stroke-linecap="round"/></svg>`; }
   function svgBell(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c || '#1B2422'}" stroke-width="1.8"><path d="M6 9a6 6 0 0112 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9z"/><path d="M9.5 17a2.5 2.5 0 005 0"/></svg>`; }
@@ -1491,6 +1517,7 @@
       case 'mark-all-read': markAllNotifsRead(); break;
       case 'back': goBack(); break;
       case 'nav': nav(el.dataset.screen); break;
+      case 'nav-manage': navFromManage(el.dataset.screen); break;
       case 'open-debt': openDebt(el.dataset.id, el.dataset.from); break;
       case 'open-debt-settings': openDebtSettings(el.dataset.id); break;
       case 'submit-edit-debt': editDebtSubmit(); break;
@@ -1520,7 +1547,6 @@
       case 'mark-expense-paid': markExpensePaid(el.dataset.id, el.dataset.expenseType); break;
       case 'confirm-expense-pay': confirmExpensePay(el.dataset.id); break;
       case 'delete-expense': deleteExpense(el.dataset.id); break;
-      case 'goto-expenses': setState({ screen: 'expenses', returnScreen: 'dashboard' }); break;
       case 'warn-days': setWarnDays(Number(el.dataset.n)); break;
       case 'export-excel': exportReportToExcel(); break;
       case 'toggle-date-picker': openDatePicker(el.dataset.field); break;

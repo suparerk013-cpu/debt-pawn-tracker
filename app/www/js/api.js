@@ -192,9 +192,12 @@ const Api = (() => {
     const ref = db().collection('pawns').doc(id);
     const doc = await ref.get();
     if (!doc.exists || doc.data().user_id !== uid()) throw new Error('Not found');
+    const p = doc.data();
     const patch = { status: 'redeemed' };
-    if (amount != null && amount !== '') patch.redeemed_amount = Number(amount);
+    const amt = amount != null && amount !== '' ? Number(amount) : null;
+    if (amt != null) patch.redeemed_amount = amt;
     await ref.update(patch);
+    await logHistory({ type: 'redeem', ref_id: id, item_name: p.item_name, category: p.category, amount: amt });
     return { ok: true };
   }
   // Jewelry no longer renews this way — its due date is fixed to pawn_date+5 months and
@@ -220,7 +223,16 @@ const Api = (() => {
     }
     const dueDate = dateStr(d);
     await ref.update({ due_date: dueDate, renewal_count: (p.renewal_count || 0) + 1, status: 'active', period_unit: periodUnit, period_value: periodValue });
+    await logHistory({ type: 'renew', ref_id: id, item_name: p.item_name, category: p.category, amount: p.interest || 0, due_date_before: p.due_date, due_date_after: dueDate });
     return { ok: true, due_date: dueDate };
+  }
+
+  // ---------------- History (renew/redeem log) ----------------
+  // Installments and expenses already carry their own paid_at/payments — only pawn
+  // renew/redeem events need a dedicated log, since renewPawn/redeemPawn overwrite the pawn
+  // doc in place and would otherwise lose the date+amount of each past cycle.
+  async function logHistory(entry) {
+    await db().collection('history').add({ user_id: uid(), date: dateStr(new Date()), created_at: nowIso(), ...entry });
   }
 
   // ---------------- Expenses ----------------
@@ -341,6 +353,58 @@ const Api = (() => {
     return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   }
 
+  // Combines the pawn renew/redeem log with installments (already carry paid_at) and expense
+  // payments (already carry a payments.{month} map) into one chronological list, plus a
+  // this-month summary. Redeemed pawn principal is tracked separately from net_spend — it's
+  // cash coming back with the item, not a real cost, unlike interest/installments/expenses.
+  async function getHistory() {
+    const [debtsSnap, historySnap, expenses] = await Promise.all([
+      db().collection('debts').where('user_id', '==', uid()).get(),
+      db().collection('history').where('user_id', '==', uid()).get(),
+      rawExpenses(),
+    ]);
+    const items = [];
+
+    debtsSnap.docs.forEach((doc) => {
+      const d = doc.data();
+      (d.installments || []).forEach((i) => {
+        if (!i.paid || !i.paid_at) return;
+        items.push({ id: 'installment-' + i.id, type: 'installment', ref_id: i.id, debt_id: doc.id, title: d.name, amount: i.amount, date: i.paid_at.slice(0, 10) });
+      });
+    });
+
+    historySnap.docs.forEach((doc) => {
+      const h = doc.data();
+      items.push({ id: doc.id, type: h.type, ref_id: h.ref_id, category: h.category, title: h.item_name, amount: h.amount || 0, date: h.date, due_date_after: h.due_date_after });
+    });
+
+    expenses.forEach((e) => {
+      Object.entries(e.payments || {}).forEach(([month, p]) => {
+        items.push({ id: 'expense-' + e.id + '-' + month, type: 'expense', ref_id: e.id, title: e.name, amount: p.amount || 0, date: (p.paid_at || '').slice(0, 10) });
+      });
+    });
+
+    items.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+    const currentMonth = monthStr(new Date());
+    const inMonth = (it) => (it.date || '').slice(0, 7) === currentMonth;
+    const sum = (type) => items.filter((it) => it.type === type && inMonth(it)).reduce((a, it) => a + (it.amount || 0), 0);
+    const interestPaid = sum('renew');
+    const installmentsPaid = sum('installment');
+    const expensesPaid = sum('expense');
+    const redeemedCash = sum('redeem');
+    const netSpend = interestPaid + installmentsPaid + expensesPaid;
+
+    return {
+      items,
+      summary: {
+        month: currentMonth, interest_paid: interestPaid, installments_paid: installmentsPaid,
+        expenses_paid: expensesPaid, redeemed_cash: redeemedCash, net_spend: netSpend,
+        total_cash_out: netSpend + redeemedCash,
+      },
+    };
+  }
+
   // ---------------- Settings ----------------
   async function getSettings() {
     const doc = await db().collection('users').doc(uid()).get();
@@ -450,7 +514,7 @@ const Api = (() => {
     login, switchUser, getUsers,
     getDebts, getDebtDetail, createDebt, updateDebt, closeDebt, deleteDebt, markInstallmentPaid,
     getPawns, createPawn, updatePawn, deletePawn, redeemPawn, renewPawn,
-    getReport,
+    getReport, getHistory,
     getExpenses, createExpense, updateExpense, markExpensePaid, deleteExpense,
     getSettings, updateSettings,
     getNotifications, markNotificationRead, markAllNotificationsRead,
