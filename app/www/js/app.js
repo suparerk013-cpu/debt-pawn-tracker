@@ -798,8 +798,8 @@
   }
 
   function renderApp() {
-    const isMainTab = ['dashboard', 'debtList', 'pawnList', 'settings'].includes(S.screen);
-    const showBack = ['debtDetail', 'debtSettings', 'pawnSettings', 'expenseSettings', 'addEdit', 'expenses', 'notifications'].includes(S.screen);
+    const isMainTab = ['dashboard', 'debtList', 'pawnList', 'expenses', 'settings'].includes(S.screen);
+    const showBack = ['debtDetail', 'debtSettings', 'pawnSettings', 'expenseSettings', 'addEdit', 'notifications'].includes(S.screen);
     const showFab = ['dashboard', 'debtList', 'pawnList', 'expenses'].includes(S.screen);
 
     return `
@@ -1432,7 +1432,7 @@
   }
 
   function renderFab() {
-    const showExpenseOption = S.screen === 'dashboard';
+    const showExpenseOption = S.screen === 'dashboard' || S.screen === 'expenses';
     const menu = S.fabMenuOpen ? `
       <div class="fab-menu">
         <div class="fab-menu-item" data-action="add-from-dash" data-type="debt">+ เพิ่มหนี้ใหม่</div>
@@ -1447,6 +1447,7 @@
       { key: 'dashboard', label: 'หน้าแรก', icon: svgHome },
       { key: 'debtList', label: 'หนี้สิน', icon: svgList },
       { key: 'pawnList', label: 'ตั๋วจำนำ', icon: svgTicket },
+      { key: 'expenses', label: 'ค่าใช้จ่าย', icon: svgWallet },
       { key: 'settings', label: 'ตั้งค่า', icon: svgGear },
     ];
     return `<div class="bottom-nav">${items.map((it) => {
@@ -1468,6 +1469,7 @@
   function svgHome(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h14v-9"/></svg>`; }
   function svgList(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg>`; }
   function svgTicket(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 12l6-8h9a3 3 0 013 3v3l-8 9a2 2 0 01-3 0l-7-6z"/><circle cx="15" cy="9" r="1.4"/></svg>`; }
+  function svgWallet(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 7a2 2 0 012-2h13a1 1 0 011 1v2"/><path d="M3 7v11a2 2 0 002 2h14a1 1 0 001-1v-4"/><rect x="14" y="11" width="7" height="5" rx="1"/><circle cx="17" cy="13.5" r="0.8" fill="${c}"/></svg>`; }
   function svgGear(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.6 7.6 0 000-2l1.9-1.5-2-3.4-2.3.6a7.7 7.7 0 00-1.7-1l-.3-2.4h-4l-.3 2.4a7.7 7.7 0 00-1.7 1l-2.3-.6-2 3.4L4.6 11a7.6 7.6 0 000 2l-1.9 1.5 2 3.4 2.3-.6a7.7 7.7 0 001.7 1l.3 2.4h4l.3-2.4a7.7 7.7 0 001.7-1l2.3.6 2-3.4z"/></svg>`; }
   function svgDownload() { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 19h16" stroke-linecap="round"/></svg>`; }
   function svgBell(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c || '#1B2422'}" stroke-width="1.8"><path d="M6 9a6 6 0 0112 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9z"/><path d="M9.5 17a2.5 2.5 0 005 0"/></svg>`; }
