@@ -538,6 +538,129 @@
     try { await Api.updateSettings({ warn_days: n }); } catch (e) { /* keep optimistic value */ }
   }
 
+  // ---------------- Excel export ----------------
+  // ExcelJS is the one library that can write real cell styling (fills, fonts, column
+  // widths) in the browser — loaded on demand from a CDN so it doesn't bloat every page
+  // load for a feature most visits won't use.
+  let exceljsLoadPromise = null;
+  function loadExcelJS() {
+    if (window.ExcelJS) return Promise.resolve();
+    if (exceljsLoadPromise) return exceljsLoadPromise;
+    exceljsLoadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+      script.onload = () => resolve();
+      script.onerror = () => { exceljsLoadPromise = null; reject(new Error('โหลดตัวสร้างไฟล์ Excel ไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่')); };
+      document.head.appendChild(script);
+    });
+    return exceljsLoadPromise;
+  }
+
+  async function exportReportToExcel() {
+    showToast('กำลังสร้างไฟล์ Excel...');
+    try {
+      await loadExcelJS();
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'หนี้สิน & ตั๋วจำนำ';
+      wb.created = new Date();
+
+      const TEAL = 'FF0E6B5C';
+      const HEADER_FONT = { color: { argb: 'FFFFFFFF' }, bold: true, size: 12 };
+      const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL } };
+      const BORDER = { style: 'thin', color: { argb: 'FFE0E7E5' } };
+      const CELL_BORDER = { top: BORDER, left: BORDER, bottom: BORDER, right: BORDER };
+      function styleHeaderRow(row) {
+        row.eachCell((cell) => {
+          cell.font = HEADER_FONT;
+          cell.fill = HEADER_FILL;
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+          cell.border = CELL_BORDER;
+        });
+        row.height = 22;
+      }
+      function styleDataRow(row) {
+        row.eachCell((cell) => { cell.border = CELL_BORDER; cell.alignment = { vertical: 'middle' }; });
+      }
+      function setWidths(sheet, widths) { sheet.columns.forEach((col, i) => { col.width = widths[i]; }); }
+
+      // สรุปภาพรวม
+      const r = S.report || {};
+      const sSum = wb.addWorksheet('สรุปภาพรวม');
+      sSum.mergeCells('A1:B1');
+      sSum.getCell('A1').value = `รายงานภาพรวม — ${new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+      sSum.getCell('A1').font = { bold: true, size: 14, color: { argb: TEAL } };
+      sSum.addRow([]);
+      styleHeaderRow(sSum.addRow(['รายการ', 'ยอด (บาท)']));
+      [
+        ['ยอดหนี้สิน', r.total_debt || 0],
+        ['ยอดตั๋วจำนำ', r.total_pawn || 0],
+        ['ค่าใช้จ่ายประจำต่อเดือน', r.total_recurring || 0],
+        ['ต้องชำระเดือนนี้', r.total_due_this_month || 0],
+      ].forEach(([label, amt]) => {
+        const row = sSum.addRow([label, amt]);
+        row.getCell(2).numFmt = '#,##0.00';
+        styleDataRow(row);
+      });
+      setWidths(sSum, [30, 18]);
+
+      if (S.debts.length) {
+        const sD = wb.addWorksheet('หนี้สิน');
+        styleHeaderRow(sD.addRow(['ชื่อหนี้', 'ยอดทั้งหมด', 'ยอดคงเหลือ', 'ผ่อนแล้ว', 'จ่ายทุกวันที่', 'ยอดผ่อนต่อเดือน']));
+        S.debts.forEach((d) => {
+          const paidPercent = d.total_amount ? (d.total_amount - d.remaining_amount) / d.total_amount : 0;
+          const row = sD.addRow([d.name, d.total_amount, d.remaining_amount, paidPercent, d.due_day, d.installment_amount || 0]);
+          row.getCell(2).numFmt = '#,##0.00'; row.getCell(3).numFmt = '#,##0.00';
+          row.getCell(4).numFmt = '0%'; row.getCell(6).numFmt = '#,##0.00';
+          styleDataRow(row);
+        });
+        setWidths(sD, [26, 16, 16, 12, 14, 18]);
+      }
+
+      PAWN_CATEGORIES.forEach((c) => {
+        const items = S.pawns.filter((p) => p.category === c.key);
+        if (!items.length) return;
+        const sP = wb.addWorksheet(`ตั๋ว-${c.label}`.slice(0, 31));
+        styleHeaderRow(sP.addRow(['ชื่อสินค้า', 'ร้านจำนำ', 'เลขที่ตั๋ว', 'ยอดเงินต้น', 'ดอกเบี้ย', 'วันที่จำนำ', 'วันครบกำหนด', 'ลิงก์ต่อดอก']));
+        items.forEach((p) => {
+          const row = sP.addRow([
+            p.item_name, p.shop_name || '-', p.ticket_code || '-', p.amount, p.interest || 0,
+            p.pawn_date ? formatDate(p.pawn_date) : formatDate((p.created_at || '').slice(0, 10)),
+            formatDate(p.due_date), p.renew_url || '-',
+          ]);
+          row.getCell(4).numFmt = '#,##0.00'; row.getCell(5).numFmt = '#,##0.00';
+          styleDataRow(row);
+        });
+        setWidths(sP, [24, 18, 14, 14, 12, 14, 14, 32]);
+      });
+
+      if (S.expenses.length) {
+        const sE = wb.addWorksheet('ค่าใช้จ่ายประจำ');
+        styleHeaderRow(sE.addRow(['ชื่อ', 'ประเภท', 'ยอด / ยอดล่าสุด', 'จ่ายทุกวันที่', 'สถานะเดือนนี้']));
+        S.expenses.forEach((e) => {
+          const amt = e.expense_type === 'fixed' ? e.amount : (e.last_amount ?? 0);
+          const row = sE.addRow([e.name, e.expense_type === 'fixed' ? 'ยอดคงที่' : 'ไม่คงที่', amt, e.due_day, e.paid_this_month ? 'จ่ายแล้ว' : 'ยังไม่จ่าย']);
+          row.getCell(3).numFmt = '#,##0.00';
+          styleDataRow(row);
+        });
+        setWidths(sE, [24, 14, 18, 14, 16]);
+      }
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `รายงาน-หนี้สินตั๋วจำนำ-${todayISO()}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      showToast('ดาวน์โหลดไฟล์ Excel แล้ว');
+    } catch (e) {
+      showToast(e.message || 'สร้างไฟล์ Excel ไม่สำเร็จ');
+    }
+  }
+
   // No server ever sends a real push (see README) — this just proves the browser/OS side of
   // notifications works on this device, triggered locally right here, right now.
   async function testNotification() {
@@ -733,6 +856,13 @@
     return `
       <div class="screen-pad">
         ${stats}
+        <button class="card" data-action="export-excel" style="width:100%;border:none;cursor:pointer;background:linear-gradient(135deg,#0E6B5C,#123F35);display:flex;align-items:center;gap:14px;text-align:left;font:inherit;margin-bottom:16px">
+          <div style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,0.16);display:flex;align-items:center;justify-content:center;flex:none">${svgDownload()}</div>
+          <div style="flex:1;min-width:0">
+            <div style="color:#fff;font-weight:700;font-size:15px">ดาวน์โหลดรายงาน Excel</div>
+            <div style="color:rgba(255,255,255,0.78);font-size:12.5px">หนี้สิน · ตั๋วจำนำ · ค่าใช้จ่ายประจำ ทั้งหมด</div>
+          </div>
+        </button>
         <div class="section-title">รายการที่ต้องชำระเดือนนี้</div>
         ${r.breakdown.length ? `<div style="display:flex;flex-direction:column;gap:10px">${rows}</div>` : `
           <div class="empty-card"><div class="empty-emoji">✅</div><div class="empty-text">ชำระครบทุกรายการของเดือนนี้แล้ว</div></div>`}
@@ -1228,6 +1358,7 @@
   function svgList(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg>`; }
   function svgTicket(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 12l6-8h9a3 3 0 013 3v3l-8 9a2 2 0 01-3 0l-7-6z"/><circle cx="15" cy="9" r="1.4"/></svg>`; }
   function svgGear(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.6 7.6 0 000-2l1.9-1.5-2-3.4-2.3.6a7.7 7.7 0 00-1.7-1l-.3-2.4h-4l-.3 2.4a7.7 7.7 0 00-1.7 1l-2.3-.6-2 3.4L4.6 11a7.6 7.6 0 000 2l-1.9 1.5 2 3.4 2.3-.6a7.7 7.7 0 001.7 1l.3 2.4h4l.3-2.4a7.7 7.7 0 001.7-1l2.3.6 2-3.4z"/></svg>`; }
+  function svgDownload() { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 19h16" stroke-linecap="round"/></svg>`; }
   function svgBell(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c || '#1B2422'}" stroke-width="1.8"><path d="M6 9a6 6 0 0112 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9z"/><path d="M9.5 17a2.5 2.5 0 005 0"/></svg>`; }
   function svgLogout(c) { return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c || '#1B2422'}" stroke-width="1.8"><path d="M15 17l5-5-5-5M20 12H9"/><path d="M9 19H6a2 2 0 01-2-2V7a2 2 0 012-2h3"/></svg>`; }
   function svgSwap(c) { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${c || '#0E6B5C'}" stroke-width="2"><path d="M7 4l-4 4 4 4M3 8h13M17 20l4-4-4-4M21 16H8"/></svg>`; }
@@ -1278,6 +1409,7 @@
       case 'delete-expense': deleteExpense(el.dataset.id); break;
       case 'goto-expenses': setState({ screen: 'expenses', returnScreen: 'dashboard' }); break;
       case 'warn-days': setWarnDays(Number(el.dataset.n)); break;
+      case 'export-excel': exportReportToExcel(); break;
       case 'test-notification': testNotification(); break;
       case 'fab-click':
         if (S.screen === 'dashboard') setState({ fabMenuOpen: !S.fabMenuOpen });
