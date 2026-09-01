@@ -988,7 +988,7 @@
       : it.type === 'expense'
       ? `<button class="mark-paid-btn" data-action="mark-expense-paid" data-id="${it.ref_id}" data-expense-type="${it.expense_type}">บันทึกว่าจ่ายแล้ว</button>`
       : `<div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="mark-paid-btn" data-action="redeem-open" data-id="${it.ref_id}">ไถ่ถอนแล้ว</button>
+          <button class="mark-paid-btn" data-action="redeem-open" data-id="${it.ref_id}">ไถ่ถอน</button>
           ${it.category === 'jewelry'
             ? `<button class="pawn-btn renew" data-action="jewelry-renew" data-id="${it.ref_id}">ต่อดอก</button>`
             : `<button class="pawn-btn renew" data-action="renew-open" data-id="${it.ref_id}">ต่อดอก</button>`}
@@ -1252,7 +1252,7 @@
         ${pastFinal ? `<div class="field-label" style="color:#B23B3B;margin-bottom:0">เลยกำหนดสุดท้ายแล้ว กรุณาไถ่ถอนโดยเร็ว มิฉะนั้นจะเสียสิทธิ์</div>`
           : atFourMonths ? `<div class="field-label" style="color:#92600A;margin-bottom:0">ครบ 4 เดือนแล้ว เข้าสู่เดือนสุดท้าย (ไม่เกิน ${formatDate(finalDueDate)})</div>` : ''}`;
       actionsHtml = `<div class="pawn-actions">
-          <button class="pawn-btn redeem" data-action="redeem-open" data-id="${p.id}">ไถ่ถอนแล้ว</button>
+          <button class="pawn-btn redeem" data-action="redeem-open" data-id="${p.id}">ไถ่ถอน</button>
           <button class="pawn-btn renew" data-action="jewelry-renew" data-id="${p.id}">ต่อดอก</button>
         </div>${renderRedeemPrompt(p.id)}`;
     } else {
@@ -1269,7 +1269,7 @@
         </div>`;
       actionsHtml = `
         <div class="pawn-actions">
-          <button class="pawn-btn redeem" data-action="redeem-open" data-id="${p.id}">ไถ่ถอนแล้ว</button>
+          <button class="pawn-btn redeem" data-action="redeem-open" data-id="${p.id}">ไถ่ถอน</button>
           <button class="pawn-btn renew" data-action="renew-open" data-id="${p.id}">ต่อดอก</button>
         </div>
         ${renderRedeemPrompt(p.id)}
