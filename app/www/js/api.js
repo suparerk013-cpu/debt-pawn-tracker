@@ -339,7 +339,7 @@ const Api = (() => {
       const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
       const monthNumber = monthsBetween(pawnDate, todayStr) + 1;
       if (monthNumber < 4 || !p.interest) return;
-      duePawns.push({ type: 'pawn', ref_id: p.id, title: `${p.item_name} (ดอกเบี้ยสะสม)`, amount: p.interest * monthNumber, due_date: todayStr, category: p.category });
+      duePawns.push({ type: 'pawn', ref_id: p.id, title: `${p.item_name} (ดอกเบี้ยสะสม)`, amount: p.interest * monthNumber, due_date: todayStr, category: p.category, principal: p.amount, month_number: monthNumber });
     });
     const dueExpenses = expenses
       .filter((e) => !(e.payments && e.payments[currentMonth]))

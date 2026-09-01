@@ -992,7 +992,11 @@
             <span class="near-kind" style="background:${kindBg};color:${kindFg}">${kindLabel}</span>
             <span class="installment-date">${esc(it.title)}</span>
           </div>
-          <div class="installment-amount">฿${formatMoney(it.amount)} · ครบกำหนด ${formatDate(it.due_date)}</div>
+          <div class="installment-amount">
+            ${it.type === 'pawn' && it.category === 'jewelry'
+              ? `฿${formatMoney(it.amount)} ดอกสะสม · เงินต้น ฿${formatMoney(it.principal)} · เข้างวดที่ ${it.month_number}`
+              : `฿${formatMoney(it.amount)} · ครบกำหนด ${formatDate(it.due_date)}`}
+          </div>
         </div>
         ${action}
         ${payPrompt}
