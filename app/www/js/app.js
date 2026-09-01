@@ -420,6 +420,26 @@
     } catch (e) { showToast(e.message || 'ต่อดอกไม่สำเร็จ'); }
   }
 
+  // Jewelry's "ต่อดอก": paying the accrued interest resets the clock (new pawn_date = today,
+  // same as a real "ส่งดอก" ticket), rather than picking a period like other categories.
+  async function renewJewelryPawn(id) {
+    const p = S.pawns.find((x) => x.id === id);
+    if (!p) return;
+    const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
+    const monthNumber = monthsBetween(pawnDate, todayISO()) + 1;
+    const accrued = (p.interest || 0) * monthNumber;
+    const ok = confirm(`ยืนยันต่อดอก "${p.item_name}"\nจ่ายดอกเบี้ยสะสม ฿${formatMoney(accrued)} (${monthNumber} งวด)\nจะเริ่มนับรอบใหม่จากวันนี้`);
+    if (!ok) return;
+    try {
+      const res = await Api.renewJewelry(id);
+      p.pawn_date = res.pawn_date;
+      p.renewal_count = (p.renewal_count || 0) + 1;
+      showToast('ต่อดอกแล้ว เริ่มนับรอบใหม่จากวันนี้');
+      render();
+      refreshReport();
+    } catch (e) { showToast(e.message || 'ต่อดอกไม่สำเร็จ'); }
+  }
+
   async function addDebtSubmit() {
     const f = S.forms;
     const total = Number(f.total) || 0;
@@ -969,7 +989,9 @@
       ? `<button class="mark-paid-btn" data-action="mark-expense-paid" data-id="${it.ref_id}" data-expense-type="${it.expense_type}">บันทึกว่าจ่ายแล้ว</button>`
       : `<div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="mark-paid-btn" data-action="redeem-open" data-id="${it.ref_id}">ไถ่ถอนแล้ว</button>
-          ${it.category !== 'jewelry' ? `<button class="pawn-btn renew" data-action="renew-open" data-id="${it.ref_id}">ต่อดอก</button>` : ''}
+          ${it.category === 'jewelry'
+            ? `<button class="pawn-btn renew" data-action="jewelry-renew" data-id="${it.ref_id}">ต่อดอก</button>`
+            : `<button class="pawn-btn renew" data-action="renew-open" data-id="${it.ref_id}">ต่อดอก</button>`}
         </div>`;
     const payPrompt = it.type === 'expense' && S.expensePayFor === it.ref_id ? `
       <div class="warn-options" style="width:100%;margin-top:8px">
@@ -1229,7 +1251,10 @@
         ${p.interest ? `<div class="field-label" style="margin-bottom:0${pastFinal ? ';color:#B23B3B' : atFourMonths ? ';color:#92600A' : ''}">ดอกเบี้ย ฿${formatMoney(p.interest)}/เดือน × ${monthNumber} เดือน = สะสม ฿${formatMoney(accrued)}</div>` : ''}
         ${pastFinal ? `<div class="field-label" style="color:#B23B3B;margin-bottom:0">เลยกำหนดสุดท้ายแล้ว กรุณาไถ่ถอนโดยเร็ว มิฉะนั้นจะเสียสิทธิ์</div>`
           : atFourMonths ? `<div class="field-label" style="color:#92600A;margin-bottom:0">ครบ 4 เดือนแล้ว เข้าสู่เดือนสุดท้าย (ไม่เกิน ${formatDate(finalDueDate)})</div>` : ''}`;
-      actionsHtml = `<div class="pawn-actions"><button class="pawn-btn redeem" data-action="redeem-open" data-id="${p.id}">ไถ่ถอนแล้ว</button></div>${renderRedeemPrompt(p.id)}`;
+      actionsHtml = `<div class="pawn-actions">
+          <button class="pawn-btn redeem" data-action="redeem-open" data-id="${p.id}">ไถ่ถอนแล้ว</button>
+          <button class="pawn-btn renew" data-action="jewelry-renew" data-id="${p.id}">ต่อดอก</button>
+        </div>${renderRedeemPrompt(p.id)}`;
     } else {
       // Unchanged for non-jewelry: pick-a-period renewal pushes the due date forward.
       const days = daysUntil(p.due_date);
@@ -1582,6 +1607,7 @@
       case 'submit-edit-pawn': editPawnSubmit(); break;
       case 'delete-pawn': deletePawnAction(el.dataset.id); break;
       case 'renew-open': toggleRenewPicker(el.dataset.id); break;
+      case 'jewelry-renew': renewJewelryPawn(el.dataset.id); break;
       case 'renew-confirm': {
         const opt = PERIOD_OPTIONS.find((o) => o.key === el.dataset.key);
         if (opt && opt.unit) renewPawn(el.dataset.id, opt);

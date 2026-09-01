@@ -226,6 +226,26 @@ const Api = (() => {
     await logHistory({ type: 'renew', ref_id: id, item_name: p.item_name, category: p.category, amount: p.interest || 0, due_date_before: p.due_date, due_date_after: dueDate });
     return { ok: true, due_date: dueDate };
   }
+  // Jewelry's "ต่อดอก": paying the accrued interest at a real pawnshop resets the clock —
+  // a fresh 4-month term (plus the usual 1-month grace before forfeit) starting from today,
+  // same as the "ครั้งที่ 2 ส่งดอก" renewal tickets this data model is based on. There's no
+  // due_date to shift for jewelry, so this resets pawn_date instead — monthsBetween() then
+  // naturally starts counting from 1 again, and the 5-month final deadline moves out with it.
+  async function renewJewelry(id) {
+    const ref = db().collection('pawns').doc(id);
+    const doc = await ref.get();
+    if (!doc.exists || doc.data().user_id !== uid()) throw new Error('Not found');
+    const p = doc.data();
+    if (p.category !== 'jewelry') throw new Error('รายการนี้ไม่ใช่เครื่องประดับ');
+    const todayStr = dateStr(new Date());
+    const oldPawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
+    const monthNumber = monthsBetween(oldPawnDate, todayStr) + 1;
+    const paidInterest = (p.interest || 0) * monthNumber;
+    const finalDue = (dateIso) => { const d = new Date(dateIso + 'T00:00:00'); d.setMonth(d.getMonth() + 5); return dateStr(d); };
+    await ref.update({ pawn_date: todayStr, renewal_count: (p.renewal_count || 0) + 1 });
+    await logHistory({ type: 'renew', ref_id: id, item_name: p.item_name, category: 'jewelry', amount: paidInterest, due_date_before: finalDue(oldPawnDate), due_date_after: finalDue(todayStr) });
+    return { ok: true, pawn_date: todayStr, paid_interest: paidInterest };
+  }
 
   // ---------------- History (renew/redeem log) ----------------
   // Installments and expenses already carry their own paid_at/payments — only pawn
@@ -521,7 +541,7 @@ const Api = (() => {
     setActiveUser,
     login, switchUser, getUsers,
     getDebts, getDebtDetail, createDebt, updateDebt, closeDebt, deleteDebt, markInstallmentPaid,
-    getPawns, createPawn, updatePawn, deletePawn, redeemPawn, renewPawn,
+    getPawns, createPawn, updatePawn, deletePawn, redeemPawn, renewPawn, renewJewelry,
     getReport, getHistory,
     getExpenses, createExpense, updateExpense, markExpensePaid, deleteExpense,
     getSettings, updateSettings,
