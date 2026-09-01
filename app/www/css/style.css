@@ -82,6 +82,16 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 .mark-paid-btn:hover { background: #CFEAE3; }
 
 .pawn-card { background: #fff; border-radius: 16px; padding: 16px; border: 1px solid #E7ECEA; display: flex; flex-direction: column; gap: 10px; }
+/* Soft category sheen — gold for jewelry, blue for electronics — so the two are easy to
+   tell apart at a glance in a mixed list, without turning the page into flat color blocks. */
+.pawn-card.cat-jewelry, .installment-row.cat-jewelry {
+  background: linear-gradient(135deg, #FCF2D6 0%, #fff 60%);
+  border-color: #EEDDA0; border-left: 3px solid #C1961F;
+}
+.pawn-card.cat-electronics, .installment-row.cat-electronics {
+  background: linear-gradient(135deg, #E3EEFC 0%, #fff 60%);
+  border-color: #C6D9F0; border-left: 3px solid #2F6FB0;
+}
 .pawn-icon { width: 44px; height: 44px; border-radius: 12px; background: #F5EFE0; display: flex; align-items: center; justify-content: center; flex: none; }
 .pawn-item { font-size: 15px; font-weight: 600; color: #1B2422; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pawn-shop { font-size: 12.5px; color: #5C6C68; }

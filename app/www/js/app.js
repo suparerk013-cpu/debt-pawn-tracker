@@ -1008,7 +1008,7 @@
         </div>
       </div>` : '';
     return `
-      <div class="installment-row" style="flex-wrap:wrap">
+      <div class="installment-row${it.type === 'pawn' ? ' cat-' + it.category : ''}" style="flex-wrap:wrap">
         <div style="flex:1">
           <div style="display:flex;align-items:center;gap:6px">
             <span class="near-kind" style="background:${kindBg};color:${kindFg}">${kindLabel}</span>
@@ -1285,7 +1285,7 @@
     }
 
     return `
-      <div class="pawn-card">
+      <div class="pawn-card cat-${p.category}">
         <div style="display:flex;gap:12px;align-items:center">
           <div class="pawn-icon">${svgPawn()}</div>
           <div style="flex:1;min-width:0">
