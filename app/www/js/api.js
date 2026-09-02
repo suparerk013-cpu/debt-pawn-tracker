@@ -20,6 +20,14 @@ const Api = (() => {
     if (to.getDate() < from.getDate()) months--;
     return Math.max(0, months);
   }
+  // Where a jewelry ticket stands in its cycle. Real pawnshops charge interest for at most
+  // 4 months and forfeit in the 5th, so `billed` stops at 4 no matter how long it sits —
+  // `elapsed` keeps climbing only so the UI can say how far past due it actually is.
+  const JEWELRY_BILLED_MONTHS = 4;
+  function jewelryTerm(pawnDate, todayStr) {
+    const elapsed = monthsBetween(pawnDate, todayStr) + 1;
+    return { elapsed, billed: Math.min(elapsed, JEWELRY_BILLED_MONTHS), overdue: elapsed > JEWELRY_BILLED_MONTHS };
+  }
 
   async function ensureAuth() {
     if (!firebase.auth().currentUser) await firebase.auth().signInAnonymously();
@@ -188,16 +196,24 @@ const Api = (() => {
     await ref.delete();
     return { ok: true };
   }
+  // Every pawn mutation below runs in a transaction that also writes its history row, so a
+  // double-tap on a slow connection can't leave the two out of sync (which is exactly what
+  // happened before: 4 renew rows logged but only 3 due-date bumps, because two concurrent
+  // read-modify-writes both read the same stale due_date and one overwrote the other).
   async function redeemPawn(id, amount) {
     const ref = db().collection('pawns').doc(id);
-    const doc = await ref.get();
-    if (!doc.exists || doc.data().user_id !== uid()) throw new Error('Not found');
-    const p = doc.data();
-    const patch = { status: 'redeemed' };
+    const histRef = db().collection('history').doc();
     const amt = amount != null && amount !== '' ? Number(amount) : null;
-    if (amt != null) patch.redeemed_amount = amt;
-    await ref.update(patch);
-    await logHistory({ type: 'redeem', ref_id: id, item_name: p.item_name, category: p.category, amount: amt });
+    await db().runTransaction(async (tx) => {
+      const doc = await tx.get(ref);
+      if (!doc.exists || doc.data().user_id !== uid()) throw new Error('Not found');
+      const p = doc.data();
+      if (p.status === 'redeemed') throw new Error('ตั๋วนี้ไถ่ถอนไปแล้ว');
+      const patch = { status: 'redeemed' };
+      if (amt != null) patch.redeemed_amount = amt;
+      tx.update(ref, patch);
+      tx.set(histRef, { user_id: uid(), date: dateStr(new Date()), created_at: nowIso(), type: 'redeem', ref_id: id, item_name: p.item_name, category: p.category, amount: amt });
+    });
     return { ok: true };
   }
   // Jewelry no longer renews this way — its due date is fixed to pawn_date+5 months and
@@ -205,45 +221,52 @@ const Api = (() => {
   // the other categories' pick-a-period renewal.
   async function renewPawn(id, period) {
     const ref = db().collection('pawns').doc(id);
-    const doc = await ref.get();
-    if (!doc.exists || doc.data().user_id !== uid()) throw new Error('Not found');
-    const p = doc.data();
-    if (p.category === 'jewelry') throw new Error('เครื่องประดับไม่ใช้การต่อดอกแบบนี้แล้ว ดูดอกเบี้ยสะสมที่การ์ดตั๋วแทน');
+    const histRef = db().collection('history').doc();
+    let dueDate;
+    await db().runTransaction(async (tx) => {
+      const doc = await tx.get(ref);
+      if (!doc.exists || doc.data().user_id !== uid()) throw new Error('Not found');
+      const p = doc.data();
+      if (p.category === 'jewelry') throw new Error('เครื่องประดับไม่ใช้การต่อดอกแบบนี้แล้ว ดูดอกเบี้ยสะสมที่การ์ดตั๋วแทน');
 
-    const d = new Date(p.due_date + 'T00:00:00');
-    let periodUnit, periodValue;
-    if (period.months) {
-      periodValue = Math.max(1, Math.min(12, Number(period.months)));
-      d.setMonth(d.getMonth() + periodValue);
-      periodUnit = 'month';
-    } else {
-      periodValue = Math.max(1, Math.min(365, Number(period.days) || 30));
-      d.setDate(d.getDate() + periodValue);
-      periodUnit = 'day';
-    }
-    const dueDate = dateStr(d);
-    await ref.update({ due_date: dueDate, renewal_count: (p.renewal_count || 0) + 1, status: 'active', period_unit: periodUnit, period_value: periodValue });
-    await logHistory({ type: 'renew', ref_id: id, item_name: p.item_name, category: p.category, amount: p.interest || 0, due_date_before: p.due_date, due_date_after: dueDate });
+      const d = new Date(p.due_date + 'T00:00:00');
+      let periodUnit, periodValue;
+      if (period.months) {
+        periodValue = Math.max(1, Math.min(12, Number(period.months)));
+        d.setMonth(d.getMonth() + periodValue);
+        periodUnit = 'month';
+      } else {
+        periodValue = Math.max(1, Math.min(365, Number(period.days) || 30));
+        d.setDate(d.getDate() + periodValue);
+        periodUnit = 'day';
+      }
+      dueDate = dateStr(d);
+      tx.update(ref, { due_date: dueDate, renewal_count: (p.renewal_count || 0) + 1, status: 'active', period_unit: periodUnit, period_value: periodValue });
+      tx.set(histRef, { user_id: uid(), date: dateStr(new Date()), created_at: nowIso(), type: 'renew', ref_id: id, item_name: p.item_name, category: p.category, amount: p.interest || 0, due_date_before: p.due_date, due_date_after: dueDate });
+    });
     return { ok: true, due_date: dueDate };
   }
   // Jewelry's "ต่อดอก": paying the accrued interest at a real pawnshop resets the clock —
   // a fresh 4-month term (plus the usual 1-month grace before forfeit) starting from today,
   // same as the "ครั้งที่ 2 ส่งดอก" renewal tickets this data model is based on. There's no
-  // due_date to shift for jewelry, so this resets pawn_date instead — monthsBetween() then
+  // due_date to shift for jewelry, so this resets pawn_date instead — jewelryTerm() then
   // naturally starts counting from 1 again, and the 5-month final deadline moves out with it.
   async function renewJewelry(id) {
     const ref = db().collection('pawns').doc(id);
-    const doc = await ref.get();
-    if (!doc.exists || doc.data().user_id !== uid()) throw new Error('Not found');
-    const p = doc.data();
-    if (p.category !== 'jewelry') throw new Error('รายการนี้ไม่ใช่เครื่องประดับ');
+    const histRef = db().collection('history').doc();
     const todayStr = dateStr(new Date());
-    const oldPawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
-    const monthNumber = monthsBetween(oldPawnDate, todayStr) + 1;
-    const paidInterest = (p.interest || 0) * monthNumber;
-    const finalDue = (dateIso) => { const d = new Date(dateIso + 'T00:00:00'); d.setMonth(d.getMonth() + 5); return dateStr(d); };
-    await ref.update({ pawn_date: todayStr, renewal_count: (p.renewal_count || 0) + 1 });
-    await logHistory({ type: 'renew', ref_id: id, item_name: p.item_name, category: 'jewelry', amount: paidInterest, due_date_before: finalDue(oldPawnDate), due_date_after: finalDue(todayStr) });
+    let paidInterest = 0;
+    await db().runTransaction(async (tx) => {
+      const doc = await tx.get(ref);
+      if (!doc.exists || doc.data().user_id !== uid()) throw new Error('Not found');
+      const p = doc.data();
+      if (p.category !== 'jewelry') throw new Error('รายการนี้ไม่ใช่เครื่องประดับ');
+      const oldPawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
+      paidInterest = (p.interest || 0) * jewelryTerm(oldPawnDate, todayStr).billed;
+      const finalDue = (iso) => { const d = new Date(iso + 'T00:00:00'); d.setMonth(d.getMonth() + 5); return dateStr(d); };
+      tx.update(ref, { pawn_date: todayStr, renewal_count: (p.renewal_count || 0) + 1 });
+      tx.set(histRef, { user_id: uid(), date: todayStr, created_at: nowIso(), type: 'renew', ref_id: id, item_name: p.item_name, category: 'jewelry', amount: paidInterest, due_date_before: finalDue(oldPawnDate), due_date_after: finalDue(todayStr) });
+    });
     return { ok: true, pawn_date: todayStr, paid_interest: paidInterest };
   }
 
@@ -335,6 +358,22 @@ const Api = (() => {
 
     const totalDebt = debts.reduce((a, d) => a + d.remaining_amount, 0);
     const totalPawn = pawns.reduce((a, p) => a + p.amount, 0);
+    // Jewelry and everything else are tracked separately end-to-end: they use different
+    // renewal mechanics (monthly accrual vs. pick-a-period), so a combined figure hides
+    // which half of the money is actually moving.
+    const isJewelry = (p) => p.category === 'jewelry';
+    const todayForTerms = dateStr(now);
+    const jewelryPawns = pawns.filter(isJewelry);
+    const otherPawns = pawns.filter((p) => !isJewelry(p));
+    const totalPawnJewelry = jewelryPawns.reduce((a, p) => a + p.amount, 0);
+    const totalPawnOther = otherPawns.reduce((a, p) => a + p.amount, 0);
+    // Interest owed right now: jewelry has accrued since its pawn date (capped at 4 months);
+    // other categories owe one flat interest payment per renewal cycle.
+    const interestJewelry = jewelryPawns.reduce((a, p) => {
+      const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
+      return a + (p.interest || 0) * jewelryTerm(pawnDate, todayForTerms).billed;
+    }, 0);
+    const interestOther = otherPawns.reduce((a, p) => a + (p.interest || 0), 0);
     const totalRecurring = expenses.reduce((a, e) => {
       if (e.expense_type === 'fixed') return a + (e.amount || 0);
       const latest = latestPayment(e);
@@ -355,11 +394,11 @@ const Api = (() => {
       .map((p) => ({ type: 'pawn', ref_id: p.id, title: p.item_name, amount: p.interest || 0, due_date: p.due_date, category: p.category }));
     // Jewelry: once accrued interest reaches month 4, it becomes a "due now" line item —
     // there's no calendar due_date to check against since renewal no longer shifts a date.
-    pawns.filter((p) => p.category === 'jewelry').forEach((p) => {
+    jewelryPawns.forEach((p) => {
       const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
-      const monthNumber = monthsBetween(pawnDate, todayStr) + 1;
-      if (monthNumber < 4 || !p.interest) return;
-      duePawns.push({ type: 'pawn', ref_id: p.id, title: `${p.item_name} (ดอกเบี้ยสะสม)`, amount: p.interest * monthNumber, due_date: todayStr, category: p.category, principal: p.amount, month_number: monthNumber });
+      const term = jewelryTerm(pawnDate, todayStr);
+      if (term.billed < JEWELRY_BILLED_MONTHS || !p.interest) return;
+      duePawns.push({ type: 'pawn', ref_id: p.id, title: `${p.item_name} (ดอกเบี้ยสะสม)`, amount: p.interest * term.billed, due_date: todayStr, category: p.category, principal: p.amount, month_number: term.billed, months_elapsed: term.elapsed, term_overdue: term.overdue });
     });
     const dueExpenses = expenses
       .filter((e) => !(e.payments && e.payments[currentMonth]))
@@ -373,7 +412,13 @@ const Api = (() => {
 
     const breakdown = [...dueInstallments, ...duePawns, ...dueExpenses].sort((a, b) => a.due_date < b.due_date ? -1 : 1);
     const totalDueThisMonth = breakdown.reduce((a, r) => a + r.amount, 0);
-    return { total_debt: totalDebt, total_pawn: totalPawn, total_recurring: totalRecurring, total_due_this_month: totalDueThisMonth, breakdown };
+    return {
+      total_debt: totalDebt, total_pawn: totalPawn, total_recurring: totalRecurring,
+      total_due_this_month: totalDueThisMonth, breakdown,
+      total_pawn_jewelry: totalPawnJewelry, total_pawn_other: totalPawnOther,
+      interest_jewelry: interestJewelry, interest_other: interestOther,
+      count_pawn_jewelry: jewelryPawns.length, count_pawn_other: otherPawns.length,
+    };
   }
   // Combines the pawn renew/redeem log with installments (already carry paid_at) and expense
   // payments (already carry a payments.{month} map) into one chronological list, plus a
@@ -481,10 +526,11 @@ const Api = (() => {
           items.push({ id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id, title: '⚠️ ตั๋วจำนำใกล้ขาดแล้ว!', body: `${p.item_name} — ครบกำหนดไถ่ถอนสุดท้ายวันนี้ (${finalDueStr})`, sent_at: todayStr + 'T00:00:00' });
           return;
         }
-        const monthNumber = monthsBetween(pawnDate, todayStr) + 1;
-        if (monthNumber >= 4 && p.interest) {
-          const accrued = p.interest * monthNumber;
-          items.push({ id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id, title: '⚠️ ครบ 4 เดือนแล้ว', body: `${p.item_name} — ดอกเบี้ยสะสม ฿${Math.round(accrued).toLocaleString('th-TH')} ใกล้ครบกำหนดสุดท้าย (${finalDueStr})`, sent_at: todayStr + 'T00:00:00' });
+        const term = jewelryTerm(pawnDate, todayStr);
+        if (term.billed >= JEWELRY_BILLED_MONTHS && p.interest) {
+          const accrued = p.interest * term.billed;
+          const title = term.overdue ? '⚠️ เลยกำหนดต่อดอกแล้ว' : '⚠️ ครบ 4 เดือนแล้ว';
+          items.push({ id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id, title, body: `${p.item_name} — ดอกเบี้ยสะสม ฿${Math.round(accrued).toLocaleString('th-TH')} ต้องต่อดอกหรือไถ่ถอนก่อน ${finalDueStr}`, sent_at: todayStr + 'T00:00:00', persistent: true });
         }
         return;
       }
