@@ -498,7 +498,12 @@ const Api = (() => {
 
     historySnap.docs.forEach((doc) => {
       const h = doc.data();
-      items.push({ id: doc.id, type: h.type, ref_id: h.ref_id, category: h.category, title: h.item_name, amount: h.amount || 0, date: h.date, due_date_after: h.due_date_after });
+      items.push({
+        id: doc.id, type: h.type, ref_id: h.ref_id, category: h.category, title: h.item_name,
+        amount: h.amount || 0, date: h.date,
+        // *_before are what the undo button previews and undoHistory() restores.
+        due_date_before: h.due_date_before, due_date_after: h.due_date_after, pawn_date_before: h.pawn_date_before,
+      });
     });
 
     expenses.forEach((e) => {

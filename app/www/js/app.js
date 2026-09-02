@@ -69,6 +69,7 @@
     pendingAction: null,       // key of the write currently in flight; blocks every action button
     detailFor: null,           // pawn id whose detail popup is open
     detailHistoryId: null,     // set when the popup was opened from a history row — enables undo
+    detailHistoryItem: null,   // that row's data, so the undo button can render before the pawn loads
     detailPawnCache: null,     // pawn fetched by id when it isn't in S.pawns (i.e. already redeemed)
     pawnFilter: null,          // 'jewelry' | 'nonjewelry' — set by tapping a dashboard total card
     expensePayFor: null,
@@ -419,8 +420,11 @@
     const known = S.pawns.find((x) => x.id === id);
     setState({
       detailFor: id, detailHistoryId: historyId || null,
+      detailHistoryItem: historyId && S.history ? S.history.items.find((h) => h.id === historyId) || null : null,
       detailPawnCache: known || null, redeemPromptFor: null, renewPickerFor: null,
     });
+    // A redeemed pawn has dropped out of S.pawns, so it always needs this fetch — which is
+    // why the undo button is rendered from the history row instead of waiting on it.
     if (!known) {
       Api.getPawnById(id)
         .then((p) => { if (S.detailFor === id) setState({ detailPawnCache: p }); })
@@ -428,14 +432,14 @@
     }
   }
   function closePawnDetail() {
-    setState({ detailFor: null, detailHistoryId: null, detailPawnCache: null, redeemPromptFor: null, renewPickerFor: null });
+    setState({ detailFor: null, detailHistoryId: null, detailHistoryItem: null, detailPawnCache: null, redeemPromptFor: null, renewPickerFor: null });
   }
   function undoHistoryEntry(historyId) {
     if (!confirm('ยืนยันคืนรายการนี้?\nระบบจะย้อนตั๋วกลับไปสถานะก่อนหน้า และลบรายการนี้ออกจากประวัติ')) return;
     return runAction('undo:' + historyId, async () => {
       try {
         const res = await Api.undoHistory(historyId);
-        Object.assign(S, { detailFor: null, detailHistoryId: null, detailPawnCache: null });
+        Object.assign(S, { detailFor: null, detailHistoryId: null, detailHistoryItem: null, detailPawnCache: null });
         showToast(res.type === 'redeem' ? 'คืนตั๋วกลับเป็นจำนำอยู่แล้ว' : 'ย้อนการต่อดอกแล้ว');
         // The pawn list changes shape on undo (a redeemed ticket comes back), so reload it
         // rather than patching S.pawns by hand.
@@ -1334,12 +1338,45 @@
   // Full-detail popup, opened by tapping a pawn anywhere it's listed (dashboard row or pawn
   // card). Carries the same redeem/renew actions as the card so you never have to leave the
   // screen you're on to act on a ticket you just looked up.
+  // Only present when the popup came from a history row. Spells out what reverting will do,
+  // so it's obvious the button rolls the ticket back rather than returning a physical item.
+  function renderUndoButton() {
+    if (!S.detailHistoryId) return '';
+    const h = S.detailHistoryItem;
+    let effect = '';
+    if (h && h.type === 'renew') {
+      const back = h.category === 'jewelry'
+        ? (h.pawn_date_before ? `เริ่มนับงวดใหม่จาก ${formatDate(h.pawn_date_before)}` : 'กลับไปงวดก่อนต่อดอก')
+        : (h.due_date_before ? `ครบกำหนดกลับเป็น ${formatDate(h.due_date_before)}` : 'กลับไปวันครบกำหนดเดิม');
+      effect = `ยกเลิกการต่อดอกนี้ · ${back}`;
+    } else if (h && h.type === 'redeem') {
+      effect = 'ยกเลิกการไถ่ถอน · ตั๋วจะกลับมาเป็นจำนำอยู่';
+    }
+    return `
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid #F0F3F2">
+        ${effect ? `<div class="field-label" style="margin:0 0 6px">${esc(effect)}</div>` : ''}
+        <button class="pawn-btn" data-action="undo-history" data-id="${S.detailHistoryId}" ${lockAttr()}
+          style="width:100%;background:#FDEAEA;color:#B23B3B">${btnLabel('undo:' + S.detailHistoryId, '↩️ คืนสินค้า (ย้อนรายการนี้)')}</button>
+      </div>`;
+  }
+
   function renderPawnDetailModal() {
     if (!S.detailFor) return '';
     const p = S.pawns.find((x) => x.id === S.detailFor) || S.detailPawnCache;
     if (!p) {
+      // Still fetching the pawn — but the undo button comes from the history row, which is
+      // already in hand, so it shows straight away rather than appearing seconds later.
       return `<div class="modal-backdrop" data-action="close-pawn-detail">
-        <div class="modal-sheet" data-stop="1"><div class="empty-text" style="padding:20px 0">กำลังโหลด...</div></div>
+        <div class="modal-sheet" data-stop="1">
+          <div class="row-between" style="align-items:flex-start">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:16px;font-weight:700;color:#1B2422">${esc((S.detailHistoryItem || {}).title || 'ตั๋วจำนำ')}</div>
+              <div class="pawn-shop">กำลังโหลดรายละเอียด...</div>
+            </div>
+            <button class="icon-btn" data-action="close-pawn-detail" style="width:30px;height:30px;font-size:20px;line-height:1;color:#5C6C68">×</button>
+          </div>
+          ${renderUndoButton()}
+        </div>
       </div>`;
     }
     const isRedeemed = p.status === 'redeemed';
@@ -1411,9 +1448,7 @@
               </div>
               ${renderRedeemPrompt(p.id)}
               ${isJewelry ? '' : renderRenewPicker(p.id)}`}
-          ${S.detailHistoryId ? `
-            <button class="pawn-btn" data-action="undo-history" data-id="${S.detailHistoryId}" ${lockAttr()}
-              style="width:100%;margin-top:10px;background:#FDEAEA;color:#B23B3B">${btnLabel('undo:' + S.detailHistoryId, '↩️ คืนสินค้า (ย้อนรายการนี้)')}</button>` : ''}
+          ${renderUndoButton()}
           <button class="cal-today-btn" data-action="open-pawn-settings" data-id="${p.id}" data-from="${S.screen}" style="margin-top:10px">⚙️ แก้ไขข้อมูลตั๋วนี้</button>
         </div>
       </div>`;
