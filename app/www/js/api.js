@@ -450,7 +450,10 @@ const Api = (() => {
       const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
       const term = jewelryTerm(pawnDate, todayStr);
       if (term.billed < JEWELRY_BILLED_MONTHS || !p.interest) return;
-      duePawns.push({ type: 'pawn', ref_id: p.id, title: `${p.item_name} (ดอกเบี้ยสะสม)`, amount: p.interest * term.billed, due_date: todayStr, category: p.category, principal: p.amount, month_number: term.billed, months_elapsed: term.elapsed, term_overdue: term.overdue });
+      // due_date stays "today" so the row sorts as needing action now; final_due is the real
+      // calendar deadline (pawn date + 5 months) the card shows the user.
+      const finalDue = new Date(pawnDate + 'T00:00:00'); finalDue.setMonth(finalDue.getMonth() + 5);
+      duePawns.push({ type: 'pawn', ref_id: p.id, title: `${p.item_name} (ดอกเบี้ยสะสม)`, amount: p.interest * term.billed, due_date: todayStr, category: p.category, principal: p.amount, month_number: term.billed, months_elapsed: term.elapsed, term_overdue: term.overdue, pawn_date: pawnDate, final_due: dateStr(finalDue) });
     });
     const dueExpenses = expenses
       .filter((e) => !(e.payments && e.payments[currentMonth]))

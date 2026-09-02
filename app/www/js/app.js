@@ -1086,7 +1086,8 @@
         </div>
         <div class="installment-amount">
           ${it.type === 'pawn' && it.category === 'jewelry'
-            ? `฿${formatMoney(it.amount)} ดอกสะสม · เงินต้น ฿${formatMoney(it.principal)} · งวดที่ ${it.month_number}/${JEWELRY_BILLED_MONTHS}${it.term_overdue ? ' <span style="color:#B23B3B;font-weight:600">(เลยกำหนดต่อดอก)</span>' : ''}`
+            ? `฿${formatMoney(it.amount)} ดอกสะสม · เงินต้น ฿${formatMoney(it.principal)} · งวดที่ ${it.month_number}/${JEWELRY_BILLED_MONTHS}${it.term_overdue ? ' <span style="color:#B23B3B;font-weight:600">(เลยกำหนดต่อดอก)</span>' : ''}
+               <div style="margin-top:2px">จำนำ ${formatDate(it.pawn_date)} · <span style="color:#B23B3B;font-weight:600">ครบกำหนดสุดท้าย ${formatDate(it.final_due)}</span></div>`
             : `฿${formatMoney(it.amount)} · ครบกำหนด ${formatDate(it.due_date)}`}
         </div>
       </div>`;
