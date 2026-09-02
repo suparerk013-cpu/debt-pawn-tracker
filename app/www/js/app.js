@@ -68,6 +68,9 @@
     redeemPromptFor: null,
     pendingAction: null,       // key of the write currently in flight; blocks every action button
     detailFor: null,           // pawn id whose detail popup is open
+    detailHistoryId: null,     // set when the popup was opened from a history row — enables undo
+    detailPawnCache: null,     // pawn fetched by id when it isn't in S.pawns (i.e. already redeemed)
+    pawnFilter: null,          // 'jewelry' | 'nonjewelry' — set by tapping a dashboard total card
     expensePayFor: null,
     datePickerFor: null,       // which form field's calendar popup is open, if any
     datePickerView: { y: 0, m: 0 }, // {y,m} (Gregorian, m 0-indexed) the open popup's month grid is showing
@@ -407,6 +410,38 @@
         showToast('บันทึกการจ่ายเงินแล้ว');
         await refreshReport();
       } catch (e) { showToast('บันทึกไม่สำเร็จ'); }
+    });
+  }
+
+  // historyId is only passed from the history screen; it's what turns on the "คืนสินค้า"
+  // (undo) button in the popup. A redeemed pawn is no longer in S.pawns, so fetch it by id.
+  function openPawnDetail(id, historyId) {
+    const known = S.pawns.find((x) => x.id === id);
+    setState({
+      detailFor: id, detailHistoryId: historyId || null,
+      detailPawnCache: known || null, redeemPromptFor: null, renewPickerFor: null,
+    });
+    if (!known) {
+      Api.getPawnById(id)
+        .then((p) => { if (S.detailFor === id) setState({ detailPawnCache: p }); })
+        .catch((e) => { if (S.detailFor === id) { showToast(e.message || 'โหลดข้อมูลตั๋วไม่สำเร็จ'); setState({ detailFor: null }); } });
+    }
+  }
+  function closePawnDetail() {
+    setState({ detailFor: null, detailHistoryId: null, detailPawnCache: null, redeemPromptFor: null, renewPickerFor: null });
+  }
+  function undoHistoryEntry(historyId) {
+    if (!confirm('ยืนยันคืนรายการนี้?\nระบบจะย้อนตั๋วกลับไปสถานะก่อนหน้า และลบรายการนี้ออกจากประวัติ')) return;
+    return runAction('undo:' + historyId, async () => {
+      try {
+        const res = await Api.undoHistory(historyId);
+        Object.assign(S, { detailFor: null, detailHistoryId: null, detailPawnCache: null });
+        showToast(res.type === 'redeem' ? 'คืนตั๋วกลับเป็นจำนำอยู่แล้ว' : 'ย้อนการต่อดอกแล้ว');
+        // The pawn list changes shape on undo (a redeemed ticket comes back), so reload it
+        // rather than patching S.pawns by hand.
+        await loadAll();
+        await loadHistory();
+      } catch (e) { showToast(e.message || 'คืนรายการไม่สำเร็จ'); }
     });
   }
 
@@ -937,7 +972,8 @@
     }
     const addTypeTitle = { debt: 'เพิ่มหนี้ใหม่', pawn: 'เพิ่มตั๋วจำนำใหม่', expense: 'เพิ่มค่าใช้จ่ายประจำ' };
     const titleMap = {
-      debtList: 'หนี้สินทั้งหมด', pawnList: 'ตั๋วจำนำ', settings: 'ตั้งค่า',
+      debtList: 'หนี้สินทั้งหมด', settings: 'ตั้งค่า',
+      pawnList: S.pawnFilter === 'jewelry' ? 'ตั๋วจำนำ — ทอง' : S.pawnFilter === 'nonjewelry' ? 'ตั๋วจำนำ — อิเล็กทรอนิก' : 'ตั๋วจำนำ',
       expenses: 'ค่าใช้จ่ายประจำต่อเดือน', manage: 'จัดการ', history: 'ประวัติ',
       debtDetail: (S.debts.find((d) => d.id === S.selectedDebtId) || {}).name || 'รายละเอียดหนี้',
       debtSettings: 'ตั้งค่าหนี้',
@@ -976,9 +1012,10 @@
     const r = S.report;
     if (!r) return `<div class="screen-pad"><div class="empty-card"><div class="empty-text">กำลังโหลด...</div></div></div>`;
 
-    const stat = (label, amount, bg, fg, sub) => `
-      <div class="report-stat" style="background:${bg}">
-        <div class="report-stat-label" style="color:${fg}">${label}</div>
+    // `cat` makes the tile a shortcut into the pawn list filtered to that category.
+    const stat = (label, amount, bg, fg, sub, cat) => `
+      <div class="report-stat" style="background:${bg}${cat ? ';cursor:pointer' : ''}" ${cat ? `data-action="goto-pawn-cat" data-cat="${cat}"` : ''}>
+        <div class="report-stat-label" style="color:${fg}">${label}${cat ? ' ›' : ''}</div>
         <div class="report-stat-amount" style="color:${fg}">฿${formatMoney(amount)}</div>
         ${sub ? `<div class="report-stat-sub" style="color:${fg}">${sub}</div>` : ''}
       </div>`;
@@ -990,8 +1027,8 @@
       <div class="report-grid">
         ${stat('ยอดหนี้สิน', r.total_debt, '#E3F3EF', '#0E6B5C')}
         ${stat('ค่าใช้จ่ายประจำต่อเดือน', r.total_recurring, '#FFF3DD', '#92600A')}
-        ${stat('💍 ตั๋วทอง', r.total_pawn_jewelry, '#FBF0D2', '#8A6A12', `${r.count_pawn_jewelry} ใบ · ดอก ฿${formatMoney(r.interest_jewelry)}`)}
-        ${stat('📱 ตั๋วอิเล็กทรอนิก', r.total_pawn_other, '#E1EBF7', '#2A5F97', `${r.count_pawn_other} ใบ · ดอก ฿${formatMoney(r.interest_other)}`)}
+        ${stat('💍 ตั๋วทอง', r.total_pawn_jewelry, '#FBF0D2', '#8A6A12', `${r.count_pawn_jewelry} ใบ · ดอก ฿${formatMoney(r.interest_jewelry)}`, 'jewelry')}
+        ${stat('📱 ตั๋วอิเล็กทรอนิก', r.total_pawn_other, '#E1EBF7', '#2A5F97', `${r.count_pawn_other} ใบ · ดอก ฿${formatMoney(r.interest_other)}`, 'nonjewelry')}
       </div>
       <div class="report-stat" style="background:#FDEAEA;margin-bottom:16px">
         <div class="report-stat-label" style="color:#B23B3B">ต้องชำระเดือนนี้ (รวมทุกหมวด)</div>
@@ -1063,12 +1100,12 @@
     const r = S.report || {};
     const cards = [
       { screen: 'debtList', icon: svgList('#0E6B5C'), label: 'หนี้สิน', sub: `คงเหลือ ฿${formatMoney(r.total_debt || 0)}`, bg: '#E3F3EF' },
-      { screen: 'pawnList', icon: svgTicket('#8A6A12'), label: '💍 ตั๋วจำนำ — ทอง', sub: `${r.count_pawn_jewelry || 0} ใบ · ฿${formatMoney(r.total_pawn_jewelry || 0)} · ดอก ฿${formatMoney(r.interest_jewelry || 0)}`, bg: '#FBF0D2' },
-      { screen: 'pawnList', icon: svgTicket('#2A5F97'), label: '📱 ตั๋วจำนำ — อิเล็กทรอนิก', sub: `${r.count_pawn_other || 0} ใบ · ฿${formatMoney(r.total_pawn_other || 0)} · ดอก ฿${formatMoney(r.interest_other || 0)}`, bg: '#E1EBF7' },
+      { screen: 'pawnList', cat: 'jewelry', icon: svgTicket('#8A6A12'), label: '💍 ตั๋วจำนำ — ทอง', sub: `${r.count_pawn_jewelry || 0} ใบ · ฿${formatMoney(r.total_pawn_jewelry || 0)} · ดอก ฿${formatMoney(r.interest_jewelry || 0)}`, bg: '#FBF0D2' },
+      { screen: 'pawnList', cat: 'nonjewelry', icon: svgTicket('#2A5F97'), label: '📱 ตั๋วจำนำ — อิเล็กทรอนิก', sub: `${r.count_pawn_other || 0} ใบ · ฿${formatMoney(r.total_pawn_other || 0)} · ดอก ฿${formatMoney(r.interest_other || 0)}`, bg: '#E1EBF7' },
       { screen: 'expenses', icon: svgWallet('#92600A'), label: 'ค่าใช้จ่ายประจำ', sub: `฿${formatMoney(r.total_recurring || 0)}/เดือน`, bg: '#FFF3DD' },
     ];
     return `<div class="screen-pad">${cards.map((c) => `
-      <div class="card" style="display:flex;align-items:center;gap:14px;cursor:pointer" data-action="nav-manage" data-screen="${c.screen}">
+      <div class="card" style="display:flex;align-items:center;gap:14px;cursor:pointer" ${c.cat ? `data-action="goto-pawn-cat" data-cat="${c.cat}"` : `data-action="nav-manage" data-screen="${c.screen}"`}>
         <div style="width:44px;height:44px;border-radius:12px;background:${c.bg};display:flex;align-items:center;justify-content:center;flex:none">${c.icon}</div>
         <div style="flex:1">
           <div class="settings-row-title">${c.label}</div>
@@ -1083,10 +1120,13 @@
     return `${THAI_MONTHS_FULL[m - 1]} ${y + 543}`;
   }
 
+  // Pawn rows (renew/redeem) open the same detail popup as the dashboard, but carry their
+  // history-row id so the popup can offer to undo that specific entry. Installment/expense
+  // rows have no undoable log row, so they keep navigating to their own screens.
   function historyItemAction(it) {
     if (it.type === 'installment') return `data-action="open-debt" data-id="${it.debt_id}" data-from="history"`;
     if (it.type === 'expense') return `data-action="open-expense-settings" data-id="${it.ref_id}" data-from="history"`;
-    if (it.type === 'renew') return `data-action="open-pawn-settings" data-id="${it.ref_id}" data-from="history"`;
+    if (it.type === 'renew' || it.type === 'redeem') return `data-action="open-pawn-detail" data-id="${it.ref_id}" data-history="${it.id}"`;
     return '';
   }
 
@@ -1097,7 +1137,7 @@
       installment: { label: 'ผ่อนหนี้', bg: '#E3F3EF', fg: '#0E6B5C' },
       expense: { label: 'ค่าใช้จ่าย', bg: '#FFF3DD', fg: '#92600A' },
     }[it.type];
-    const clickable = it.type === 'installment' || it.type === 'expense' || it.type === 'renew';
+    const clickable = ['installment', 'expense', 'renew', 'redeem'].includes(it.type);
     return `
       <div class="installment-row" ${clickable ? historyItemAction(it) + ' style="cursor:pointer"' : ''}>
         <div style="flex:1">
@@ -1221,11 +1261,25 @@
       </div>`;
   }
 
+  // S.pawnFilter narrows the list to one category group when you arrive from a total card;
+  // 'nonjewelry' covers electronics/car/other, which all share the same renewal mechanics.
+  function filteredPawns() {
+    if (S.pawnFilter === 'jewelry') return S.pawns.filter((p) => p.category === 'jewelry');
+    if (S.pawnFilter === 'nonjewelry') return S.pawns.filter((p) => p.category !== 'jewelry');
+    return S.pawns;
+  }
   function renderPawnList() {
-    const empty = !S.pawns.length ? `
-      <div class="empty-card"><div class="empty-emoji">🎫</div><div class="empty-text">ยังไม่มีตั๋วจำนำ กดปุ่ม + เพื่อเพิ่ม</div></div>` : '';
-    const cards = S.pawns.map((p) => renderPawnCard(p)).join('');
-    return `<div class="screen-pad">${empty}${cards}</div>`;
+    const list = filteredPawns();
+    const filterChips = `
+      <div class="warn-options" style="margin-bottom:12px">
+        <button class="warn-opt ${!S.pawnFilter ? 'selected' : ''}" data-action="set-pawn-filter" data-cat="">ทั้งหมด (${S.pawns.length})</button>
+        <button class="warn-opt ${S.pawnFilter === 'jewelry' ? 'selected' : ''}" data-action="set-pawn-filter" data-cat="jewelry">💍 ทอง (${S.pawns.filter((p) => p.category === 'jewelry').length})</button>
+        <button class="warn-opt ${S.pawnFilter === 'nonjewelry' ? 'selected' : ''}" data-action="set-pawn-filter" data-cat="nonjewelry">📱 อิเล็กทรอนิก (${S.pawns.filter((p) => p.category !== 'jewelry').length})</button>
+      </div>`;
+    const empty = !list.length ? `
+      <div class="empty-card"><div class="empty-emoji">🎫</div><div class="empty-text">${S.pawns.length ? 'ไม่มีตั๋วในหมวดนี้' : 'ยังไม่มีตั๋วจำนำ กดปุ่ม + เพื่อเพิ่ม'}</div></div>` : '';
+    const cards = list.map((p) => renderPawnCard(p)).join('');
+    return `<div class="screen-pad">${filterChips}${empty}${cards}</div>`;
   }
 
   // Whole calendar months between two 'YYYY-MM-DD' dates (0 until the day-of-month is reached again).
@@ -1282,8 +1336,13 @@
   // screen you're on to act on a ticket you just looked up.
   function renderPawnDetailModal() {
     if (!S.detailFor) return '';
-    const p = S.pawns.find((x) => x.id === S.detailFor);
-    if (!p) return '';
+    const p = S.pawns.find((x) => x.id === S.detailFor) || S.detailPawnCache;
+    if (!p) {
+      return `<div class="modal-backdrop" data-action="close-pawn-detail">
+        <div class="modal-sheet" data-stop="1"><div class="empty-text" style="padding:20px 0">กำลังโหลด...</div></div>
+      </div>`;
+    }
+    const isRedeemed = p.status === 'redeemed';
     const meta = PAWN_CATEGORIES.find((c) => c.key === p.category) || PAWN_CATEGORIES[3];
     const isJewelry = p.category === 'jewelry';
     const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
@@ -1344,12 +1403,17 @@
           <div style="margin-top:12px">${detailRows}</div>
           ${statusLine ? `<div style="margin-top:10px">${statusLine}</div>` : ''}
           ${p.renew_url ? `<a href="${esc(p.renew_url)}" target="_blank" rel="noopener" class="pawn-btn renew" style="text-align:center;text-decoration:none;display:block;margin-top:12px">🔗 ต่อดอกออนไลน์ (จาก QR ตั๋ว)</a>` : ''}
-          <div class="pawn-actions" style="margin-top:12px">
-            <button class="pawn-btn redeem" data-action="redeem-open" data-id="${p.id}" ${lockAttr()}>${btnLabel('redeem:' + p.id, 'ไถ่ถอน')}</button>
-            <button class="pawn-btn renew" data-action="${isJewelry ? 'jewelry-renew' : 'renew-open'}" data-id="${p.id}" ${lockAttr()}>${btnLabel('renew:' + p.id, 'ต่อดอก')}</button>
-          </div>
-          ${renderRedeemPrompt(p.id)}
-          ${isJewelry ? '' : renderRenewPicker(p.id)}
+          ${isRedeemed
+            ? `<div class="status-badge" style="background:#E7F5EE;color:#1F7A52;display:block;text-align:center;margin-top:12px;padding:10px">ไถ่ถอนไปแล้ว${p.redeemed_amount != null ? ` · ฿${formatMoney(p.redeemed_amount)}` : ''}</div>`
+            : `<div class="pawn-actions" style="margin-top:12px">
+                <button class="pawn-btn redeem" data-action="redeem-open" data-id="${p.id}" ${lockAttr()}>${btnLabel('redeem:' + p.id, 'ไถ่ถอน')}</button>
+                <button class="pawn-btn renew" data-action="${isJewelry ? 'jewelry-renew' : 'renew-open'}" data-id="${p.id}" ${lockAttr()}>${btnLabel('renew:' + p.id, 'ต่อดอก')}</button>
+              </div>
+              ${renderRedeemPrompt(p.id)}
+              ${isJewelry ? '' : renderRenewPicker(p.id)}`}
+          ${S.detailHistoryId ? `
+            <button class="pawn-btn" data-action="undo-history" data-id="${S.detailHistoryId}" ${lockAttr()}
+              style="width:100%;margin-top:10px;background:#FDEAEA;color:#B23B3B">${btnLabel('undo:' + S.detailHistoryId, '↩️ คืนสินค้า (ย้อนรายการนี้)')}</button>` : ''}
           <button class="cal-today-btn" data-action="open-pawn-settings" data-id="${p.id}" data-from="${S.screen}" style="margin-top:10px">⚙️ แก้ไขข้อมูลตั๋วนี้</button>
         </div>
       </div>`;
@@ -1703,7 +1767,6 @@
   function svgCalendar() { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5C6C68" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke-linecap="round"/></svg>`; }
   function svgPlus() { return `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`; }
   function svgPawn() { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B8862F" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M8 12h8"/></svg>`; }
-  function svgTrash() { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B23B3B" stroke-width="1.8"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0v12a2 2 0 002 2h6a2 2 0 002-2V7"/></svg>`; }
   function svgHome(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h14v-9"/></svg>`; }
   function svgList(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg>`; }
   function svgTicket(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 12l6-8h9a3 3 0 013 3v3l-8 9a2 2 0 01-3 0l-7-6z"/><circle cx="15" cy="9" r="1.4"/></svg>`; }
@@ -1744,13 +1807,16 @@
       case 'delete-pawn': deletePawnAction(el.dataset.id); break;
       case 'renew-open': toggleRenewPicker(el.dataset.id); break;
       case 'jewelry-renew': renewJewelryPawn(el.dataset.id); break;
-      case 'open-pawn-detail': setState({ detailFor: el.dataset.id, redeemPromptFor: null, renewPickerFor: null }); break;
+      case 'open-pawn-detail': openPawnDetail(el.dataset.id, el.dataset.history); break;
+      case 'undo-history': undoHistoryEntry(el.dataset.id); break;
       // Backdrop and × share this action; the sheet itself carries data-stop so a tap inside
       // it (on a non-action area) doesn't bubble up here and close the popup.
       case 'close-pawn-detail':
         if (e.target.closest('[data-stop]') && el.classList.contains('modal-backdrop')) break;
-        setState({ detailFor: null, redeemPromptFor: null, renewPickerFor: null });
+        closePawnDetail();
         break;
+      case 'goto-pawn-cat': setState({ screen: 'pawnList', returnScreen: S.screen === 'pawnList' ? S.returnScreen : S.screen, pawnFilter: el.dataset.cat, detailFor: null, fabMenuOpen: false }); break;
+      case 'set-pawn-filter': setState({ pawnFilter: el.dataset.cat || null }); break;
       case 'renew-confirm': {
         const opt = PERIOD_OPTIONS.find((o) => o.key === el.dataset.key);
         if (opt && opt.unit) renewPawn(el.dataset.id, opt);

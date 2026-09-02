@@ -265,7 +265,10 @@ const Api = (() => {
       paidInterest = (p.interest || 0) * jewelryTerm(oldPawnDate, todayStr).billed;
       const finalDue = (iso) => { const d = new Date(iso + 'T00:00:00'); d.setMonth(d.getMonth() + 5); return dateStr(d); };
       tx.update(ref, { pawn_date: todayStr, renewal_count: (p.renewal_count || 0) + 1 });
-      tx.set(histRef, { user_id: uid(), date: todayStr, created_at: nowIso(), type: 'renew', ref_id: id, item_name: p.item_name, category: 'jewelry', amount: paidInterest, due_date_before: finalDue(oldPawnDate), due_date_after: finalDue(todayStr) });
+      // pawn_date_before is what undoHistory() rolls back to — recorded explicitly rather than
+      // re-derived from due_date_before, since month arithmetic isn't cleanly invertible
+      // around end-of-month dates.
+      tx.set(histRef, { user_id: uid(), date: todayStr, created_at: nowIso(), type: 'renew', ref_id: id, item_name: p.item_name, category: 'jewelry', amount: paidInterest, pawn_date_before: oldPawnDate, pawn_date_after: todayStr, due_date_before: finalDue(oldPawnDate), due_date_after: finalDue(todayStr) });
     });
     return { ok: true, pawn_date: todayStr, paid_interest: paidInterest };
   }
@@ -274,8 +277,57 @@ const Api = (() => {
   // Installments and expenses already carry their own paid_at/payments — only pawn
   // renew/redeem events need a dedicated log, since renewPawn/redeemPawn overwrite the pawn
   // doc in place and would otherwise lose the date+amount of each past cycle.
-  async function logHistory(entry) {
-    await db().collection('history').add({ user_id: uid(), date: dateStr(new Date()), created_at: nowIso(), ...entry });
+
+  // Reads any pawn by id regardless of status — getPawns() only returns active ones, but the
+  // history screen has to open detail popups for tickets that were redeemed and so dropped out.
+  async function getPawnById(id) {
+    const doc = await db().collection('pawns').doc(id).get();
+    if (!doc.exists || doc.data().user_id !== uid()) throw new Error('ไม่พบตั๋วจำนำนี้');
+    return { id: doc.id, ...doc.data() };
+  }
+
+  // Reverses one logged renew/redeem and removes its history row — the "คืนสินค้า" escape
+  // hatch for a mis-tap. Runs in a transaction so the pawn and the log can't disagree if it
+  // fails halfway. Installment/expense history rows are derived from their own documents
+  // rather than stored here, so they have no undoable log row and aren't accepted.
+  async function undoHistory(historyId) {
+    const histRef = db().collection('history').doc(historyId);
+    let undone;
+    await db().runTransaction(async (tx) => {
+      const hDoc = await tx.get(histRef);
+      if (!hDoc.exists || hDoc.data().user_id !== uid()) throw new Error('ไม่พบรายการประวัตินี้');
+      const h = hDoc.data();
+      if (h.type !== 'renew' && h.type !== 'redeem') throw new Error('รายการนี้ย้อนกลับไม่ได้');
+
+      const pawnRef = db().collection('pawns').doc(h.ref_id);
+      const pDoc = await tx.get(pawnRef);
+      if (!pDoc.exists || pDoc.data().user_id !== uid()) throw new Error('ไม่พบตั๋วจำนำของรายการนี้ (อาจถูกลบไปแล้ว)');
+      const p = pDoc.data();
+
+      if (h.type === 'redeem') {
+        tx.update(pawnRef, { status: 'active', redeemed_amount: firebase.firestore.FieldValue.delete() });
+        undone = 'redeem';
+      } else {
+        const patch = { renewal_count: Math.max(0, (p.renewal_count || 0) - 1) };
+        if (h.category === 'jewelry') {
+          // Older rows predate pawn_date_before; fall back to backing the final due date out
+          // by the same 5 months renewJewelry() added when it wrote the row.
+          let before = h.pawn_date_before;
+          if (!before && h.due_date_before) {
+            const d = new Date(h.due_date_before + 'T00:00:00'); d.setMonth(d.getMonth() - 5); before = dateStr(d);
+          }
+          if (!before) throw new Error('รายการนี้ไม่มีข้อมูลวันเดิม ย้อนกลับไม่ได้');
+          patch.pawn_date = before;
+        } else {
+          if (!h.due_date_before) throw new Error('รายการนี้ไม่มีข้อมูลวันเดิม ย้อนกลับไม่ได้');
+          patch.due_date = h.due_date_before;
+        }
+        tx.update(pawnRef, patch);
+        undone = 'renew';
+      }
+      tx.delete(histRef);
+    });
+    return { ok: true, type: undone };
   }
 
   // ---------------- Expenses ----------------
@@ -587,8 +639,8 @@ const Api = (() => {
     setActiveUser,
     login, switchUser, getUsers,
     getDebts, getDebtDetail, createDebt, updateDebt, closeDebt, deleteDebt, markInstallmentPaid,
-    getPawns, createPawn, updatePawn, deletePawn, redeemPawn, renewPawn, renewJewelry,
-    getReport, getHistory,
+    getPawns, getPawnById, createPawn, updatePawn, deletePawn, redeemPawn, renewPawn, renewJewelry,
+    getReport, getHistory, undoHistory,
     getExpenses, createExpense, updateExpense, markExpensePaid, deleteExpense,
     getSettings, updateSettings,
     getNotifications, markNotificationRead, markAllNotificationsRead,
