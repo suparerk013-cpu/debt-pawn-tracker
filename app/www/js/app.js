@@ -1044,19 +1044,43 @@
     // items that still have weeks to go.
     const urgent = r.breakdown.filter((it) => daysUntil(it.due_date) <= 2);
     const normal = r.breakdown.filter((it) => daysUntil(it.due_date) > 2);
-    const rowsHtml = (list) => `<div style="display:flex;flex-direction:column;gap:10px">${list.map(renderDueRow).join('')}</div>`;
 
     return `
       <div class="screen-pad">
         ${stats}
         ${urgent.length ? `
           <div class="section-title" style="color:#B23B3B">⚠️ ครบกำหนดชำระ (ด่วน)</div>
-          ${rowsHtml(urgent)}
+          ${renderDueGroups(urgent)}
         ` : ''}
         <div class="section-title">รายการที่ต้องชำระเดือนนี้</div>
-        ${normal.length ? rowsHtml(normal) : (urgent.length ? '' : `
+        ${normal.length ? renderDueGroups(normal) : (urgent.length ? '' : `
           <div class="empty-card"><div class="empty-emoji">✅</div><div class="empty-text">ชำระครบทุกรายการของเดือนนี้แล้ว</div></div>`)}
       </div>`;
+  }
+
+  // Both due lists are grouped by what kind of thing is owed, mirroring the + menu's
+  // categories (with pawns split gold/electronics, since those two settle on different
+  // rules). A group with nothing in it is omitted entirely rather than shown empty.
+  const DUE_GROUPS = [
+    { label: '📋 หนี้สิน', match: (it) => it.type === 'installment' },
+    { label: '💍 ตั๋วจำนำ — ทอง', match: (it) => it.type === 'pawn' && it.category === 'jewelry' },
+    { label: '📱 ตั๋วจำนำ — อิเล็กทรอนิก', match: (it) => it.type === 'pawn' && it.category !== 'jewelry' },
+    { label: '🧾 ค่าใช้จ่ายประจำ', match: (it) => it.type === 'expense' },
+  ];
+  function renderDueGroups(list) {
+    return DUE_GROUPS.map((g) => {
+      const items = list.filter(g.match);
+      if (!items.length) return '';
+      const sum = items.reduce((a, it) => a + (it.amount || 0), 0);
+      return `
+        <div class="due-group">
+          <div class="due-group-head">
+            <span>${g.label} (${items.length})</span>
+            <span class="due-group-sum">฿${formatMoney(sum)}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">${items.map(renderDueRow).join('')}</div>
+        </div>`;
+    }).join('');
   }
 
   function renderDueRow(it) {
