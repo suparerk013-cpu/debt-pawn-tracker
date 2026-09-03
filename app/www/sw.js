@@ -7,7 +7,9 @@
 // updates silently fail to reach installed devices even after bumping CACHE_NAME. Every request
 // here explicitly bypasses that layer with {cache: 'reload'} and only falls back to the cached
 // copy when the network is unavailable.
-const CACHE_NAME = 'debtpawn-v12';
+const CACHE_NAME = 'debtpawn-v13';
+// Declared beside CACHE_NAME because the activate handler must exempt it from cache cleanup.
+const PUSH_LOG = 'dpt-push-log';
 const PRECACHE = ['./', 'index.html', 'css/style.css', 'js/rules.js', 'js/api.js', 'js/app.js', 'firebase-config.js', 'manifest.json', 'icons/icon.svg'];
 
 self.addEventListener('install', (e) => {
@@ -21,7 +23,12 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+    // PUSH_LOG is a diagnostic record, not a copy of the site: sweeping it with the stale
+    // asset caches would erase the arrival history on every version bump — exactly when it
+    // is most needed to tell a delivery problem from a display one.
+    caches.keys().then((keys) => Promise.all(
+      keys.filter((k) => k !== CACHE_NAME && k !== PUSH_LOG).map((k) => caches.delete(k))
+    ))
   );
   self.clients.claim();
 });
@@ -47,7 +54,6 @@ self.addEventListener('fetch', (e) => {
 // up for it. Recording arrivals in Cache Storage — the one store a worker can write with no
 // credentials — lets the app show afterwards whether the push event ever fired here, which
 // separates "never arrived" from "arrived but did not display".
-const PUSH_LOG = "dpt-push-log";
 async function logPush(entry) {
   try {
     const c = await caches.open(PUSH_LOG);
