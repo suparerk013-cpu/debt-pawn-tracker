@@ -603,6 +603,19 @@ const Api = (() => {
     } catch (e) { return []; }
   }
 
+  // The arrival log only exists on the phone, and reading it has meant asking the user to
+  // photograph a settings card. Mirroring it to Firestore whenever the app opens puts the
+  // same evidence somewhere it can be read directly.
+  async function reportDeviceState(status, log) {
+    try {
+      await db().collection("diagnostics").doc("last_device_report").set({
+        at: nowIso(), user_id: activeUserId || null, status: status || null,
+        pushLog: (log || []).slice(0, 5),
+        ua: (navigator.userAgent || "").slice(0, 180),
+      });
+    } catch (e) { /* diagnostics must never block the app */ }
+  }
+
   async function getPushStatus() {
     if (!pushSupported()) return { supported: false, permission: "unsupported", enabled: false, subscribed: false, detail: "" };
     const permission = Notification.permission;
@@ -675,6 +688,6 @@ const Api = (() => {
     getExpenses, createExpense, updateExpense, markExpensePaid, deleteExpense,
     getSettings, updateSettings,
     getNotifications, markNotificationRead, markAllNotificationsRead,
-    pushSupported, getPushStatus, enablePush, disablePush, readPushLog,
+    pushSupported, getPushStatus, enablePush, disablePush, readPushLog, reportDeviceState,
   };
 })();

@@ -891,7 +891,12 @@
   }
 
   async function refreshPushStatus() {
-    try { S.pushStatus = await Api.getPushStatus(); S.pushLog = await Api.readPushLog(); render(); } catch (e) { /* leave as-is */ }
+    try {
+      S.pushStatus = await Api.getPushStatus();
+      S.pushLog = await Api.readPushLog();
+      render();
+      Api.reportDeviceState(S.pushStatus, S.pushLog);
+    } catch (e) { /* leave as-is */ }
   }
   // The failure is kept on screen, not just flashed as a toast: this runs on a phone that
   // isn't in front of us, so when it goes wrong the message has to survive long enough to

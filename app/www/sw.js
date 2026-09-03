@@ -7,7 +7,7 @@
 // updates silently fail to reach installed devices even after bumping CACHE_NAME. Every request
 // here explicitly bypasses that layer with {cache: 'reload'} and only falls back to the cached
 // copy when the network is unavailable.
-const CACHE_NAME = 'debtpawn-v13';
+const CACHE_NAME = 'debtpawn-v14';
 // Declared beside CACHE_NAME because the activate handler must exempt it from cache cleanup.
 const PUSH_LOG = 'dpt-push-log';
 const PRECACHE = ['./', 'index.html', 'css/style.css', 'js/rules.js', 'js/api.js', 'js/app.js', 'firebase-config.js', 'manifest.json', 'icons/icon.svg'];
