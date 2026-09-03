@@ -148,9 +148,22 @@
     };
   }
 
+  // Telegram has no notification-shade length limit, so it lists every item in full rather
+  // than the three-item summary a push has to squeeze into. Same items, same wording — only
+  // the amount that fits differs.
+  function buildTelegramMessage(items) {
+    if (!items.length) return null;
+    const urgent = items.filter((i) => i.title.startsWith("⚠️")).length;
+    const head = `🔔 มี ${items.length} รายการต้องจัดการ${urgent ? ` (ด่วน ${urgent})` : ""}`;
+    const NL = String.fromCharCode(10);
+    const bullet = String.fromCharCode(8226);
+    const lines = items.map((i) => bullet + " " + i.title + NL + "   " + i.body);
+    return [head, ""].concat(lines).join(NL);
+  }
+
   return {
     dateStr, addMonths, monthsBetween, daysBetween,
     JEWELRY_BILLED_MONTHS, jewelryTerm,
-    buildNotifications, buildPushPayload,
+    buildNotifications, buildPushPayload, buildTelegramMessage,
   };
 });

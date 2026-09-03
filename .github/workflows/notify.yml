@@ -30,4 +30,5 @@ jobs:
       - name: Send notifications
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: node scripts/send-notifications.js ${{ inputs.dry_run && '--dry-run' || '' }}
