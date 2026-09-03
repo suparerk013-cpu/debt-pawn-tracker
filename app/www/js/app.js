@@ -1808,7 +1808,7 @@
       <button class="mark-paid-btn" style="align-self:flex-start" data-action="${on ? 'disable-push' : 'enable-push'}" ${lockAttr()}>
         ${btnLabel('push', on ? 'ปิดแจ้งเตือนอัตโนมัติ' : '🔔 เปิดแจ้งเตือนอัตโนมัติ')}
       </button>
-      <div style="font-size:11px;color:#A6ACAA">สถานะเครื่องนี้: permission=${st.permission} · subscription=${st.enabled ? 'yes' : 'no'}</div>
+      <div style="font-size:11px;color:#A6ACAA">สถานะ: permission=${st.permission} · subscribed=${st.subscribed ? 'yes' : 'no'} · saved=${st.enabled ? 'yes' : 'no'}${st.detail ? ' · ' + esc(st.detail) : ''}</div>
     </div>`;
   }
 

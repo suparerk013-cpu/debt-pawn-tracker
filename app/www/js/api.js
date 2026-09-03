@@ -581,16 +581,30 @@ const Api = (() => {
       && typeof firebase !== 'undefined' && !!firebase.messaging
       && (!firebase.messaging.isSupported || firebase.messaging.isSupported());
   }
+  // "enabled" deliberately means "this device's token is stored in Firestore", not merely
+  // "the browser has a push subscription". Those two fail independently: a subscription can
+  // exist while the write that makes the device reachable never landed — which looks
+  // identical on screen but leaves the sender with nobody to send to.
   async function getPushStatus() {
-    if (!pushSupported()) return { supported: false, permission: 'unsupported', enabled: false };
+    if (!pushSupported()) return { supported: false, permission: 'unsupported', enabled: false, subscribed: false, detail: '' };
     const permission = Notification.permission;
-    let enabled = false;
+    const status = { supported: true, permission, enabled: false, subscribed: false, detail: '' };
+    if (permission !== 'granted') return status;
     try {
-      const reg = await navigator.serviceWorker.getRegistration();
+      const reg = await navigator.serviceWorker.ready;
       const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
-      enabled = permission === 'granted' && !!sub;
-    } catch (e) { /* treat as not enabled */ }
-    return { supported: true, permission, enabled };
+      status.subscribed = !!sub;
+      const vapidKey = (typeof window !== 'undefined' && window.FIREBASE_VAPID_KEY) || '';
+      if (!vapidKey) { status.detail = 'no-vapid-key'; return status; }
+      const token = await firebase.messaging().getToken({ vapidKey, serviceWorkerRegistration: reg });
+      if (!token) { status.detail = 'no-token'; return status; }
+      const doc = await db().collection('push_tokens').doc(token).get();
+      status.enabled = doc.exists && doc.data().user_id === uid();
+      if (!status.enabled) status.detail = doc.exists ? 'token-owned-by-other-user' : 'token-not-saved';
+    } catch (e) {
+      status.detail = (e && (e.code || e.message)) || 'check-failed';
+    }
+    return status;
   }
   async function enablePush() {
     if (!pushSupported()) throw new Error('เบราว์เซอร์นี้ไม่รองรับการแจ้งเตือนแบบส่งเข้าเครื่อง');
@@ -612,6 +626,10 @@ const Api = (() => {
       user_id: uid(), token, updated_at: nowIso(),
       ua: (navigator.userAgent || '').slice(0, 180),
     });
+    // Read it back: the write is what actually makes this device reachable, so confirm it
+    // reached the server rather than reporting success off a resolved promise alone.
+    const check = await db().collection('push_tokens').doc(token).get();
+    if (!check.exists) throw new Error('บันทึก token ไม่สำเร็จ (เขียนแล้วแต่อ่านกลับไม่เจอ)');
     return { ok: true, token };
   }
   async function disablePush() {
