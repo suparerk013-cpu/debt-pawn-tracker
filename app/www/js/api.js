@@ -585,24 +585,32 @@ const Api = (() => {
   // "the browser has a push subscription". Those two fail independently: a subscription can
   // exist while the write that makes the device reachable never landed — which looks
   // identical on screen but leaves the sender with nobody to send to.
+  // Every step here can hang rather than fail: serviceWorker.ready never settles when no
+  // worker activates, and getToken can wait on a network round trip that never returns. An
+  // unresolved promise leaves the card stuck on "checking" forever, which tells the user less
+  // than an error would, so each step gets a deadline and reports which one ran out.
+  function withTimeout(promise, ms, label) {
+    return Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error("timeout:" + label)), ms))]);
+  }
+
   async function getPushStatus() {
-    if (!pushSupported()) return { supported: false, permission: 'unsupported', enabled: false, subscribed: false, detail: '' };
+    if (!pushSupported()) return { supported: false, permission: "unsupported", enabled: false, subscribed: false, detail: "" };
     const permission = Notification.permission;
-    const status = { supported: true, permission, enabled: false, subscribed: false, detail: '' };
-    if (permission !== 'granted') return status;
+    const status = { supported: true, permission, enabled: false, subscribed: false, detail: "" };
+    if (permission !== "granted") return status;
     try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+      const reg = await withTimeout(navigator.serviceWorker.ready, 8000, "sw-ready");
+      const sub = reg && reg.pushManager ? await withTimeout(reg.pushManager.getSubscription(), 5000, "get-subscription") : null;
       status.subscribed = !!sub;
-      const vapidKey = (typeof window !== 'undefined' && window.FIREBASE_VAPID_KEY) || '';
-      if (!vapidKey) { status.detail = 'no-vapid-key'; return status; }
-      const token = await firebase.messaging().getToken({ vapidKey, serviceWorkerRegistration: reg });
-      if (!token) { status.detail = 'no-token'; return status; }
-      const doc = await db().collection('push_tokens').doc(token).get();
+      const vapidKey = (typeof window !== "undefined" && window.FIREBASE_VAPID_KEY) || "";
+      if (!vapidKey) { status.detail = "no-vapid-key"; return status; }
+      const token = await withTimeout(firebase.messaging().getToken({ vapidKey, serviceWorkerRegistration: reg }), 12000, "get-token");
+      if (!token) { status.detail = "no-token"; return status; }
+      const doc = await withTimeout(db().collection("push_tokens").doc(token).get(), 8000, "firestore-read");
       status.enabled = doc.exists && doc.data().user_id === uid();
-      if (!status.enabled) status.detail = doc.exists ? 'token-owned-by-other-user' : 'token-not-saved';
+      if (!status.enabled) status.detail = doc.exists ? "token-owned-by-other-user" : "token-not-saved";
     } catch (e) {
-      status.detail = (e && (e.code || e.message)) || 'check-failed';
+      status.detail = (e && (e.code || e.message)) || "check-failed";
     }
     return status;
   }
