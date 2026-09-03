@@ -65,6 +65,10 @@ async function main() {
   });
 
   let sent = 0, skipped = 0, pruned = 0;
+  // A run that sends nothing and a run that sends into a void look identical from the app,
+  // and the workflow log is awkward to reach from a phone. Record the outcome where the
+  // app itself can read it back.
+  const report = { at: new Date().toISOString(), todayStr, dryRun: DRY_RUN, users: {} };
 
   for (const userId of APP_USERS) {
     const data = await loadUserData(db, userId);
@@ -74,15 +78,17 @@ async function main() {
 
     if (!payload) {
       console.log(`[notify] ${userId}: nothing due — not sending`);
+      report.users[userId] = { items: 0, devices: tokens.length, outcome: "nothing-due" };
       continue;
     }
     console.log(`[notify] ${userId}: ${items.length} item(s) -> "${payload.title}" | ${payload.body}`);
     if (!tokens.length) {
       console.log(`[notify] ${userId}: no registered device, skipping`);
+      report.users[userId] = { items: items.length, devices: 0, outcome: "no-device" };
       skipped++;
       continue;
     }
-    if (DRY_RUN) { skipped += tokens.length; continue; }
+    if (DRY_RUN) { report.users[userId] = { items: items.length, devices: tokens.length, outcome: "dry-run" }; skipped += tokens.length; continue; }
 
     // Data-only: sw.js builds the notification itself so the tag/click behaviour applies.
     const res = await admin.messaging().sendEachForMulticast({
@@ -91,6 +97,12 @@ async function main() {
       webpush: { headers: { Urgency: 'high', TTL: '43200' } },
     });
     sent += res.successCount;
+    report.users[userId] = {
+      items: items.length, devices: tokens.length, outcome: "sent",
+      successCount: res.successCount, failureCount: res.failureCount,
+      errors: res.responses.filter((r) => !r.success).map((r) => (r.error && r.error.code) || "unknown"),
+      title: payload.title,
+    };
 
     // Drop tokens the device has thrown away, or the list grows stale forever.
     await Promise.all(res.responses.map(async (r, i) => {
@@ -104,7 +116,11 @@ async function main() {
     }));
   }
 
+  report.totals = { sent, skipped, pruned };
   console.log(`[notify] done — sent ${sent}, skipped ${skipped}, pruned ${pruned}`);
+  await db.collection("diagnostics").doc("last_notify_run").set(report).catch((e) => {
+    console.log("[notify] could not write diagnostics: " + e.message);
+  });
 }
 
 main().catch((e) => {
