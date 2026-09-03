@@ -7,8 +7,8 @@
 // updates silently fail to reach installed devices even after bumping CACHE_NAME. Every request
 // here explicitly bypasses that layer with {cache: 'reload'} and only falls back to the cached
 // copy when the network is unavailable.
-const CACHE_NAME = 'debtpawn-v7';
-const PRECACHE = ['./', 'index.html', 'css/style.css', 'js/api.js', 'js/app.js', 'firebase-config.js', 'manifest.json', 'icons/icon.svg'];
+const CACHE_NAME = 'debtpawn-v8';
+const PRECACHE = ['./', 'index.html', 'css/style.css', 'js/rules.js', 'js/api.js', 'js/app.js', 'firebase-config.js', 'manifest.json', 'icons/icon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -35,5 +35,40 @@ self.addEventListener('fetch', (e) => {
       caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
       return res;
     }).catch(() => caches.match(e.request))
+  );
+});
+
+// ---------------- Push ----------------
+// This is what makes a reminder arrive with the app closed. The scheduled GitHub Actions job
+// (scripts/send-notifications.js) works out what is due and sends the message; all this side
+// does is display it. Sent as a data-only message on purpose — Chrome would otherwise render
+// a `notification` payload itself and ignore the tag/click handling set up here.
+self.addEventListener('push', (e) => {
+  let payload = {};
+  try { payload = e.data ? e.data.json() : {}; } catch (err) { payload = { body: e.data && e.data.text() }; }
+  const data = payload.data || payload;
+  const title = data.title || 'หนี้สิน & ตั๋วจำนำ';
+  e.waitUntil(self.registration.showNotification(title, {
+    body: data.body || '',
+    icon: 'icons/icon.svg',
+    badge: 'icons/icon.svg',
+    // One reminder replaces the previous one rather than stacking a new row every send.
+    tag: data.tag || 'dpt-due',
+    renotify: true,
+    data: { url: data.url || './' },
+  }));
+});
+
+// Focus the already-open app if there is one, rather than opening a second copy.
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const target = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if (c.url.includes(self.location.origin) && 'focus' in c) return c.focus();
+      }
+      return self.clients.openWindow(target);
+    })
   );
 });

@@ -72,6 +72,7 @@
     detailHistoryItem: null,   // that row's data, so the undo button can render before the pawn loads
     detailPawnCache: null,     // pawn fetched by id when it isn't in S.pawns (i.e. already redeemed)
     pawnFilter: null,          // 'jewelry' | 'nonjewelry' — set by tapping a dashboard total card
+    pushStatus: null,          // {supported, permission, enabled} for THIS device, not the account
     expensePayFor: null,
     datePickerFor: null,       // which form field's calendar popup is open, if any
     datePickerView: { y: 0, m: 0 }, // {y,m} (Gregorian, m 0-indexed) the open popup's month grid is showing
@@ -230,6 +231,7 @@
   function nav(screen) {
     setState({ screen, fabMenuOpen: false, detailFor: null });
     if (screen === 'history') loadHistory();
+    if (screen === 'settings') refreshPushStatus();
   }
   function navFromManage(screen) { setState({ screen, returnScreen: 'manage', fabMenuOpen: false, detailFor: null }); }
   function goBack() { setState({ screen: S.returnScreen, fabMenuOpen: false, detailFor: null }); }
@@ -885,6 +887,28 @@
       }
       showToast('ส่งแจ้งเตือนทดสอบแล้ว ลองดูที่มือถือ');
     } catch (e) { showToast('ส่งแจ้งเตือนไม่สำเร็จ: ' + (e.message || '')); }
+  }
+
+  async function refreshPushStatus() {
+    try { S.pushStatus = await Api.getPushStatus(); render(); } catch (e) { /* leave as-is */ }
+  }
+  function enablePushAction() {
+    return runAction('push', async () => {
+      try {
+        await Api.enablePush();
+        showToast('เปิดแจ้งเตือนอัตโนมัติแล้ว');
+      } catch (e) { showToast(e.message || 'เปิดไม่สำเร็จ'); }
+      S.pushStatus = await Api.getPushStatus();
+    });
+  }
+  function disablePushAction() {
+    return runAction('push', async () => {
+      try {
+        await Api.disablePush();
+        showToast('ปิดแจ้งเตือนอัตโนมัติแล้ว');
+      } catch (e) { showToast(e.message || 'ปิดไม่สำเร็จ'); }
+      S.pushStatus = await Api.getPushStatus();
+    });
   }
 
   function openNotifications() {
@@ -1744,6 +1768,39 @@
       </div>`;
   }
 
+  // Push registration lives on its own card because its state is device-specific: the token
+  // belongs to this phone, not the account, so each device has to be switched on once.
+  function renderPushCard() {
+    const st = S.pushStatus;
+    if (!st) return `<div class="card"><div class="settings-row-title">แจ้งเตือนอัตโนมัติ</div><div class="settings-row-sub">กำลังตรวจสอบ...</div></div>`;
+    if (!st.supported) {
+      return `<div class="card">
+        <div class="settings-row-title">แจ้งเตือนอัตโนมัติ</div>
+        <div class="settings-row-sub">เครื่อง/เบราว์เซอร์นี้ไม่รองรับ — ลองเปิดผ่าน Chrome บน Android แล้วติดตั้งเป็นแอป</div>
+      </div>`;
+    }
+    if (st.permission === 'denied') {
+      return `<div class="card" style="border-color:#F0C9C9;background:#FDF6F6">
+        <div class="settings-row-title" style="color:#B23B3B">⚠️ การแจ้งเตือนถูกปิดไว้ในเครื่อง</div>
+        <div class="settings-row-sub">ต้องเปิดเองที่เครื่องก่อน แอปขอสิทธิ์ซ้ำไม่ได้:<br>
+          กดไอคอน 🔒 ข้าง URL → การตั้งค่าเว็บไซต์ → การแจ้งเตือน → อนุญาต<br>
+          (หรือ ตั้งค่า Android → แอป → Chrome → การแจ้งเตือน)<br>
+          แล้วกลับมากดปุ่มนี้อีกครั้ง</div>
+        <button class="mark-paid-btn" style="align-self:flex-start;margin-top:8px" data-action="refresh-push">ตรวจสอบใหม่</button>
+      </div>`;
+    }
+    const on = st.enabled;
+    return `<div class="card" style="display:flex;flex-direction:column;gap:8px">
+      <div class="settings-row-title">แจ้งเตือนอัตโนมัติ ${on ? '<span style="color:#1F7A52">● เปิดอยู่</span>' : '<span style="color:#A6ACAA">○ ปิดอยู่</span>'}</div>
+      <div class="settings-row-sub">${on
+        ? 'เครื่องนี้จะได้รับแจ้งเตือนวันละ 2 ครั้ง (เช้า 8 โมง / เย็น 6 โมง) แม้ไม่ได้เปิดแอป เฉพาะตอนมีรายการครบกำหนด'
+        : 'เปิดเพื่อให้ระบบส่งแจ้งเตือนเข้าเครื่องนี้เอง แม้ไม่ได้เปิดแอป — ต้องเปิดครั้งเดียวต่อเครื่อง'}</div>
+      <button class="mark-paid-btn" style="align-self:flex-start" data-action="${on ? 'disable-push' : 'enable-push'}" ${lockAttr()}>
+        ${btnLabel('push', on ? 'ปิดแจ้งเตือนอัตโนมัติ' : '🔔 เปิดแจ้งเตือนอัตโนมัติ')}
+      </button>
+    </div>`;
+  }
+
   function renderSettings() {
     const opts = [1, 3, 5, 7, 14].map((n) => `<button class="warn-opt ${n === S.warnDays ? 'selected' : ''}" data-action="warn-days" data-n="${n}">${n} วัน</button>`).join('');
     return `
@@ -1759,9 +1816,10 @@
           <div class="settings-row-title">แจ้งเตือนล่วงหน้ากี่วันก่อนครบกำหนด</div>
           <div class="warn-options">${opts}</div>
         </div>
+        ${renderPushCard()}
         <div class="card" style="display:flex;flex-direction:column;gap:8px">
           <div class="settings-row-title">ทดสอบการแจ้งเตือน</div>
-          <div class="settings-row-sub">แอปนี้ไม่มีการแจ้งเตือนอัตโนมัติตอนปิดแอป (ดูกระดิ่งแจ้งเตือนในแอปแทน) กดปุ่มนี้เพื่อทดสอบว่าเบราว์เซอร์/มือถือของคุณแสดงการแจ้งเตือนได้จริง</div>
+          <div class="settings-row-sub">กดเพื่อเช็คว่าเครื่องนี้แสดงการแจ้งเตือนได้จริง (เป็นการทดสอบในเครื่อง ไม่เกี่ยวกับการส่งอัตโนมัติด้านบน)</div>
           <button class="mark-paid-btn" style="align-self:flex-start" data-action="test-notification">🔔 ทดสอบส่งแจ้งเตือน</button>
         </div>
         <div class="card settings-row">
@@ -1900,6 +1958,9 @@
       case 'shift-date-month': shiftDatePickerMonth(Number(el.dataset.delta)); break;
       case 'pick-date': pickDate(el.dataset.field, el.dataset.date); break;
       case 'test-notification': testNotification(); break;
+      case 'enable-push': enablePushAction(); break;
+      case 'disable-push': disablePushAction(); break;
+      case 'refresh-push': refreshPushStatus(); break;
       case 'fab-click':
         if (S.screen === 'dashboard') setState({ fabMenuOpen: !S.fabMenuOpen });
         else if (S.screen === 'debtList') openAdd('debt', 'debtList');

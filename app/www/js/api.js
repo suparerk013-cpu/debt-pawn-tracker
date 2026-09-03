@@ -12,22 +12,10 @@ const Api = (() => {
   // shift the date by a day in timezones ahead of UTC, e.g. Thailand at UTC+7).
   const dateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const monthStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  // Whole calendar months between two 'YYYY-MM-DD' dates (0 until the day-of-month recurs).
-  function monthsBetween(fromStr, toStr) {
-    const from = new Date(fromStr + 'T00:00:00');
-    const to = new Date(toStr + 'T00:00:00');
-    let months = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
-    if (to.getDate() < from.getDate()) months--;
-    return Math.max(0, months);
-  }
-  // Where a jewelry ticket stands in its cycle. Real pawnshops charge interest for at most
-  // 4 months and forfeit in the 5th, so `billed` stops at 4 no matter how long it sits —
-  // `elapsed` keeps climbing only so the UI can say how far past due it actually is.
-  const JEWELRY_BILLED_MONTHS = 4;
-  function jewelryTerm(pawnDate, todayStr) {
-    const elapsed = monthsBetween(pawnDate, todayStr) + 1;
-    return { elapsed, billed: Math.min(elapsed, JEWELRY_BILLED_MONTHS), overdue: elapsed > JEWELRY_BILLED_MONTHS };
-  }
+  // Date and jewelry-cycle rules come from rules.js (loaded before this file), which the
+  // GitHub Actions push sender also imports — one definition, so the notification that
+  // arrives on a closed phone can't disagree with what the app shows when it's opened.
+  const { monthsBetween, jewelryTerm, JEWELRY_BILLED_MONTHS } = Rules;
 
   async function ensureAuth() {
     if (!firebase.auth().currentUser) await firebase.auth().signInAnonymously();
@@ -562,69 +550,10 @@ const Api = (() => {
     [debts, pawns, expenses, settings] = await Promise.all([
       debts || getDebts(), pawns || getPawns(), expenses || getExpenses(), settings || getSettings(),
     ]);
-    const warnDays = settings.warn_days;
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const todayStr = dateStr(today);
-    const daysUntil = (due) => Math.round((new Date(due + 'T00:00:00') - today) / 86400000);
-    const items = [];
-
-    debts.forEach((d) => (d.installments || []).forEach((i) => {
-      if (i.paid) return;
-      const days = daysUntil(i.due_date);
-      if (days > warnDays) return;
-      const title = days < 0 ? 'ค้างชำระ' : 'ใกล้ถึงกำหนดชำระ';
-      const body = `${d.name} — ฿${Math.round(i.amount).toLocaleString('th-TH')} ครบกำหนด ${i.due_date}`;
-      items.push({ id: 'installment-' + i.id, ref_type: 'installment', ref_id: i.id, title, body, sent_at: todayStr + 'T00:00:00' });
-    }));
-
-    pawns.forEach((p) => {
-      const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
-      if (p.category === 'jewelry') {
-        const finalDue = new Date(pawnDate + 'T00:00:00'); finalDue.setMonth(finalDue.getMonth() + 5);
-        const finalDueStr = dateStr(finalDue);
-        if (todayStr >= finalDueStr) {
-          items.push({ id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id, title: '⚠️ ตั๋วจำนำใกล้ขาดแล้ว!', body: `${p.item_name} — ครบกำหนดไถ่ถอนสุดท้ายวันนี้ (${finalDueStr})`, sent_at: todayStr + 'T00:00:00' });
-          return;
-        }
-        const term = jewelryTerm(pawnDate, todayStr);
-        if (term.billed >= JEWELRY_BILLED_MONTHS && p.interest) {
-          const accrued = p.interest * term.billed;
-          const title = term.overdue ? '⚠️ เลยกำหนดต่อดอกแล้ว' : '⚠️ ครบ 4 เดือนแล้ว';
-          items.push({ id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id, title, body: `${p.item_name} — ดอกเบี้ยสะสม ฿${Math.round(accrued).toLocaleString('th-TH')} ต้องต่อดอกหรือไถ่ถอนก่อน ${finalDueStr}`, sent_at: todayStr + 'T00:00:00', persistent: true });
-        }
-        return;
-      }
-      // Electronics: warn starting 1 day before due (not the general warnDays setting), and
-      // keep it unread every load (persistent: true skips the read-id filter below) until the
-      // due_date actually moves — i.e. it's renewed — rather than going quiet once dismissed.
-      // Copy always pushes toward renewing, never redeeming.
-      if (p.category === 'electronics') {
-        const days = daysUntil(p.due_date);
-        if (days <= 1) {
-          const title = days < 0 ? '⚠️ ตั๋วจำนำเลยกำหนดแล้ว ต่อดอกด่วน!' : days === 0 ? '⚠️ ตั๋วจำนำครบกำหนดวันนี้ ต่อดอกด่วน!' : '⚠️ ตั๋วจำนำใกล้ครบกำหนด เตรียมต่อดอก';
-          const body = `${p.item_name} — ดอก ฿${Math.round(p.interest || 0).toLocaleString('th-TH')} ครบกำหนด ${p.due_date} (ยังไม่ได้ต่อดอก)`;
-          items.push({ id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id, title, body, sent_at: todayStr + 'T00:00:00', persistent: true });
-        }
-        return;
-      }
-      const days = daysUntil(p.due_date);
-      if (days <= warnDays) {
-        const title = days < 0 ? 'ตั๋วจำนำเลยกำหนด' : 'ตั๋วจำนำใกล้ครบกำหนด';
-        const body = `${p.item_name} — ฿${Math.round(p.amount).toLocaleString('th-TH')} ครบกำหนด ${p.due_date}`;
-        items.push({ id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id, title, body, sent_at: todayStr + 'T00:00:00' });
-      }
-    });
-
-    const currentMonth = todayStr.slice(0, 7);
-    expenses.forEach((e) => {
-      if (e.payments && e.payments[currentMonth]) return;
-      const dueDate = currentMonth + '-' + String(e.due_day).padStart(2, '0');
-      const days = daysUntil(dueDate);
-      if (days > warnDays) return;
-      const title = days < 0 ? 'ค่าใช้จ่ายประจำค้างชำระ' : 'ค่าใช้จ่ายประจำใกล้ถึงกำหนด';
-      const amountPart = e.expense_type === 'fixed' ? `฿${Math.round(e.amount || 0).toLocaleString('th-TH')} ` : '';
-      items.push({ id: 'expense-' + e.id, ref_type: 'expense', ref_id: e.id, title, body: `${e.name} — ${amountPart}ครบกำหนด ${dueDate}`, sent_at: todayStr + 'T00:00:00' });
-    });
+    const todayStr = dateStr(new Date());
+    // The rules themselves live in rules.js so the GitHub Actions sender that pushes while
+    // the phone is closed evaluates exactly the same conditions this screen does.
+    const items = Rules.buildNotifications({ debts, pawns, expenses, warnDays: settings.warn_days, todayStr });
 
     const readIds = readNotifIds();
     const withRead = items.map((it) => ({ ...it, read_at: it.persistent ? null : (readIds.includes(it.id) ? todayStr : null) }));
@@ -642,6 +571,64 @@ const Api = (() => {
     return { ok: true };
   }
 
+  // ---------------- Push registration ----------------
+  // Everything above only runs while the app is open. Registering an FCM token here is what
+  // lets the scheduled sender reach the phone when it isn't. Tokens are stored per app-user
+  // (not/lek) so each person's phone only gets their own reminders; the same device logging
+  // in as someone else simply re-points its token at that user.
+  function pushSupported() {
+    return typeof Notification !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window
+      && typeof firebase !== 'undefined' && !!firebase.messaging
+      && (!firebase.messaging.isSupported || firebase.messaging.isSupported());
+  }
+  async function getPushStatus() {
+    if (!pushSupported()) return { supported: false, permission: 'unsupported', enabled: false };
+    const permission = Notification.permission;
+    let enabled = false;
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+      enabled = permission === 'granted' && !!sub;
+    } catch (e) { /* treat as not enabled */ }
+    return { supported: true, permission, enabled };
+  }
+  async function enablePush() {
+    if (!pushSupported()) throw new Error('เบราว์เซอร์นี้ไม่รองรับการแจ้งเตือนแบบส่งเข้าเครื่อง');
+    if (Notification.permission === 'denied') {
+      throw new Error('การแจ้งเตือนถูกปิดไว้ในเครื่อง — ต้องไปเปิดเองที่ตั้งค่าเบราว์เซอร์/แอปก่อน');
+    }
+    const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    if (permission !== 'granted') throw new Error('ไม่ได้รับอนุญาตให้แจ้งเตือน');
+
+    const vapidKey = (typeof window !== 'undefined' && window.FIREBASE_VAPID_KEY) || '';
+    if (!vapidKey) throw new Error('ยังไม่ได้ตั้งค่า VAPID key');
+    // Reuse the app's own service worker instead of letting FCM register a second one — the
+    // push/notificationclick handlers live in sw.js.
+    const reg = await navigator.serviceWorker.ready;
+    const token = await firebase.messaging().getToken({ vapidKey, serviceWorkerRegistration: reg });
+    if (!token) throw new Error('ขอ token ไม่สำเร็จ');
+
+    await db().collection('push_tokens').doc(token).set({
+      user_id: uid(), token, updated_at: nowIso(),
+      ua: (navigator.userAgent || '').slice(0, 180),
+    });
+    return { ok: true, token };
+  }
+  async function disablePush() {
+    if (!pushSupported()) return { ok: true };
+    try {
+      const token = await firebase.messaging().getToken({
+        vapidKey: (typeof window !== 'undefined' && window.FIREBASE_VAPID_KEY) || '',
+        serviceWorkerRegistration: await navigator.serviceWorker.ready,
+      });
+      if (token) {
+        await db().collection('push_tokens').doc(token).delete().catch(() => {});
+        await firebase.messaging().deleteToken().catch(() => {});
+      }
+    } catch (e) { /* nothing registered to remove */ }
+    return { ok: true };
+  }
+
   return {
     ready: ensureAuth,
     setActiveUser,
@@ -652,5 +639,6 @@ const Api = (() => {
     getExpenses, createExpense, updateExpense, markExpensePaid, deleteExpense,
     getSettings, updateSettings,
     getNotifications, markNotificationRead, markAllNotificationsRead,
+    pushSupported, getPushStatus, enablePush, disablePush,
   };
 })();

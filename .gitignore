@@ -4,3 +4,6 @@
 # Editor/OS cruft
 .DS_Store
 Thumbs.db
+
+# Node deps (only installed transiently to test scripts/ locally; CI installs its own)
+node_modules/

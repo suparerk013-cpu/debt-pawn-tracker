@@ -1,0 +1,33 @@
+name: Send due-date push notifications
+
+# Twice a day, Bangkok time (the runner is UTC, so subtract 7 hours):
+#   08:00 Thai = 01:00 UTC   |   18:00 Thai = 11:00 UTC
+# GitHub may start scheduled runs a few minutes late under load — fine for a daily reminder.
+on:
+  schedule:
+    - cron: '0 1 * * *'
+    - cron: '0 11 * * *'
+  workflow_dispatch:        # lets you trigger a send by hand from the Actions tab
+    inputs:
+      dry_run:
+        description: 'Log what would be sent without sending'
+        type: boolean
+        default: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install firebase-admin
+        run: npm install firebase-admin@12 --no-save --no-audit --no-fund
+
+      - name: Send notifications
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node scripts/send-notifications.js ${{ inputs.dry_run && '--dry-run' || '' }}
