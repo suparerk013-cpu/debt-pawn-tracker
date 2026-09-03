@@ -891,7 +891,7 @@
   }
 
   async function refreshPushStatus() {
-    try { S.pushStatus = await Api.getPushStatus(); render(); } catch (e) { /* leave as-is */ }
+    try { S.pushStatus = await Api.getPushStatus(); S.pushLog = await Api.readPushLog(); render(); } catch (e) { /* leave as-is */ }
   }
   // The failure is kept on screen, not just flashed as a toast: this runs on a phone that
   // isn't in front of us, so when it goes wrong the message has to survive long enough to
@@ -1804,6 +1804,9 @@
       <div class="settings-row-sub">${on
         ? 'เครื่องนี้จะได้รับแจ้งเตือนวันละ 2 ครั้ง (เช้า 8 โมง / เย็น 6 โมง) แม้ไม่ได้เปิดแอป เฉพาะตอนมีรายการครบกำหนด'
         : 'เปิดเพื่อให้ระบบส่งแจ้งเตือนเข้าเครื่องนี้เอง แม้ไม่ได้เปิดแอป — ต้องเปิดครั้งเดียวต่อเครื่อง'}</div>
+      ${(S.pushLog && S.pushLog.length)
+        ? `<div style="font-size:11px;color:#A6ACAA">📥 เครื่องนี้ได้รับ ${S.pushLog.length} ครั้ง · ล่าสุด ${esc(new Date(S.pushLog[0].at).toLocaleString("th-TH"))} · ${S.pushLog[0].shown ? "แสดงผลสำเร็จ" : "แสดงไม่สำเร็จ: " + esc(S.pushLog[0].error || "ไม่ทราบสาเหตุ")}</div>`
+        : `<div style="font-size:11px;color:#A6ACAA">📥 เครื่องนี้ยังไม่เคยได้รับข้อความจากระบบเลย</div>`}
       ${S.pushError ? `<div class="field-label" style="margin:0;color:#B23B3B;word-break:break-word">❌ ${esc(S.pushError)}</div>` : ''}
       <button class="mark-paid-btn" style="align-self:flex-start" data-action="${on ? 'disable-push' : 'enable-push'}" ${lockAttr()}>
         ${btnLabel('push', on ? 'ปิดแจ้งเตือนอัตโนมัติ' : '🔔 เปิดแจ้งเตือนอัตโนมัติ')}

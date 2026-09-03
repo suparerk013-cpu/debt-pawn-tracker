@@ -7,7 +7,7 @@
 // updates silently fail to reach installed devices even after bumping CACHE_NAME. Every request
 // here explicitly bypasses that layer with {cache: 'reload'} and only falls back to the cached
 // copy when the network is unavailable.
-const CACHE_NAME = 'debtpawn-v11';
+const CACHE_NAME = 'debtpawn-v12';
 const PRECACHE = ['./', 'index.html', 'css/style.css', 'js/rules.js', 'js/api.js', 'js/app.js', 'firebase-config.js', 'manifest.json', 'icons/icon.svg'];
 
 self.addEventListener('install', (e) => {
@@ -43,20 +43,46 @@ self.addEventListener('fetch', (e) => {
 // (scripts/send-notifications.js) works out what is due and sends the message; all this side
 // does is display it. Sent as a data-only message on purpose — Chrome would otherwise render
 // a `notification` payload itself and ignore the tag/click handling set up here.
-self.addEventListener('push', (e) => {
+// FCM reporting "delivered" only means it accepted the message, not that this device woke
+// up for it. Recording arrivals in Cache Storage — the one store a worker can write with no
+// credentials — lets the app show afterwards whether the push event ever fired here, which
+// separates "never arrived" from "arrived but did not display".
+const PUSH_LOG = "dpt-push-log";
+async function logPush(entry) {
+  try {
+    const c = await caches.open(PUSH_LOG);
+    const prev = await c.match("/__push_log");
+    const list = prev ? await prev.json().catch(() => []) : [];
+    list.unshift(entry);
+    await c.put("/__push_log", new Response(JSON.stringify(list.slice(0, 20))));
+  } catch (err) { /* diagnostics must never break delivery */ }
+}
+
+self.addEventListener("push", (e) => {
   let payload = {};
-  try { payload = e.data ? e.data.json() : {}; } catch (err) { payload = { body: e.data && e.data.text() }; }
+  let raw = "";
+  try { raw = e.data ? e.data.text() : ""; } catch (err) { raw = "<unreadable>"; }
+  try { payload = e.data ? e.data.json() : {}; } catch (err) { payload = { body: raw }; }
   const data = payload.data || payload;
-  const title = data.title || 'หนี้สิน & ตั๋วจำนำ';
-  e.waitUntil(self.registration.showNotification(title, {
-    body: data.body || '',
-    icon: 'icons/icon.svg',
-    badge: 'icons/icon.svg',
-    // One reminder replaces the previous one rather than stacking a new row every send.
-    tag: data.tag || 'dpt-due',
-    renotify: true,
-    data: { url: data.url || './' },
-  }));
+  const title = data.title || "หนี้สิน & ตั๋วจำนำ";
+  e.waitUntil((async () => {
+    const entry = { at: new Date().toISOString(), title, rawLen: raw.length, shown: false, error: null };
+    try {
+      await self.registration.showNotification(title, {
+        body: data.body || "",
+        icon: "icons/icon.svg",
+        badge: "icons/icon.svg",
+        // One reminder replaces the previous one rather than stacking a new row every send.
+        tag: data.tag || "dpt-due",
+        renotify: true,
+        data: { url: data.url || "./" },
+      });
+      entry.shown = true;
+    } catch (err) {
+      entry.error = (err && err.message) || String(err);
+    }
+    await logPush(entry);
+  })());
 });
 
 // Focus the already-open app if there is one, rather than opening a second copy.

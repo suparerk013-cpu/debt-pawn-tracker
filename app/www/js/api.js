@@ -593,6 +593,16 @@ const Api = (() => {
     return Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error("timeout:" + label)), ms))]);
   }
 
+  // Written by sw.js on every push event. Reading it back is the only way to tell a message
+  // that never reached this device from one that reached it and failed to display.
+  async function readPushLog() {
+    try {
+      const c = await caches.open("dpt-push-log");
+      const res = await c.match("/__push_log");
+      return res ? await res.json() : [];
+    } catch (e) { return []; }
+  }
+
   async function getPushStatus() {
     if (!pushSupported()) return { supported: false, permission: "unsupported", enabled: false, subscribed: false, detail: "" };
     const permission = Notification.permission;
@@ -665,6 +675,6 @@ const Api = (() => {
     getExpenses, createExpense, updateExpense, markExpensePaid, deleteExpense,
     getSettings, updateSettings,
     getNotifications, markNotificationRead, markAllNotificationsRead,
-    pushSupported, getPushStatus, enablePush, disablePush,
+    pushSupported, getPushStatus, enablePush, disablePush, readPushLog,
   };
 })();
