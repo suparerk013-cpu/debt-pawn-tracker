@@ -73,6 +73,7 @@
     detailPawnCache: null,     // pawn fetched by id when it isn't in S.pawns (i.e. already redeemed)
     pawnFilter: null,          // 'jewelry' | 'nonjewelry' — set by tapping a dashboard total card
     pushStatus: null,          // {supported, permission, enabled} for THIS device, not the account
+    pushError: null,           // last enablePush() failure, shown on the card so it can be read back
     expensePayFor: null,
     datePickerFor: null,       // which form field's calendar popup is open, if any
     datePickerView: { y: 0, m: 0 }, // {y,m} (Gregorian, m 0-indexed) the open popup's month grid is showing
@@ -892,12 +893,19 @@
   async function refreshPushStatus() {
     try { S.pushStatus = await Api.getPushStatus(); render(); } catch (e) { /* leave as-is */ }
   }
+  // The failure is kept on screen, not just flashed as a toast: this runs on a phone that
+  // isn't in front of us, so when it goes wrong the message has to survive long enough to
+  // be read back.
   function enablePushAction() {
     return runAction('push', async () => {
+      S.pushError = null;
       try {
         await Api.enablePush();
         showToast('เปิดแจ้งเตือนอัตโนมัติแล้ว');
-      } catch (e) { showToast(e.message || 'เปิดไม่สำเร็จ'); }
+      } catch (e) {
+        S.pushError = (e && (e.code ? e.code + ' — ' : '') + (e.message || e)) || 'ไม่ทราบสาเหตุ';
+        showToast('เปิดไม่สำเร็จ');
+      }
       S.pushStatus = await Api.getPushStatus();
     });
   }
@@ -1787,6 +1795,7 @@
           (หรือ ตั้งค่า Android → แอป → Chrome → การแจ้งเตือน)<br>
           แล้วกลับมากดปุ่มนี้อีกครั้ง</div>
         <button class="mark-paid-btn" style="align-self:flex-start;margin-top:8px" data-action="refresh-push">ตรวจสอบใหม่</button>
+        <div style="font-size:11px;color:#A6ACAA;margin-top:6px">สถานะเครื่องนี้: permission=${st.permission}</div>
       </div>`;
     }
     const on = st.enabled;
@@ -1795,9 +1804,11 @@
       <div class="settings-row-sub">${on
         ? 'เครื่องนี้จะได้รับแจ้งเตือนวันละ 2 ครั้ง (เช้า 8 โมง / เย็น 6 โมง) แม้ไม่ได้เปิดแอป เฉพาะตอนมีรายการครบกำหนด'
         : 'เปิดเพื่อให้ระบบส่งแจ้งเตือนเข้าเครื่องนี้เอง แม้ไม่ได้เปิดแอป — ต้องเปิดครั้งเดียวต่อเครื่อง'}</div>
+      ${S.pushError ? `<div class="field-label" style="margin:0;color:#B23B3B;word-break:break-word">❌ ${esc(S.pushError)}</div>` : ''}
       <button class="mark-paid-btn" style="align-self:flex-start" data-action="${on ? 'disable-push' : 'enable-push'}" ${lockAttr()}>
         ${btnLabel('push', on ? 'ปิดแจ้งเตือนอัตโนมัติ' : '🔔 เปิดแจ้งเตือนอัตโนมัติ')}
       </button>
+      <div style="font-size:11px;color:#A6ACAA">สถานะเครื่องนี้: permission=${st.permission} · subscription=${st.enabled ? 'yes' : 'no'}</div>
     </div>`;
   }
 

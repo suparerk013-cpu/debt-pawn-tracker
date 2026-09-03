@@ -7,7 +7,7 @@
 // updates silently fail to reach installed devices even after bumping CACHE_NAME. Every request
 // here explicitly bypasses that layer with {cache: 'reload'} and only falls back to the cached
 // copy when the network is unavailable.
-const CACHE_NAME = 'debtpawn-v8';
+const CACHE_NAME = 'debtpawn-v9';
 const PRECACHE = ['./', 'index.html', 'css/style.css', 'js/rules.js', 'js/api.js', 'js/app.js', 'firebase-config.js', 'manifest.json', 'icons/icon.svg'];
 
 self.addEventListener('install', (e) => {
