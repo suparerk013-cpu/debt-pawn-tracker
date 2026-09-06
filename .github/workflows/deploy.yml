@@ -1,0 +1,46 @@
+name: Deploy to Firebase Hosting
+
+# ทำให้เว็บออนไลน์อัตโนมัติ: push โค้ดขึ้น GitHub แล้วไฟล์ใน app/www/ ถูก deploy
+# ขึ้น Firebase Hosting (แพลนฟรี Spark) ให้เอง ไม่ต้องรัน firebase deploy ในเครื่อง
+on:
+  push:
+    branches: [main, 'claude/**']
+    paths:
+      - 'app/www/**'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: firebase-hosting
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      # ชุดทดสอบเอนจินคีย์แมนต้องผ่านก่อนเสมอ — ตัวเลขภาษีผิดแล้วขึ้นเว็บคือเรื่องใหญ่กว่าเว็บล่ม
+      - name: Run keyman engine tests
+        run: node app/www/keyman/test/engine.test.js
+
+      - name: Write service account key
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::error::ยังไม่ได้ตั้ง secret FIREBASE_SERVICE_ACCOUNT ใน repo นี้"
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-key.json"
+
+      - name: Deploy hosting
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-key.json
+        run: npx --yes firebase-tools@13 deploy --only hosting --project debt-pawn-tracker-cc106 --non-interactive

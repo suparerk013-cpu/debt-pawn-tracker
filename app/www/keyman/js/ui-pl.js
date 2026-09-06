@@ -1,0 +1,237 @@
+// แท็บ 2 — งบกำไรขาดทุน (ชีต "งบกำไรขาดทุน" แถว 4–33)
+// จุดที่ทำให้ตรง Excel เป๊ะ: ดูหมวด 7.1 ของข้อกำหนด — แถวสัดส่วนใช้ตัวหารคนละตัว,
+// %เปลี่ยนแปลงเป็นช่องกรอก, สัดส่วนคำนวณจริงแค่ 4 แถว, ค่าเฉลี่ยแถวดอกเบี้ยไม่มีช่อง
+(function (root) {
+  'use strict';
+  const K = root.K, h = K.h, E = root.KeymanEngine;
+  const IDX = [0, 1, 2];
+
+  const val = (key, i) => E.num(K.state.kase.financials[key][i]);
+  const avg3 = (key) => E.avg(K.state.kase.financials[key]);
+
+  function ratioOf(rowDef, i) {
+    if (rowDef.ratio === 'revenue') {
+      const base = val('revenues', i);
+      const v = val(rowDef.key, i);
+      return base && v !== null ? v / base : null;
+    }
+    if (rowDef.ratio === 'profit') {  // F14 = D14/D13 — หารด้วยกำไรก่อนภาษี ไม่ใช่รายได้
+      const base = val('profitsBeforeTax', i);
+      const v = val(rowDef.key, i);
+      return base && v !== null ? v / base : null;
+    }
+    return null;
+  }
+  function ratioAvg(rowDef) {
+    if (rowDef.ratio === 'revenue') {
+      const base = avg3('revenues'), v = avg3(rowDef.key);
+      return base && v !== null ? v / base : null;
+    }
+    if (rowDef.ratio === 'profit') {
+      const base = avg3('profitsBeforeTax'), v = avg3(rowDef.key);
+      return base && v !== null ? v / base : null;
+    }
+    return null;
+  }
+
+  function render(main) {
+    const k = K.state.kase;
+    main.appendChild(K.dbdImportCard());
+
+    // ── ตารางหลัก 10 แถว × 12 คอลัมน์ ───────────────────────────────────
+    const yearCells = IDX.map((i) => h('th', { colspan: 3 }, [
+      K.input('financials.years.' + i, { kind: 'text', placeholder: 'ปี พ.ศ.', width: '70px' }),
+      h('span.ref', { text: ['D4', 'G4', 'J4'][i] }),
+    ]));
+    const head = [
+      h('tr.head-band', null, [h('th.label', { text: 'หน่วย : บาท' })].concat(yearCells).concat([h('th', { colspan: 2, text: 'ค่าเฉลี่ย 3 ปี' })])),
+      h('tr', null, [h('th.label', { text: '' })]
+        .concat(IDX.reduce((acc) => acc.concat([
+          h('th', { text: 'จำนวนเงิน' }), h('th', { text: '%เปลี่ยนแปลง' }), h('th', { text: 'สัดส่วน' }),
+        ]), []))
+        .concat([h('th', { text: 'ค่าเฉลี่ย 3 ปี' }), h('th', { text: 'สัดส่วน' })])),
+    ];
+
+    const body = K.PL_ROWS.map((r) => {
+      const cells = [K.labelCell(r.label, 'B' + r.row)];
+      IDX.forEach((i) => {
+        const colLetter = ['D', 'G', 'J'][i];
+        cells.push(K.cellIn('financials.' + r.key + '.' + i, { ref: colLetter + r.row, onchange: () => K.refreshOutputs() }));
+        cells.push(K.cellIn('financials.pct.' + r.key + '.' + i, { kind: 'pct', ref: ['E', 'H', 'K'][i] + r.row }));
+        if (r.ratio === 'dash') cells.push(K.dashCell(['F', 'I', 'L'][i] + r.row));
+        else if (r.ratio === 'none') cells.push(h('td.calc', { text: '' }));
+        else cells.push(K.outCell(() => K.ratio(ratioOf(r, i)), { ref: ['F', 'I', 'L'][i] + r.row }));
+      });
+      // ค่าเฉลี่ย 3 ปี
+      if (r.noAvg) cells.push(h('td.calc', { text: '' }));            // ดอกเบี้ยจ่ายไม่มีช่องค่าเฉลี่ยใน Excel
+      else if (r.avgZero) cells.push(K.outCell(() => K.money(0), { ref: 'N' + r.row }));  // กำไรขั้นต้นตรึงเป็น 0
+      else cells.push(K.outCell(() => K.money(avg3(r.key)), { ref: 'N' + r.row }));
+      if (r.ratio === 'dash') cells.push(K.dashCell('O' + r.row));
+      else if (r.ratio === 'none') cells.push(h('td.calc', { text: '' }));
+      else cells.push(K.outCell(() => K.ratio(ratioAvg(r)), { ref: 'O' + r.row }));
+      return h('tr', { class: r.bold ? 'total' : '' }, cells);
+    });
+
+    main.appendChild(K.card('งบกำไรขาดทุน', 'ชีต งบกำไรขาดทุน แถว 4–15', [
+      K.table(head, body),
+      h('div.btnrow', null, [
+        h('button.btn', { text: 'คำนวณ %เปลี่ยนแปลงให้เฉพาะช่องที่เว้นว่าง', onclick: fillPct }),
+      ]),
+      h('p.hint', {
+        text: '%เปลี่ยนแปลงเป็นค่าที่มาจาก DBD จึงทำเป็นช่องกรอก ไม่ใช่สูตร (ปีแรกสุดในตารางไม่มีปีก่อนหน้าให้เทียบอยู่แล้ว) · ' +
+          'คอลัมน์สัดส่วนของแถว "ภาษีเงินได้" หารด้วยกำไรก่อนภาษี ไม่ใช่รายได้รวม เพราะมันคืออัตราภาษีที่จ่ายจริง',
+      }),
+      K.legend(),
+    ]));
+
+    // ── ตารางเทียบเบี้ย (แถว 17–22) ─────────────────────────────────────
+    const premium = () => E.n0(k.policy.premiumTotal);
+    const latest = (key) => val(key, 2) !== null ? val(key, 2) : (val(key, 1) !== null ? val(key, 1) : val(key, 0));
+    const cmpRows = [
+      h('tr', null, [
+        K.labelCell('เปรียบเทียบกับงบการเงินล่าสุด', 'B18'),
+        K.outCell(() => K.money(premium()), { ref: 'C18' }),
+        K.outCell(() => K.money(latest('totalExpense')), { ref: 'E18' }),
+        K.outCell(() => K.ratio(latest('totalExpense') ? premium() / latest('totalExpense') : null), { ref: 'F18' }),
+        K.outCell(() => K.money((latest('sga') || 0) + premium()), { ref: 'G18' }),
+        K.outCell(() => K.ratio(latest('revenues') ? ((latest('sga') || 0) + premium()) / latest('revenues') : null), { ref: 'H18' }),
+      ]),
+      h('tr', null, [
+        K.labelCell('เปรียบเทียบกับค่าเฉลี่ย 3 ปี', 'B19'),
+        K.outCell(() => K.money(premium()), { ref: 'C19' }),
+        K.outCell(() => K.money(avg3('totalExpense')), { ref: 'E19' }),
+        K.outCell(() => K.ratio(avg3('totalExpense') ? premium() / avg3('totalExpense') : null), { ref: 'F19' }),
+        K.outCell(() => K.money((avg3('sga') || 0) + premium()), { ref: 'G19' }),
+        K.outCell(() => K.ratio(avg3('revenues') ? ((avg3('sga') || 0) + premium()) / avg3('revenues') : null), { ref: 'H19' }),
+      ]),
+    ];
+
+    main.appendChild(K.card('เบี้ยประกันเทียบกับงบ', 'ชีต งบกำไรขาดทุน แถว 17–22', [
+      K.table([h('tr', null, [
+        h('th.label', { text: 'เปรียบเทียบ' }), h('th', { text: 'ค่าเบี้ยประกัน' }), h('th', { text: 'รายจ่ายรวม' }),
+        h('th', { text: 'สัดส่วน' }), h('th', { text: 'ค่าใช้จ่ายในการขายและบริการ' }), h('th', { text: 'สัดส่วน' }),
+      ])], cmpRows),
+      K.table(null, [
+        h('tr', null, [
+          K.labelCell('จำนวนกรรมการบริหาร', 'B21'),
+          K.outCell((c, kk) => K.int(kk.directors.length), { ref: 'C21' }),
+          K.labelCell('เพดานอ้างอิง: รายได้ปีล่าสุด × 5%', 'I21'),
+          K.outCell(() => K.money(latest('revenues') === null ? null : latest('revenues') * 0.05), { ref: 'I21' }),
+          K.outCell(() => {
+            const cap = latest('revenues') === null ? null : latest('revenues') * 0.05;
+            if (cap === null) return '–';
+            return premium() > cap ? '⚠️ เบี้ยที่เสนอเกินเพดานนี้' : 'เบี้ยที่เสนออยู่ในเพดาน';
+          }),
+        ]),
+        h('tr', null, [
+          K.labelCell('ค่าเบี้ยประกันเฉลี่ยคนละ', 'B22'),
+          K.outCell((c, kk) => K.money(kk.directors.length ? premium() / kk.directors.length : null), { ref: 'C22' }),
+          K.labelCell('เกณฑ์อ้างอิง: ภาษีเงินได้ปีล่าสุด × 20%', 'I22'),
+          K.outCell(() => K.money(latest('taxPaid') === null ? null : latest('taxPaid') * 0.2), { ref: 'I22' }),
+          K.outCell(() => {
+            const ref20 = latest('taxPaid') === null ? null : latest('taxPaid') * 0.2;
+            if (ref20 === null) return '–';
+            return premium() > ref20 ? 'เบี้ยสูงกว่าเกณฑ์อ้างอิงนี้' : 'เบี้ยต่ำกว่าเกณฑ์อ้างอิงนี้';
+          }),
+        ]),
+      ]),
+      h('p.hint', { text: 'ในไฟล์เดิมช่อง I21 และ I22 ลอยอยู่ ไม่มีสูตรไหนอ้างถึง — ที่นี่เอามาเทียบกับเบี้ยที่เสนอจริงแล้ว' }),
+      h('p.note', null, [
+        'เพดาน 5% ของรายได้เฉลี่ย 3 ปี = ',
+        K.out((c) => (c ? K.money(c.ceiling.ceiling5pctAvgRevenue) : '–')),
+        ' บาท · ช่วงที่ปลอดภัยกว่า (2–3%) = ',
+        K.out((c) => (c && c.ceiling.target2to3pct ? K.money(c.ceiling.target2to3pct.low) + ' – ' + K.money(c.ceiling.target2to3pct.high) : '–')),
+        ' บาท · 30% ของกำไรก่อนภาษีเฉลี่ย = ',
+        K.out((c) => (c ? K.money(c.ceiling.ceiling30pctAvgProfit) : '–')),
+        ' บาท',
+      ]),
+      h('p.hint', { text: E.premiumCeiling({ revenues: [] }).disclaimer }),
+    ]));
+
+    // ── งบ pro-forma (ของใหม่ ไม่มีใน Excel) ────────────────────────────
+    main.appendChild(K.card('งบ pro-forma ก่อน/หลังใส่เบี้ยคีย์แมน', 'ของใหม่ — ไม่มีในไฟล์ Excel เดิม', [
+      K.table([h('tr', null, [h('th.label', { text: 'รายการ' }), h('th', { text: 'ก่อนทำคีย์แมน' }), h('th', { text: 'หลังทำคีย์แมน' }), h('th', { text: 'ผลต่าง' })])], [
+        proformaRow('กำไรก่อนภาษี', (c) => c.comparison.profitBeforeTax, (c) => c.comparison.profitAfter),
+        proformaRow('ภาษีเงินได้นิติบุคคล', (c) => c.comparison.citBefore, (c) => c.comparison.citAfter),
+        proformaRow('เบี้ยประกันคีย์แมนที่บันทึกเป็นรายจ่าย', () => 0, (c) => c.premiumTotal),
+        proformaRow('ภาษีทุกทอดที่บริษัทออกให้ (บันทึกเป็นรายจ่าย)', () => 0, (c) => c.allTierTaxTotal),
+        proformaRow('กำไรสุทธิหลังภาษี', (c) => c.comparison.profitBeforeTax - c.comparison.citBefore,
+          (c) => c.comparison.profitAfter - c.comparison.citAfter),
+      ]),
+      h('p.hint', { text: 'ผู้สอบบัญชีจะถามตัวเลขชุดนี้เป็นอันดับแรก — กำไรและภาษีเปลี่ยนไปเท่าไรหลังบันทึกเบี้ยและภาษีที่ออกให้เป็นรายจ่าย' }),
+    ]));
+
+    // ── ค่าใช้จ่ายต้องห้าม (แถว 25–33) ──────────────────────────────────
+    const fRows = (label, pick, ref) => h('tr', null, [K.labelCell(label, ref)].concat(IDX.map((i) =>
+      K.outCell((c) => pick(c, i), { ref: ['D', 'E', 'F'][i] + (ref ? ref.replace(/^B/, '') : '') }))));
+
+    main.appendChild(K.card('อัตราภาษีที่จ่ายสูงเกิน อาจมาจากค่าใช้จ่ายต้องห้าม (ที่ถูกบวกกลับ)', 'ชีต งบกำไรขาดทุน แถว 25–33 · CHK-04', [
+      K.table([h('tr', null, [h('th.label', { text: 'รายการ' })].concat(IDX.map((i) =>
+        K.outCell((c, kk) => kk.financials.years[i] || '–', { th: true, ref: ['D26', 'E26', 'F26'][i] }))))], [
+        fRows('กำไร(ขาดทุน) ก่อนภาษี', (c, i) => K.money(val('profitsBeforeTax', i)), 'B27'),
+        fRows('ภาษีเงินได้', (c, i) => K.money(val('taxPaid', i)), 'B28'),
+        fRows('อัตราภาษีที่จ่าย', (c, i) => {
+          const p = val('profitsBeforeTax', i), t = val('taxPaid', i);
+          return p && t !== null ? (t / p * 100).toFixed(2) + '%' : '–';
+        }, 'B29'),
+        fRows('ฐานภาษี (ภาษีที่ควรจะเป็น)', (c, i) => (c ? K.money(c.forbiddenByYear[i] && c.forbiddenByYear[i].expectedTax) : '–'), 'B30'),
+        fRows('ส่วนเกินภาษี', (c, i) => {
+          const f = c && c.forbiddenByYear[i];
+          if (!f || f.taxPaid === null) return '–';
+          return K.money(f.excessTax);
+        }, 'B31'),
+        fRows('คชจ.ต้องห้าม', (c, i) => {
+          const f = c && c.forbiddenByYear[i];
+          if (!f) return '–';
+          return f.hidden ? 'ไม่แสดง' : K.money(f.amount);
+        }, 'B32'),
+        fRows('อัตราส่วนต่อคชจ.รวม', (c, i) => {
+          const f = c && c.forbiddenByYear[i];
+          const tot = val('totalExpense', i);
+          if (!f || f.hidden || !tot) return '–';
+          return K.ratio(f.amount / tot);
+        }, 'B33'),
+      ]),
+      h('p.note', null, [K.out((c) => {
+        if (!c) return '';
+        const notes = c.forbiddenByYear.filter((f) => f.hidden && f.note).map((f, i) => f.note);
+        const uniq = notes.filter((v, i) => notes.indexOf(v) === i);
+        return uniq.length ? 'หมายเหตุ: ' + uniq.join(' / ') : 'ทุกปีคำนวณค่าใช้จ่ายต้องห้ามได้ตามปกติ';
+      })]),
+      h('p.hint', {
+        text: 'รายจ่ายต้องห้าม หมายถึง รายจ่ายที่บันทึกเป็นค่าใช้จ่ายทางบัญชีแล้ว แต่ในทางภาษีไม่ให้ถือเป็นรายจ่ายในการคำนวณกำไรสุทธิ ' +
+          '(ม.65 ตรี) จึงถูกบวกกลับเป็นกำไรและทำให้อัตราภาษีที่จ่ายจริงสูงกว่าอัตราตามกฎหมาย',
+      }),
+      K.disclaimer(),
+    ]));
+  }
+
+  function proformaRow(label, beforeFn, afterFn) {
+    return h('tr', null, [
+      K.labelCell(label),
+      K.outCell((c) => (c ? K.money(beforeFn(c)) : '–')),
+      K.outCell((c) => (c ? K.money(afterFn(c)) : '–')),
+      K.outCell((c) => (c ? K.money(afterFn(c) - beforeFn(c)) : '–')),
+    ]);
+  }
+
+  function fillPct() {
+    const k = K.state.kase;
+    let filled = 0;
+    K.PL_ROWS.forEach((r) => {
+      [1, 2].forEach((i) => {
+        const cur = k.financials.pct[r.key][i];
+        if (cur !== '' && cur !== null && cur !== undefined) return;
+        const prev = E.num(k.financials[r.key][i - 1]);
+        const now = E.num(k.financials[r.key][i]);
+        if (prev === null || now === null || prev === 0) return;
+        k.financials.pct[r.key][i] = ((now - prev) / Math.abs(prev)) * 100;
+        filled++;
+      });
+    });
+    K.touch(); K.render();
+    K.alert('คำนวณให้แล้ว', filled ? `เติม %เปลี่ยนแปลงให้ ${filled} ช่อง (เฉพาะช่องที่เว้นว่างและมีปีก่อนหน้าให้เทียบ)` : 'ไม่มีช่องว่างที่คำนวณได้');
+  }
+
+  K.registerTab(2, 'pl', 'งบกำไรขาดทุน', render, { num: 2 });
+})(typeof self !== 'undefined' ? self : this);

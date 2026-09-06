@@ -56,6 +56,31 @@ Deploy เสร็จจะได้ลิงก์ประมาณ `https://
 
 ---
 
+## 3.1 แอปที่สองในโปรเจคเดียวกัน: สมุดงานประกันคีย์แมน
+
+โปรเจคนี้เสิร์ฟเว็บสองตัวจาก Firebase Hosting ตัวเดียวกัน (แพลนฟรี Spark เหมือนเดิม ไม่มีค่าใช้จ่ายเพิ่ม):
+
+| แอป | URL | โค้ด |
+|---|---|---|
+| หนี้สิน & ตั๋วจำนำ | https://debt-pawn-tracker-cc106.web.app/ | `app/www/` |
+| สมุดงานประกันคีย์แมน | https://debt-pawn-tracker-cc106.web.app/keyman/ | `app/www/keyman/` |
+
+สองแอปนี้แยกกันสนิท — คนละ service worker (scope `/` กับ `/keyman/`) คนละที่เก็บข้อมูล
+(คีย์แมนใช้ IndexedDB ในเครื่องล้วน ไม่แตะ Firestore) แก้แอปหนึ่งไม่กระทบอีกแอป
+รายละเอียดทั้งหมดอยู่ใน [`app/www/keyman/README.md`](app/www/keyman/README.md)
+
+### Deploy อัตโนมัติ
+
+`.github/workflows/deploy.yml` จะ deploy ให้เองทุกครั้งที่ push โค้ดใน `app/www/` ขึ้น GitHub
+(รันชุดทดสอบเอนจินคีย์แมนก่อน ถ้าไม่ผ่านจะไม่ deploy) ใช้ secret `FIREBASE_SERVICE_ACCOUNT` ตัวเดียว
+กับที่ workflow แจ้งเตือนใช้อยู่แล้ว — ถ้า deploy ติด permission ให้เพิ่มบทบาท
+**Firebase Hosting Admin** ให้ service account นั้นใน Google Cloud Console
+(IAM & Admin → IAM → เลือก service account → Edit → Add another role)
+
+deploy ด้วยมือก็ยังได้เหมือนเดิม: `npx firebase-tools deploy --only hosting`
+
+---
+
 ## 4. Flow การเข้าสู่ระบบ และผู้ใช้ 2 คน
 
 ผู้ใช้มี 2 คนตายตัว (`not` = แอดมิน, `lek` = ผู้ใช้ทั่วไป) ไม่มีการสมัครสมาชิกเพิ่ม ไม่มีรหัสผ่าน:

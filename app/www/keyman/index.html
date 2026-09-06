@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#002060">
+<meta name="description" content="สมุดงานประกันคีย์แมน — คำนวณเบี้ยประกันคีย์แมนและตรวจความสอดคล้องกับหลักเกณฑ์กรมสรรพากร">
+<title>สมุดงานประกันคีย์แมน</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="คีย์แมน">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="app">
+  <div class="row">
+    <h1>สมุดงานประกันคีย์แมน</h1>
+    <span style="flex:1"></span>
+    <select id="year-select" title="ปีภาษีที่ใช้คำนวณ"></select>
+    <button id="btn-refs" title="เปิด/ปิดเลขอ้างอิงเซลล์เดิมของไฟล์ Excel">#เซลล์</button>
+    <button id="btn-close" title="บันทึกแล้วกลับไปหน้ารายชื่อเคส">← รายชื่อเคส</button>
+  </div>
+  <div class="case-name" id="case-name"></div>
+</header>
+
+<div id="checkbar" hidden data-open="0"></div>
+<nav class="tabs" id="tabs"></nav>
+<main id="main"></main>
+
+<!-- SheetJS วางไว้ในโปรเจค ไม่โหลดจาก CDN ตอนรัน เพื่อให้ทำงานออฟไลน์ได้ 100% -->
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="js/tax-tables.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/store.js"></script>
+<script src="js/ui-kit.js"></script>
+<script src="js/app.js"></script>
+<script src="js/import-dbd.js"></script>
+<script src="js/ui-import.js"></script>
+<script src="js/ui-cases.js"></script>
+<script src="js/ui-company.js"></script>
+<script src="js/ui-pl.js"></script>
+<script src="js/ui-bs.js"></script>
+<script src="js/ui-comp.js"></script>
+<script src="js/ui-taccount.js"></script>
+<script src="js/ui-rates.js"></script>
+<script src="js/ui-gross.js"></script>
+<script src="js/ui-summary.js"></script>
+<script src="js/ui-print.js"></script>
+<script>K.boot();</script>
+</body>
+</html>
