@@ -376,3 +376,139 @@ dialog .dlg-foot { padding: 12px 14px; border-top: 1px solid var(--line); displa
   .tablewrap { overflow: visible; border: none; }
   td.label, th.label { position: static; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   จอแท็บเล็ตและพีซี — เนื้อหาจัดกลาง ไม่ยืดเต็มจอ
+   ก่อนหน้านี้ main ไม่มี max-width ตารางเลยยืดจนมีช่องว่างกลางตารางกว้างเป็นฝ่ามือ
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root { --maxw: 1160px; --gut: max(20px, calc((100% - var(--maxw)) / 2)); }
+
+@media screen and (min-width: 860px) {
+  header.app, #checkbar .head, #checkbar ul, nav.tabs, main {
+    padding-left: var(--gut); padding-right: var(--gut);
+  }
+  header.app { padding-top: 12px; padding-bottom: 12px; }
+  header.app h1 { font-size: 17px; }
+  header.app .case-name { font-size: 13px; margin-top: 4px; }
+  nav.tabs { padding-top: 10px; padding-bottom: 10px; }
+  nav.tabs button { font-size: 13px; padding: 7px 15px; }
+  main { padding-top: 18px; padding-bottom: 80px; }
+  section.card { padding: 18px 20px; margin-bottom: 16px; border-radius: 16px; }
+  section.card > h2 { font-size: 16px; margin-bottom: 13px; }
+  .stats { gap: 10px; }
+  .stat { padding: 10px 12px; }
+  .stat b { font-size: 18px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   แท็บ 8 — หน้าสรุปผลต่าง
+   สีสองเส้น (ทำคีย์แมน = น้ำเงิน, ปันผล = ส้ม) ผ่านการตรวจ colour-blind แล้ว
+   ทั้งโหมดสว่างและมืด — อย่าเปลี่ยนค่าโดยไม่ตรวจซ้ำ
+   ═══════════════════════════════════════════════════════════════════════════ */
+.sumx {
+  --s1: #2a78d6;            /* ทำคีย์แมน */
+  --s2: #eb6834;            /* ปันผล */
+  --s1-soft: #e8f1fc;
+  --s2-soft: #fdeee7;
+}
+@media (prefers-color-scheme: dark) {
+  .sumx { --s1: #3987e5; --s2: #d95926; --s1-soft: #16273f; --s2-soft: #33200f; }
+}
+
+/* แถบคำตอบ — ตัวเลขพระเอกของทั้งแอป */
+.verdict {
+  display: grid; gap: 4px 24px; align-items: center;
+  grid-template-columns: 1fr; padding: 20px; margin: 0 0 16px;
+  border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--line);
+}
+@media (min-width: 720px) { .verdict { grid-template-columns: 1fr auto; padding: 24px 26px; } }
+.verdict .k { font-size: 13px; color: var(--text-2); grid-column: 1; }
+.verdict .v {
+  grid-column: 1; font-size: 34px; font-weight: 800; letter-spacing: -.02em; line-height: 1.12;
+  font-variant-numeric: tabular-nums; color: var(--text);
+}
+@media (min-width: 720px) { .verdict .v { font-size: 42px; } }
+.verdict .v .unit { font-size: .45em; font-weight: 600; color: var(--muted); margin-left: 6px; letter-spacing: 0; }
+.verdict .sub { grid-column: 1; font-size: 13.5px; color: var(--text-2); margin-top: 2px; }
+.verdict .side { grid-column: 1; margin-top: 10px; }
+@media (min-width: 720px) { .verdict .side { grid-column: 2; grid-row: 1 / span 4; margin-top: 0; text-align: right; } }
+.verdict.ok { background: var(--ok-bg); border-color: var(--ok-line); }
+.verdict.ok .v { color: var(--ok); }
+.verdict.warn { background: var(--warn-bg); border-color: var(--warn-line); }
+.verdict.warn .v { color: var(--warn); }
+
+/* การ์ดสองฝั่ง After / Before */
+.vs { display: grid; grid-template-columns: 1fr; gap: 14px; margin: 0 0 16px; }
+@media (min-width: 720px) { .vs { grid-template-columns: 1fr 1fr; gap: 18px; } }
+.scen {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 16px 18px; box-shadow: var(--shadow-1); border-top: 3px solid var(--line-2);
+  display: flex; flex-direction: column;   /* ดันบรรทัด "ภาษีที่เสียสุทธิ" ของสองการ์ดให้อยู่ระดับเดียวกัน */
+}
+.scen.a { border-top-color: var(--s1); }
+.scen.b { border-top-color: var(--s2); }
+.scen .who { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: var(--text); }
+.scen .who .swatch { width: 11px; height: 11px; border-radius: 3px; flex: 0 0 auto; }
+.scen.a .who .swatch { background: var(--s1); }
+.scen.b .who .swatch { background: var(--s2); }
+.scen .who .tag {
+  margin-left: auto; font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
+  background: var(--surface-3); color: var(--muted); border: 1px solid var(--line);
+}
+.scen.a .who .tag { background: var(--s1-soft); color: var(--s1); border-color: transparent; }
+.scen .headline { margin: 12px 0 2px; }
+.scen .headline em { display: block; font-style: normal; font-size: 12px; color: var(--muted); }
+.scen .headline b {
+  display: block; font-size: 27px; font-weight: 800; letter-spacing: -.02em; line-height: 1.2;
+  font-variant-numeric: tabular-nums; color: var(--text);
+}
+.ledger { margin: 14px 0 0; border-top: 1px solid var(--line); flex: 1; display: flex; flex-direction: column; }
+.ledger .lr {
+  display: flex; align-items: baseline; gap: 10px; padding: 7px 0;
+  border-bottom: 1px solid var(--line); font-size: 13px;
+}
+.ledger .lr:last-child { border-bottom: 0; }
+.ledger .lr .n { margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ledger .lr .t { color: var(--text-2); }
+.ledger .lr small { display: block; font-size: 11.5px; color: var(--muted); }
+.ledger .lr.sumline { border-top: 2px solid var(--line-2); border-bottom: 0; margin-top: auto; padding-top: 9px; }
+.ledger .lr.sumline .t { font-weight: 600; color: var(--text); }
+.ledger .lr.sumline .n { font-weight: 800; font-size: 16px; }
+.ledger .lr .n.neg { color: var(--ok); }
+
+/* กราฟแท่ง — แท่งหนา 20px ปลายมน 4px โคนตรงชิดเส้นศูนย์ */
+.vlegend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-2); margin: 0 0 14px; }
+.vlegend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; vertical-align: -1px; margin-right: 6px; }
+.vlegend i.s1 { background: var(--s1); } .vlegend i.s2 { background: var(--s2); }
+.facet + .facet { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.facet .ft { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.facet .fs { font-size: 12px; color: var(--muted); margin: 1px 0 12px; }
+.barrow {
+  display: grid; grid-template-columns: 88px 1fr auto; align-items: center; gap: 12px;
+  padding: 3px 0; margin-bottom: 2px;   /* ช่องว่าง 2px คั่นแท่งที่ติดกัน */
+}
+.barrow .bl { font-size: 12.5px; color: var(--text-2); }
+.barrow .btrack { height: 20px; background: var(--surface-2); border-radius: 0 4px 4px 0; }
+.barrow .bfill { height: 100%; border-radius: 0 4px 4px 0; min-width: 3px; transition: width .35s ease; }
+.barrow .bfill.s1 { background: var(--s1); } .barrow .bfill.s2 { background: var(--s2); }
+.barrow .bv { font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text); }
+.barrow .bv.win { font-weight: 700; }
+.fdelta { font-size: 12.5px; color: var(--text-2); margin: 8px 0 0; padding-left: 100px; }
+@media (max-width: 560px) { .fdelta { padding-left: 0; } }
+
+/* บล็อกที่พับเก็บ — คำอธิบายยาว ๆ ไปอยู่หลังปุ่มกด ไม่เกะกะหน้าจอ */
+details.fold { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); margin: 0 0 10px; }
+details.fold > summary {
+  cursor: pointer; padding: 11px 14px; font-size: 13px; font-weight: 600; color: var(--text-2);
+  list-style: none; display: flex; align-items: center; gap: 8px;
+}
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before { content: '▸'; color: var(--muted); font-size: 11px; transition: transform .15s; }
+details.fold[open] > summary::before { transform: rotate(90deg); }
+details.fold > summary:hover { color: var(--accent); }
+details.fold > summary .cnt { margin-left: auto; font-weight: 400; font-size: 12px; color: var(--muted); }
+details.fold .foldbody { padding: 0 14px 14px; }
+details.fold .foldbody ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--text-2); }
+details.fold .foldbody li { margin: 6px 0; }
+/* ตารางเปรียบเทียบ 3 คอลัมน์ ถ้าปล่อยยืดเต็มจอพีซีจะมีช่องว่างกลางตารางกว้างเกินไป */
+details.fold .tablewrap { max-width: 820px; }
