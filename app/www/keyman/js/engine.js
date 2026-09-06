@@ -806,6 +806,46 @@
     return null;
   }
 
+  // ── วิเคราะห์งบดุล ───────────────────────────────────────────────────────
+  // กำไรสะสม = ส่วนของผู้ถือหุ้น − ทุนจดทะเบียนที่ชำระแล้ว (ชีต งบดุล แถว 21)
+  // อัตราส่วนที่เหลือคิดจากช่องที่กรอกอยู่แล้ว ไม่ได้เพิ่มช่องกรอกใหม่
+  function balanceAnalysis(balance, paidUpCapital) {
+    const b = balance || {};
+    const cap = num(paidUpCapital);
+    const years = b.years || [];
+    const at = (key, i) => num((b[key] || [])[i]);
+    const rows = [0, 1, 2].map((i) => {
+      const totalAssets = at('totalAssets', i);
+      const totalLiabilities = at('totalLiabilities', i);
+      const equity = at('equity', i);
+      const totalLiabEquity = at('totalLiabEquity', i);
+      const currentAssets = at('currentAssets', i);
+      const currentLiabilities = at('currentLiabilities', i);
+      // ต่างกันไม่ถึง 1 บาทถือว่าลงตัว — งบจริงมีเศษปัดจากการแปลงหน่วยเสมอ
+      const diff = totalAssets === null || totalLiabEquity === null ? null : totalAssets - totalLiabEquity;
+      return {
+        index: i,
+        year: years[i] || null,
+        hasData: totalAssets !== null || totalLiabilities !== null || equity !== null,
+        totalAssets, totalLiabilities, equity, totalLiabEquity, currentAssets, currentLiabilities,
+        retained: equity === null || cap === null ? null : equity - cap,
+        workingCapital: currentAssets === null || currentLiabilities === null ? null : currentAssets - currentLiabilities,
+        currentRatio: currentAssets === null || !currentLiabilities ? null : currentAssets / currentLiabilities,
+        debtToEquity: totalLiabilities === null || !equity ? null : totalLiabilities / equity,
+        diff,
+        balanced: diff === null ? null : Math.abs(diff) < 1,
+      };
+    });
+    const withData = rows.filter((r) => r.hasData);
+    return {
+      rows,
+      latest: withData.length ? withData[withData.length - 1] : null,
+      offBalance: rows.filter((r) => r.balanced === false),
+      checked: rows.filter((r) => r.balanced !== null).length,
+      paidUpCapital: cap,
+    };
+  }
+
   // ── จัดสรรเบี้ยรายกรรมการ ────────────────────────────────────────────────
   // Excel คิดเบี้ยเฉลี่ยต่อคนที่ C22 = C18 ÷ C21 แล้วชีตค่าตอบแทนกรรมการกับชีต
   // ภาษีทุกทอดดึงค่านั้นไปใช้ตรง ๆ (E7 = งบกำไรขาดทุน!C22, F8 = งบกำไรขาดทุน!C22)
@@ -926,6 +966,7 @@
     citMarginalRate,
     determineSme,
     smeRevenue,
+    balanceAnalysis,
     grossUpTax,
     sumAllowances,
     sumDonations,

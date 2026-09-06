@@ -276,6 +276,39 @@ const gCap = E.grossUpTax({ salary: 1400000, keymanPremium: 600000,
 near(gCap.columnE.allowanceTotal, 660000, 0.01, 'ตารางภาษีใช้ค่าลดหย่อนหลังตัดเพดาน');
 near(gCap.columnE.netIncome, 1400000 - 100000 - 660000, 0.01, 'เงินได้สุทธิคิดจากยอดหลังตัดเพดาน');
 
+// ── วิเคราะห์งบดุล ────────────────────────────────────────────────────────
+section('วิเคราะห์งบดุล');
+const bs = {
+  years: ['2565', '2566', '2567'],
+  totalAssets: [22500000, 23600000, 25700000],
+  totalLiabilities: [10000000, 9400000, 8500000],
+  equity: [12500000, 14200000, 17200000],
+  totalLiabEquity: [22500000, 23600000, 25700000],
+  currentAssets: ['', '', 17000000],
+  currentLiabilities: ['', '', 6400000],
+};
+const ba = E.balanceAnalysis(bs, 5000000);
+near(ba.latest.retained, 12200000, 0.01, 'กำไรสะสม = ส่วนของผู้ถือหุ้น − ทุนที่ชำระแล้ว');
+near(ba.rows[0].retained, 7500000, 0.01, 'กำไรสะสมปีแรก');
+near(ba.latest.workingCapital, 10600000, 0.01, 'เงินทุนหมุนเวียน');
+near(ba.latest.currentRatio, 2.65625, 0.0001, 'อัตราส่วนสภาพคล่อง');
+near(ba.latest.debtToEquity, 8500000 / 17200000, 0.0001, 'หนี้สินต่อส่วนของผู้ถือหุ้น');
+eq(ba.latest.year, '2567', 'หยิบปีล่าสุดที่มีข้อมูล');
+eq(ba.offBalance.length, 0, 'งบลงตัวทั้งสามปี');
+eq(ba.checked, 3, 'ตรวจได้สามปี');
+// ต่างกันไม่ถึง 1 บาทถือว่าลงตัว เกินกว่านั้นต้องฟ้อง
+eq(E.balanceAnalysis(Object.assign({}, bs, { totalLiabEquity: [22500000, 23600000, 25700000.5] }), 5000000).offBalance.length, 0,
+  'ต่างกัน 0.50 บาท → ยังถือว่าลงตัว');
+const bad = E.balanceAnalysis(Object.assign({}, bs, { totalLiabEquity: [22500000, 23600000, 25600000] }), 5000000);
+eq(bad.offBalance.length, 1, 'ต่างกัน 100,000 บาท → ฟ้องว่าไม่ลงตัว');
+near(bad.offBalance[0].diff, 100000, 0.01, 'บอกส่วนต่างเป็นตัวเลข');
+// ช่องว่างต้องไม่ถูกนับเป็นศูนย์
+const empty = E.balanceAnalysis({ years: ['', '', ''] }, null);
+eq(empty.latest, null, 'ยังไม่มีข้อมูล → ไม่มีปีล่าสุด');
+eq(empty.checked, 0, 'ยังไม่มีอะไรให้ตรวจ');
+eq(empty.rows[0].currentRatio, null, 'หนี้สินหมุนเวียนว่าง → ไม่หารศูนย์');
+eq(E.balanceAnalysis({ equity: ['', '', 1000000] }, null).rows[2].retained, null, 'ไม่มีทุนจดทะเบียน → คิดกำไรสะสมไม่ได้');
+
 // ── กฎตรวจสอบ ─────────────────────────────────────────────────────────────
 section('กฎตรวจสอบ CHK');
 function baseCase(over) {
