@@ -20,32 +20,36 @@
     ]);
   }
 
-  function scenario(side, title, tag, cash, rows) {
+  // ไม่มีตัวเลขพาดหัวในการ์ดนี้ — ยอดเงินเข้าเจ้าของอยู่บล็อก 3 อยู่แล้ว ใส่ซ้ำจะสับสน
+  function scenario(side, title, tag, rows) {
     return h('div', { class: 'scen ' + side }, [
       h('div.who', null, [h('span.swatch'), h('span', { text: title }), tag ? h('span.tag', { text: tag }) : null]),
-      h('div.headline', null, [h('em', { text: 'เงินเข้าเจ้าของ' }), h('b', { text: B(cash) })]),
       h('div.ledger', null, rows),
     ]);
   }
 
-  // ── บล็อกเปรียบเทียบ: แท่งสองแท่งบนสเกลเดียวกัน + แถบผลต่าง ───────────
-  function facet(title, hint, series, delta) {
-    const max = Math.max.apply(null, series.map((s) => Math.max(0, s.value)).concat([1]));
-    const best = series.reduce((b, s) => (b === null ? s.value : (series.betterLow ? Math.min(b, s.value) : Math.max(b, s.value))), null);
-    return h('div.facet', null, [
-      h('div.ft', { text: title }),
-      h('div.fs', { text: hint }),
-      h('div', null, series.map((s) => h('div.barrow', { title: s.name + ' · ' + B(s.value) }, [
-        h('div.bl', null, [h('span', { text: s.name }), s.why ? h('small', { text: s.why }) : null]),
-        h('div.btrack', null, [h('div', { class: 'bfill ' + s.cls, style: 'width:' + (Math.max(0, s.value) / max * 100).toFixed(2) + '%' })]),
-        h('span', { class: 'bv ' + (s.value === best ? 'win' : ''), text: K.money(s.value) }),
+  // ── แถบผลต่าง — แทนช่องเขียว/น้ำเงินที่คั่นกลางในชีตเดิม ────────────────
+  function deltaBar(d) {
+    return h('div', { class: 'fdelta ' + (d.tone || '') }, [
+      h('span.dk', { text: 'ผลต่าง' }),
+      h('b.dv', { text: B(Math.abs(d.value)) }),
+      d.pct === null ? null : h('span.dp', { text: d.pct.toFixed(1) + '%' }),
+      h('span.dsay', { text: d.say }),
+    ]);
+  }
+
+  // ── บล็อกเปรียบเทียบสองฝั่ง วางเป็นสองคอลัมน์ตามชีตเดิม ────────────────
+  function block(no, title, hint, sides, delta) {
+    const max = Math.max.apply(null, sides.map((s) => Math.max(0, s.value)).concat([1]));
+    return h('div', null, [
+      h('h3.blkt', null, [h('span.no', { text: no }), title, h('span.hint', { text: hint })]),
+      h('div.cmpblk', null, sides.map((s) => h('div', { class: 'pane ' + s.cls }, [
+        h('div.ph', null, [h('span.swatch'), h('span', { text: s.name })]),
+        h('div.pv', { text: B(s.value) }),
+        h('div.meter', null, [h('i', { style: 'width:' + (Math.max(0, s.value) / max * 100).toFixed(2) + '%' })]),
+        s.why ? h('div.pc', { text: s.why }) : null,
       ]))),
-      delta ? h('div', { class: 'fdelta ' + (delta.tone || '') }, [
-        h('span.dk', { text: 'ผลต่าง' }),
-        h('b.dv', { text: B(Math.abs(delta.value)) }),
-        delta.pct === null ? null : h('span.dp', { text: delta.pct.toFixed(1) + '%' }),
-        h('span.dsay', { text: delta.say }),
-      ]) : null,
+      deltaBar(delta),
     ]);
   }
 
@@ -83,9 +87,16 @@
       })]),
     ]));
 
-    // ── 2) การ์ดสองฝั่ง — แถวตรงกันบรรทัดต่อบรรทัดตามชีตเดิม ─────────────
+    // ── 2) บล็อกที่ 1 ของชีตเดิม — แถวตรงกันบรรทัดต่อบรรทัด ──────────────
+    wrap.appendChild(h('div.vlegend', null, [
+      h('span', { html: '<i class="s1"></i>ทำคีย์แมน (After)' }),
+      h('span', { html: '<i class="s2"></i>ปล่อยเป็นเงินปันผล (Before)' }),
+      h('span.vnote', { text: '% ทุกบล็อกเทียบกับฝั่งปันผล' }),
+    ]));
+    wrap.appendChild(h('h3.blkt', null, [h('span.no', { text: '1' }), 'ภาษีที่เสียรวม',
+      h('span.hint', { text: 'ยิ่งต่ำยิ่งดี · บาทต่อปี' })]));
     wrap.appendChild(h('div.vs', null, [
-      scenario('a', 'ทำคีย์แมน', cmp.taxDiff > 0 && !cmp.noTaxBenefit ? 'ประหยัดกว่า' : null, A.ownerCash, [
+      scenario('a', 'ทำคีย์แมน', cmp.taxDiff > 0 && !cmp.noTaxBenefit ? 'ประหยัดกว่า' : null, [
         lr('เบี้ยประกัน', { text: K.money(A.premium) }),
         lr('ภาษีทุกทอด', { text: K.money(A.allTierTax), note: 'บริษัทออกให้แทนกรรมการ' }),
         lr('ค่าใช้จ่ายรวมที่บันทึกได้', { text: K.money(A.totalExpense), note: 'เบี้ย + ภาษีที่บริษัทออกให้' }),
@@ -95,7 +106,7 @@
         lr('ภาษีเงินปันผล', { text: K.money(A.dividendTax), note: 'ไม่ได้ปันผล จึงไม่มี' }),
         lr('เสียภาษีรวม', { text: K.money(A.netTax), sum: true }),
       ]),
-      scenario('b', 'ปันผล', null, Bf.ownerCash, [
+      scenario('b', 'ปันผล', null, [
         lr('เงินส่วนกำไร', { text: K.money(Bf.lumpSum) }),
         lr('ภาษีบุคคลธรรมดา', { text: K.money(Bf.personalTax), note: 'จากเงินเดือนอย่างเดียว' }),
         lr('ค่าใช้จ่ายรวมที่บันทึกได้', { text: '–', note: 'เงินส่วนกำไรลงเป็นรายจ่ายไม่ได้' }),
@@ -104,43 +115,29 @@
         lr('เสียภาษีรวม', { text: K.money(Bf.totalTax), sum: true }),
       ]),
     ]));
+    wrap.appendChild(deltaBar({
+      value: cmp.taxDiff, pct: pctOf(cmp.taxDiff, Bf.totalTax),
+      tone: cmp.taxDiff > 0 ? 'good' : cmp.taxDiff < 0 ? 'bad' : '',
+      say: cmp.taxDiff > 0 ? 'เสียภาษีน้อยลง' : cmp.taxDiff < 0 ? 'เสียภาษีมากขึ้น' : 'เท่ากันทั้งสองฝั่ง',
+    }));
 
-    // ── 3) สามบล็อกเปรียบเทียบของชีตเดิม ─────────────────────────────────
-    const taxSeries = [
-      { name: 'ทำคีย์แมน', value: A.netTax, cls: 's1' },
-      { name: 'ปันผล', value: Bf.totalTax, cls: 's2' },
-    ];
-    taxSeries.betterLow = true;
-    const netSeries = [
-      { name: 'ทำคีย์แมน', value: A.directorNet, cls: 's1', why: 'บริษัทออกภาษีให้ กรรมการรับเต็ม' },
-      { name: 'ปันผล', value: Bf.directorNet, cls: 's2', why: 'ถูกหักภาษีไว้ก่อน' },
-    ];
-    const cashSeries = [
-      { name: 'ทำคีย์แมน', value: A.ownerCash, cls: 's1', why: 'เงินเดือน + เบี้ยประกัน' },
-      { name: 'ปันผล', value: Bf.ownerCash, cls: 's2', why: 'เงินเดือน + เงินปันผลหลังภาษี' },
-    ];
-    wrap.appendChild(K.card('เทียบสามด้าน', 'ชีต สรุปผลต่างจาก Keyman', [
-      h('div.vlegend', null, [
-        h('span', { html: '<i class="s1"></i>ทำคีย์แมน (After)' }),
-        h('span', { html: '<i class="s2"></i>ปล่อยเป็นเงินปันผล (Before)' }),
-        h('span.vnote', { text: '% ทุกช่องเทียบกับฝั่งปันผล' }),
-      ]),
-      facet('1 · ภาษีที่เสียรวม', 'ยิ่งต่ำยิ่งดี · บาทต่อปี', taxSeries, {
-        value: cmp.taxDiff, pct: pctOf(cmp.taxDiff, Bf.totalTax),
-        tone: cmp.taxDiff > 0 ? 'good' : cmp.taxDiff < 0 ? 'bad' : '',
-        say: cmp.taxDiff > 0 ? 'เสียภาษีน้อยลง' : cmp.taxDiff < 0 ? 'เสียภาษีมากขึ้น' : 'เท่ากันทั้งสองฝั่ง',
-      }),
-      facet('2 · เงินเดือนและโบนัสที่กรรมการรับจริง', 'ยิ่งสูงยิ่งดี · บาทต่อปี', netSeries, {
-        value: cmp.directorNetDiff, pct: pctOf(cmp.directorNetDiff, Bf.directorNet),
-        tone: cmp.directorNetDiff > 0 ? 'good' : cmp.directorNetDiff < 0 ? 'bad' : '',
-        say: cmp.directorNetDiff > 0 ? 'เงินเข้ากรรมการมากขึ้น' : cmp.directorNetDiff < 0 ? 'เงินเข้ากรรมการน้อยลง' : 'เท่ากันทั้งสองฝั่ง',
-      }),
-      facet('3 · เงินเข้าเจ้าของทั้งหมด', 'ยิ่งสูงยิ่งดี · บาทต่อปี', cashSeries, {
-        value: cmp.cashDiff, pct: pctOf(cmp.cashDiff, Bf.ownerCash),
-        tone: cmp.cashDiff > 0 ? 'good' : cmp.cashDiff < 0 ? 'bad' : '',
-        say: cmp.cashDiff > 0 ? 'เงินเข้าเจ้าของมากขึ้น' : cmp.cashDiff < 0 ? 'เงินเข้าเจ้าของน้อยลง' : 'เท่ากันทั้งสองฝั่ง',
-      }),
-    ]));
+    // ── 3) บล็อกที่ 2 และ 3 ของชีตเดิม ───────────────────────────────────
+    const say = (d, up, down) => (d > 0 ? up : d < 0 ? down : 'เท่ากันทั้งสองฝั่ง');
+    const dtone = (d) => (d > 0 ? 'good' : d < 0 ? 'bad' : '');
+    wrap.appendChild(block('2', 'เงินเดือนและโบนัสที่กรรมการรับจริง', 'ยิ่งสูงยิ่งดี · บาทต่อปี', [
+      { name: 'ทำคีย์แมน', value: A.directorNet, cls: 'a', why: 'รับเต็ม เนื่องจากบริษัทจ่ายภาษีให้' },
+      { name: 'ปันผล', value: Bf.directorNet, cls: 'b', why: 'เนื่องจากถูกหักภาษีไว้' },
+    ], {
+      value: cmp.directorNetDiff, pct: pctOf(cmp.directorNetDiff, Bf.directorNet), tone: dtone(cmp.directorNetDiff),
+      say: say(cmp.directorNetDiff, 'เงินเข้ากรรมการมากขึ้น', 'เงินเข้ากรรมการน้อยลง'),
+    }));
+    wrap.appendChild(block('3', 'เงินเข้าเจ้าของทั้งหมด', 'ยิ่งสูงยิ่งดี · บาทต่อปี', [
+      { name: 'ทำคีย์แมน', value: A.ownerCash, cls: 'a', why: 'เงินเดือน + เบี้ยประกัน' },
+      { name: 'ปันผล', value: Bf.ownerCash, cls: 'b', why: 'เงินเดือน + เงินปันผลหลังภาษี' },
+    ], {
+      value: cmp.cashDiff, pct: pctOf(cmp.cashDiff, Bf.ownerCash), tone: dtone(cmp.cashDiff),
+      say: say(cmp.cashDiff, 'เงินเข้าเจ้าของมากขึ้น', 'เงินเข้าเจ้าของน้อยลง'),
+    }));
 
     // ── 4) รายละเอียดที่พับเก็บไว้ ────────────────────────────────────────
     const tableRows = [
@@ -153,6 +150,7 @@
       ['เงินเดือน+โบนัสที่กรรมการรับจริง', A.directorNet, Bf.directorNet],
       ['เงินเข้าเจ้าของ', A.ownerCash, Bf.ownerCash, 'total'],
     ];
+    wrap.appendChild(h('div', { style: 'height:26px' }));
     wrap.appendChild(h('details.fold', null, [
       h('summary', null, [h('span', { text: 'ตารางเปรียบเทียบเต็ม' }), h('span.cnt', { text: tableRows.length + ' รายการ' })]),
       h('div.foldbody', null, [
