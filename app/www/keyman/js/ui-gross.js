@@ -35,11 +35,26 @@
       .concat(cols.map((col, idx) => h('th', null, [h('span', { text: colLabel(col, idx) }), h('span.ref', { text: colRef(idx) })]))));
 
     const rows = [];
-    const dataRow = (label, ref, fn, cls) => rows.push(h('tr', { class: cls || '' },
-      [K.labelCell(label, ref)].concat(cols.map((col, idx) => h('td', { class: 'calc num' }, K.money(fn(col, idx)))))));
+    // editors = { ดัชนีคอลัมน์: โหนดช่องกรอก } — คอลัมน์ที่เหลือเป็นช่องสูตร
+    const dataRow = (label, ref, fn, cls, editors) => rows.push(h('tr', { class: cls || '' },
+      [K.labelCell(label, ref)].concat(cols.map((col, idx) =>
+        (editors && editors[idx]) ? h('td', null, [editors[idx]]) : h('td', { class: 'calc num' }, K.money(fn(col, idx)))))));
 
-    dataRow('เงินเดือน + โบนัส', 'B7', (col) => col.salaryBonus);
-    dataRow('สวัสดิการพิเศษอื่น เช่น ประกัน Keyman', 'B8', (col) => col.keymanPremium);
+    // ช่องกรอกสีเหลืองตาม Excel: E7 = เงินเดือน+โบนัส, F8 = เบี้ยคีย์แมนของท่านนี้
+    // จำนวนทอดเปลี่ยนตามตัวเลข จึงวาดตารางใหม่ตอนออกจากช่อง (event change) ไม่ใช่ทุกครั้งที่พิมพ์
+    const money = (path) => {
+      const inp = K.input(path, { onchange: () => K.refreshOutputs() });
+      inp.addEventListener('change', () => K.render());
+      return inp;
+    };
+    const salaryCell = h('div', { style: 'display:flex;gap:4px;min-width:190px' }, [
+      h('label.field', { style: 'margin:0;flex:1' }, [h('span.lbl', { text: 'เงินเดือนทั้งปี' }), money('directors.' + i + '.salary')]),
+      h('label.field', { style: 'margin:0;flex:1' }, [h('span.lbl', { text: 'โบนัสทั้งปี' }), money('directors.' + i + '.bonus')]),
+    ]);
+
+    dataRow('เงินเดือน + โบนัส', 'B7', (col) => col.salaryBonus, '', { 0: salaryCell });
+    dataRow('สวัสดิการพิเศษอื่น เช่น ประกัน Keyman', 'B8', (col) => col.keymanPremium, '',
+      { 1: money('directors.' + i + '.premiumAllocated') });
     dataRow('ภาษีที่ออกแทน', 'B9', (col) => col.taxCarried);
     dataRow('รวมรายได้', 'D10', (col) => col.totalIncome, 'total');
     dataRow('หัก: ค่าใช้จ่าย 50% แต่สูงสุดไม่เกิน 100,000 บาท', 'D12', (col) => -col.expense);
@@ -84,7 +99,7 @@
       .concat(cols.map((col) => h('td.calc.num', { text: K.ratio(col.effectiveRate) })))));
 
     main.appendChild(K.card('ภาษีทุกทอด — ' + (d.name || 'กรรมการท่านที่ ' + (i + 1)), 'ชีต ภาษีทุกทอดกรรมการ' + (i + 1), [
-      h('p.note', { text: '*กรอกเฉพาะช่องที่เป็นสีเหลือง — เงินเดือน/โบนัส/เบี้ยแก้ที่แท็บ 1 หรือ 4 ค่าลดหย่อนแก้ได้ที่นี่' }),
+      h('p.note', { text: '*กรอกเฉพาะช่องที่เป็นสีเหลือง — เงินเดือน/โบนัส (คอลัมน์ E), เบี้ยคีย์แมนของท่านนี้ (คอลัมน์ F) และค่าลดหย่อนทุกรายการ พิมพ์ได้ที่นี่เลย เป็นช่องเดียวกับแท็บ 1 และ 4' }),
       K.table([head], rows),
       h('div.btnrow', null, [
         h('button.btn', {

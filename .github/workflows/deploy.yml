@@ -30,6 +30,9 @@ jobs:
       - name: Run keyman engine tests
         run: node app/www/keyman/test/engine.test.js
 
+      - name: Run keyman DBD importer tests
+        run: node app/www/keyman/test/import.test.js
+
       - name: Write service account key
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}

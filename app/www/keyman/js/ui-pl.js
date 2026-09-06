@@ -34,6 +34,25 @@
     return null;
   }
 
+  // ช่อง C18 ของ Excel เป็นช่องกรอกสีเหลือง (ค่าเบี้ยประกันที่จะเสนอ) ไม่ใช่ช่องสูตร
+  // เป็นช่องเดียวกับ "เบี้ยประกันรวมทั้งปี" ในแท็บ 1 — พิมพ์ที่ไหนก็อัปเดตอีกที่ทันที
+  function premiumCell() {
+    const inp = K.input('policy.premiumTotal', { onchange: () => K.refreshOutputs() });
+    inp.addEventListener('change', () => K.render());
+    return K.h('td', null, [inp, K.h('span.ref', { text: 'C18' })]);
+  }
+
+  // Excel คิดเบี้ยเฉลี่ยต่อคนที่ C22 = C18/C21 แล้วชีตภาษีทุกทอดดึงค่านั้นไปใช้
+  // ที่นี่ต้องกดยืนยันเอง เพราะการจัดสรรรายคนคือหลักฐานตามหนังสือตอบข้อหารือ (CHK-06)
+  function spreadPremium() {
+    const k = K.state.kase;
+    const total = E.n0(k.policy.premiumTotal);
+    if (!k.directors.length) return;
+    const per = total / k.directors.length;
+    k.directors.forEach((d) => { d.premiumAllocated = per; });
+    K.touch(); K.render();
+  }
+
   function render(main) {
     const k = K.state.kase;
     main.appendChild(K.dbdImportCard());
@@ -90,7 +109,7 @@
     const cmpRows = [
       h('tr', null, [
         K.labelCell('เปรียบเทียบกับงบการเงินล่าสุด', 'B18'),
-        K.outCell(() => K.money(premium()), { ref: 'C18' }),
+        premiumCell(),
         K.outCell(() => K.money(latest('totalExpense')), { ref: 'E18' }),
         K.outCell(() => K.ratio(latest('totalExpense') ? premium() / latest('totalExpense') : null), { ref: 'F18' }),
         K.outCell(() => K.money((latest('sga') || 0) + premium()), { ref: 'G18' }),
@@ -135,6 +154,16 @@
           }),
         ]),
       ]),
+      h('div.btnrow', null, [
+        h('button.btn.primary', { text: 'จัดสรรเบี้ยเฉลี่ยให้กรรมการทุกท่าน', onclick: spreadPremium }),
+      ]),
+      h('p.hint', null, [
+        'ช่อง "ค่าเบี้ยประกัน" (C18) พิมพ์ได้เลยที่นี่ — เป็นช่องเดียวกับ "เบี้ยประกันรวมทั้งปี" ในแท็บ 1 · ',
+        'พิมพ์เบี้ยรวมแล้วกดปุ่มด้านบนเพื่อกระจายให้กรรมการทุกท่านเท่า ๆ กัน (เท่ากับสูตร C22 = C18 ÷ C21 ของ Excel) ',
+        'หรือจะไปกรอกเบี้ยรายคนเองที่แท็บ 1 ก็ได้ · ยอดจัดสรรรวมตอนนี้ ',
+        K.out((c, kk) => K.money(kk.directors.reduce((s2, d) => s2 + E.n0(d.premiumAllocated), 0))),
+        ' บาท',
+      ]),
       h('p.hint', { text: 'ในไฟล์เดิมช่อง I21 และ I22 ลอยอยู่ ไม่มีสูตรไหนอ้างถึง — ที่นี่เอามาเทียบกับเบี้ยที่เสนอจริงแล้ว' }),
       h('p.note', null, [
         'เพดาน 5% ของรายได้เฉลี่ย 3 ปี = ',
@@ -142,8 +171,12 @@
         ' บาท · ช่วงที่ปลอดภัยกว่า (2–3%) = ',
         K.out((c) => (c && c.ceiling.target2to3pct ? K.money(c.ceiling.target2to3pct.low) + ' – ' + K.money(c.ceiling.target2to3pct.high) : '–')),
         ' บาท · 30% ของกำไรก่อนภาษีเฉลี่ย = ',
-        K.out((c) => (c ? K.money(c.ceiling.ceiling30pctAvgProfit) : '–')),
-        ' บาท',
+        K.out((c) => {
+          if (!c) return '–';
+          // กำไรเฉลี่ยติดลบ = ไม่มีฐานให้คิดสัดส่วน ห้ามโชว์เพดานติดลบ
+          if (c.ceiling.avgProfit === null || c.ceiling.avgProfit <= 0) return 'ไม่มีฐานกำไรให้คิด (ขาดทุนเฉลี่ย)';
+          return K.money(c.ceiling.ceiling30pctAvgProfit) + ' บาท';
+        }),
       ]),
       h('p.hint', { text: E.premiumCeiling({ revenues: [] }).disclaimer }),
     ]));

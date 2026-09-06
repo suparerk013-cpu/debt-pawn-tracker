@@ -7,6 +7,8 @@
   // ── ทำข้อความให้เทียบกันได้ (ตัดช่องว่าง วรรณยุกต์ที่ไม่จำเป็น และ nbsp) ──
   const norm = (s) => String(s === null || s === undefined ? '' : s)
     .replace(/ /g, ' ')
+    .replace(/\u0e4d\u0e32/g, '\u0e33')   // ' ํา' ที่ PDF ของ DBD ใช้ = 'ำ'
+    .replace(/[\u200b\ufeff]/g, '')
     .replace(/[()\s\-–—.]/g, '')
     .trim();
 
@@ -144,13 +146,16 @@
     { key: 'fiscalYearsFiled', label: 'ปีที่ส่งงบการเงิน' },
   ];
 
+  // รับได้ทั้งข้อความที่ copy จากหน้าเว็บ DBD (label กับค่าอยู่บรรทัดเดียวกัน)
+  // และข้อความจาก Company_Profile.pdf ซึ่ง label จะกองอยู่ก่อนแล้วค่าตามมาทีหลัง
   function parseCompanyText(text) {
-    const raw = String(text || '').replace(/ /g, ' ');
+    const raw = String(text || '').replace(/\u00a0/g, ' ').replace(/\u0e4d\u0e32/g, '\u0e33');
     const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
     const fields = {};
     const directors = [];
     let name = '';
     let inDirectors = false;
+    const pending = [];   // label ที่ยังไม่มีค่า รอค่าจากบรรทัดถัด ๆ ไป (แบบ PDF)
 
     lines.forEach((line) => {
       // ชื่อบริษัทมักเป็นบรรทัดที่ขึ้นต้นด้วย บริษัท / ห้างหุ้นส่วน และไม่มี label
@@ -160,26 +165,41 @@
       if (m) {
         const key = m[1].replace(/\s+/g, ' ').trim();
         const value = m[2].trim();
-        if (/^กรรมการ/.test(key)) { inDirectors = true; if (value) pushDirector(directors, value); return; }
+        if (/^กรรมการ/.test(key)) { inDirectors = true; pending.length = 0; if (value) pushDirector(directors, value); return; }
         inDirectors = false;
         if (/^ชื่อนิติบุคคล/.test(key) && value) { name = value; return; }
         const hit = LABELS.find((l) => key.indexOf(l.label) === 0 || l.label.indexOf(key) === 0);
-        if (hit) fields[hit.key] = hit.numeric ? E.num(value) : value;
+        if (!hit) return;                       // label ที่ไม่รู้จัก ไม่ล้างคิวที่รออยู่
+        if (value) { setField(fields, hit, value); return; }
+        pending.push(hit);                      // "label :" ลอย ๆ → รอค่าบรรทัดถัดไป
         return;
       }
       // บรรทัดรายชื่อกรรมการ "1.นายจรูญ ทางชอบ" หรือ "2.นางสาวกัลยา ศรไชย/"
-      if (inDirectors || /^\d+\s*[.)]\s*\S/.test(line)) {
-        if (/^\d+\s*[.)]/.test(line)) { inDirectors = true; pushDirector(directors, line); }
-        else inDirectors = false;
-      }
+      // นับเฉพาะตอนที่อยู่ใต้ label "กรรมการ :" เท่านั้น ไม่งั้นข้อความ "ข้อควรทราบ" ที่ขึ้นต้น
+      // ด้วยเลขข้อท้ายเอกสาร DBD จะถูกดูดมาเป็นชื่อกรรมการด้วย
+      if (inDirectors && /^\d+\s*[.)]\s*\S/.test(line)) { pushDirector(directors, line); return; }
+      inDirectors = false;
+      // บรรทัดที่ไม่มี label และมี label ค้างอยู่ในคิว → เป็นค่าของ label ตัวแรกในคิว
+      if (pending.length && line.length <= 200) setField(fields, pending.shift(), line);
     });
 
+    // หมวดธุรกิจในไฟล์ PDF อยู่คนละบรรทัดกับ label และขึ้นต้นด้วยรหัส 5 หลัก
+    // ถ้าที่แกะได้ยาวผิดปกติ (ไปติดข้อความวัตถุประสงค์) ให้ใช้บรรทัดรหัสแทน
+    const groupCode = lines.find((l) => /^\d{4,6}\s*:\s*\S/.test(l));
+    if (groupCode) fields.businessGroup = groupCode.replace(/\s+/g, ' ').trim();
+    else if (fields.businessGroup && fields.businessGroup.length > 120) delete fields.businessGroup;
     if (fields.paidUpCapital === undefined) {
       const m = raw.match(/ทุนจดทะเบียน[^\d]{0,20}([\d,]+(?:\.\d+)?)/);
       if (m) fields.paidUpCapital = E.num(m[1]);
     }
     if (name) fields.name = name;
     return { fields, directors };
+  }
+
+  function setField(fields, hit, value) {
+    if (fields[hit.key] !== undefined && fields[hit.key] !== null && fields[hit.key] !== '') return; // ค่าแรกที่เจอชนะ
+    const clean = String(value).replace(/\s*:\s*$/, '').trim();
+    fields[hit.key] = hit.numeric ? E.num(clean) : clean;
   }
 
   function pushDirector(list, line) {

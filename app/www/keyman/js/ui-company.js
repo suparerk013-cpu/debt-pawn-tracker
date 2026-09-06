@@ -14,10 +14,14 @@
   function render(main) {
     const k = K.state.kase;
 
+    // อัปโหลดไฟล์ Excel จาก DBD ได้จากแท็บนี้เลย (การ์ดเดียวกับที่อยู่ในแท็บ 2 และ 3)
+    main.appendChild(K.dbdImportCard());
+
     // ── วางข้อมูลจากหน้าเว็บ DBD ─────────────────────────────────────────
-    const pasteBox = h('textarea.cell', { rows: 5, placeholder: 'วางข้อความจากหน้า DBD DataWarehouse+ ที่นี่ แล้วกด "แกะข้อมูล"' });
+    const pasteBox = h('textarea.cell', { rows: 5, placeholder: 'วางข้อความจากหน้า DBD DataWarehouse+ หรือจากไฟล์ Company_Profile.pdf ที่นี่ แล้วกด "แกะข้อมูล"' });
     main.appendChild(K.card('วางข้อมูลนิติบุคคลจาก DBD', 'DBD DataWarehouse+', [
-      h('p.note', { text: 'copy ทั้งบล็อกข้อมูลนิติบุคคลจากหน้าเว็บ DBD มาวาง ระบบจะแกะจาก label ที่ลงท้ายด้วย ":" ให้เอง (ไม่ต้องอ่าน PDF)' }),
+      h('p.note', { text: 'copy ทั้งบล็อกข้อมูลนิติบุคคลจากหน้าเว็บ DBD หรือเปิด Company_Profile.pdf แล้วลากคลุมข้อความมาวางก็ได้ ' +
+        'ระบบแกะจาก label ที่ลงท้ายด้วย ":" ให้เอง รองรับทั้งแบบที่ค่าอยู่บรรทัดเดียวกับ label และแบบ PDF ที่ค่าอยู่คนละบรรทัด' }),
       pasteBox,
       h('div.btnrow', null, [
         h('button.btn.primary', { text: 'แกะข้อมูล', onclick: () => parsePaste(pasteBox.value) }),

@@ -465,7 +465,12 @@
     }
 
     // CHK-03 — เบี้ยรวมเกิน 30% ของกำไรก่อนภาษีเฉลี่ย 3 ปี = เตือน
-    if (ceiling.ceiling30pctAvgProfit !== null && premiumTotal > ceiling.ceiling30pctAvgProfit) {
+    // บริษัทที่ขาดทุนเฉลี่ยไม่มีฐานกำไรให้คิดสัดส่วน จึงไม่แสดงตัวเลขเพดานติดลบให้ผู้ใช้เห็น
+    if (ceiling.avgProfit !== null && ceiling.avgProfit <= 0 && premiumTotal > 0) {
+      add('CHK-03', 'warn', 'กำไรก่อนภาษีเฉลี่ย 3 ปีติดลบ ไม่มีฐานกำไรให้เทียบสัดส่วน 30%',
+        `กำไรก่อนภาษีเฉลี่ย 3 ปี ${fmt(ceiling.avgProfit)} บาท — เบี้ยทุกบาทกินเข้าไปในผลขาดทุน ` +
+        'ควรเสนอด้วยเหตุผลด้านสวัสดิการและการรักษาคนสำคัญ ไม่ใช่ด้านภาษี');
+    } else if (ceiling.ceiling30pctAvgProfit !== null && ceiling.ceiling30pctAvgProfit > 0 && premiumTotal > ceiling.ceiling30pctAvgProfit) {
       add('CHK-03', 'warn', 'เบี้ยรวมเกิน 30% ของกำไรก่อนภาษีเฉลี่ย 3 ปี',
         `เบี้ย ${fmt(premiumTotal)} บาท > ${fmt(ceiling.ceiling30pctAvgProfit)} บาท — เบี้ยกินกำไรมากพอที่สรรพากรจะตั้งคำถามว่าจ่ายเพื่อกิจการจริงหรือไม่`);
     }
