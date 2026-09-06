@@ -18,8 +18,13 @@
       h('div.btnrow', null, [
         h('button.btn.primary', { onclick: createCase, text: '+ เคสใหม่' }),
         h('button.btn', { onclick: backup, text: '⭳ สำรองข้อมูลเป็นไฟล์ JSON' }),
-        h('button.btn', { onclick: restore, text: '⭱ นำข้อมูลกลับเข้า' }),
       ]),
+      K.dropzone({
+        accept: '.json', icon: '⭱',
+        title: 'ลากไฟล์สำรอง .json มาวางตรงนี้เพื่อนำข้อมูลกลับเข้า',
+        hint: 'หรือกดที่กรอบนี้เพื่อเลือกไฟล์จากเครื่อง',
+        onFiles: (files) => restoreFromFile(files[0]),
+      }),
       h('p.hint', { text: 'IndexedDB อยู่แค่ในเบราว์เซอร์นี้ เครื่องนี้ — ถ้าล้างข้อมูลเว็บคือหายหมด สำรองไฟล์ไว้เป็นระยะ' }),
     ]));
 
@@ -82,23 +87,18 @@
     });
   }
 
-  function restore() {
-    const input = h('input', { type: 'file', accept: 'application/json,.json' });
-    input.addEventListener('change', () => {
-      const file = input.files && input.files[0];
-      if (!file) return;
-      file.text().then((text) => {
-        K.dialog('นำข้อมูลกลับเข้า', [
-          h('p', { text: 'ไฟล์: ' + file.name }),
-          h('p.note', { text: 'เลือก "รวมกับของเดิม" ถ้าต้องการเก็บเคสที่มีอยู่ไว้ (เคสที่ id ตรงกันจะถูกทับ) หรือ "แทนที่ทั้งหมด" เพื่อล้างของเดิมทิ้งก่อน' }),
-        ], [
-          { label: 'ยกเลิก', onclick: (d) => d.close() },
-          { label: 'รวมกับของเดิม', primary: true, onclick: (d) => { d.close(); doImport(text, 'merge'); } },
-          { label: 'แทนที่ทั้งหมด', danger: true, onclick: (d) => { d.close(); doImport(text, 'replace'); } },
-        ]);
-      });
+  function restoreFromFile(file) {
+    if (!file) return;
+    file.text().then((text) => {
+      K.dialog('นำข้อมูลกลับเข้า', [
+        h('p', { text: 'ไฟล์: ' + file.name }),
+        h('p.note', { text: 'เลือก "รวมกับของเดิม" ถ้าต้องการเก็บเคสที่มีอยู่ไว้ (เคสที่ id ตรงกันจะถูกทับ) หรือ "แทนที่ทั้งหมด" เพื่อล้างของเดิมทิ้งก่อน' }),
+      ], [
+        { label: 'ยกเลิก', onclick: (d) => d.close() },
+        { label: 'รวมกับของเดิม', primary: true, onclick: (d) => { d.close(); doImport(text, 'merge'); } },
+        { label: 'แทนที่ทั้งหมด', danger: true, onclick: (d) => { d.close(); doImport(text, 'replace'); } },
+      ]);
     });
-    input.click();
   }
 
   function doImport(text, mode) {

@@ -192,6 +192,74 @@
     return h('div.tablewrap', null, [t]);
   };
 
+  // ── ช่องอัปโหลดไฟล์: ลากมาวางได้ หรือกดเลือกก็ได้ ───────────────────────
+  // เบราว์เซอร์จะเปิดไฟล์แทนหน้าเว็บถ้าปล่อยวางนอกกรอบ จึงกันไว้ที่ document ครั้งเดียว
+  let dropGuard = false;
+  function guardDocumentDrop() {
+    if (dropGuard) return;
+    dropGuard = true;
+    ['dragover', 'drop'].forEach((ev) =>
+      document.addEventListener(ev, (e) => { if (!e.target.closest || !e.target.closest('.dropzone')) e.preventDefault(); }));
+  }
+
+  K.dropzone = function (opts) {
+    const o = opts || {};
+    guardDocumentDrop();
+    const exts = (o.accept || '').split(',').map((x) => x.trim().toLowerCase()).filter((x) => x.charAt(0) === '.');
+    const input = h('input', {
+      type: 'file', accept: o.accept || null, multiple: o.multiple ? true : null,
+      style: 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none',
+    });
+    const list = h('div.dz-files');
+    const zone = h('div.dropzone', { tabindex: '0', role: 'button', 'aria-label': o.title || 'เลือกไฟล์' }, [
+      h('div.dz-row', null, [
+        h('div.dz-icon', { text: o.icon || '⬆' }),
+        h('div.dz-main', null, [
+          h('b', { text: o.title || 'ลากไฟล์มาวางที่นี่' }),
+          h('span', { text: o.hint || 'หรือกดที่กรอบนี้เพื่อเลือกไฟล์จากเครื่อง' }),
+        ]),
+        h('button.btn', { type: 'button', tabindex: '-1', text: 'เลือกไฟล์' }),
+      ]),
+      list, input,
+    ]);
+
+    const nameOk = (f) => !exts.length || exts.some((x) => f.name.toLowerCase().slice(-x.length) === x);
+    function take(files) {
+      const all = Array.prototype.slice.call(files || []);
+      if (!all.length) return;
+      const good = all.filter(nameOk);
+      const bad = all.filter((f) => !nameOk(f));
+      if (bad.length) {
+        K.alert('ไฟล์ไม่ตรงชนิดที่รับได้', 'รับเฉพาะ ' + exts.join(' หรือ ') + '\n\nไฟล์ที่ข้ามไป:\n• ' + bad.map((f) => f.name).join('\n• '));
+      }
+      if (!good.length) return;
+      const shown = o.multiple ? good : good.slice(0, 1);
+      K.clear(list);
+      shown.forEach((f) => list.appendChild(h('span.dz-file', null, [
+        h('span', { text: '📄 ' + f.name }),
+        h('span.sz', { text: f.size < 1024 ? f.size + ' B' : (f.size < 1048576 ? (f.size / 1024).toFixed(0) + ' KB' : (f.size / 1048576).toFixed(1) + ' MB') }),
+      ])));
+      o.onFiles(shown);
+    }
+
+    const open = () => input.click();
+    zone.addEventListener('click', open);
+    zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+    input.addEventListener('change', () => { take(input.files); input.value = ''; });
+
+    // dragenter/dragleave ยิงซ้ำตอนลากผ่านลูก ๆ ข้างใน จึงต้องนับชั้นเอาเอง
+    let depth = 0;
+    zone.addEventListener('dragenter', (e) => { e.preventDefault(); depth++; zone.classList.add('over'); });
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; });
+    zone.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) zone.classList.remove('over'); });
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      depth = 0; zone.classList.remove('over');
+      take(e.dataTransfer && e.dataTransfer.files);
+    });
+    return zone;
+  };
+
   K.card = function (title, sheetRef, children) {
     return h('section.card', null, [
       title ? h('h2', null, [h('span', { text: title }), sheetRef ? h('span.sheet', { text: sheetRef }) : null]) : null,

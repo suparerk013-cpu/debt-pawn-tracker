@@ -20,9 +20,9 @@
   --accent: #1668d6;
   --accent-soft: #e7f0fd;
 
-  --input-bg: #fff7cf;         /* ช่องกรอกสีเหลืองแบบ Excel */
-  --input-border: #e0c95f;
-  --input-bg-focus: #fffbe6;
+  --input-bg: #fffbea;         /* ช่องกรอกสีเหลืองแบบ Excel (อ่อนลงให้จ้องได้นาน) */
+  --input-border: #e3c96b;
+  --input-bg-focus: #fffdf5;
   --calc-bg: #f2f4f8;          /* ช่องสูตร */
 
   --ok: #147a4d; --ok-bg: #e4f5ec; --ok-line: #9ad9bb;
@@ -269,20 +269,55 @@ td.neg, span.neg, b.neg { color: var(--block); }
 /* ── ช่องกรอก ───────────────────────────────────────────────────────────── */
 input.cell, select.cell, textarea.cell {
   background: var(--input-bg); border: 1px solid var(--input-border); color: var(--text);
-  border-radius: 7px; padding: 5px 8px; font: inherit; font-size: 13px; width: 100%; min-width: 96px;
-  font-variant-numeric: tabular-nums; transition: box-shadow .12s, background .12s;
+  border-radius: 9px; padding: 7px 11px; font: inherit; font-size: 13.5px; width: 100%; min-width: 96px;
+  min-height: 36px; font-variant-numeric: tabular-nums;
+  transition: box-shadow .12s, background .12s, border-color .12s;
 }
 input.cell[type="number"], input.cell.num { text-align: right; }
-textarea.cell { min-height: 64px; resize: vertical; white-space: pre-wrap; }
+input.cell::placeholder, textarea.cell::placeholder { color: color-mix(in srgb, var(--muted) 70%, transparent); }
+textarea.cell { min-height: 76px; resize: vertical; white-space: pre-wrap; line-height: 1.55; }
+input.cell:hover:not(:disabled):not([readonly]), select.cell:hover, textarea.cell:hover { border-color: var(--accent); }
 input.cell:focus, select.cell:focus, textarea.cell:focus {
-  outline: none; background: var(--input-bg-focus);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  outline: none; background: var(--input-bg-focus); border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 input.cell:disabled, input.cell[readonly] {
   background: var(--calc-bg); border-color: var(--line); color: var(--muted); cursor: not-allowed;
 }
-label.field { display: block; margin: 0 0 10px; font-size: 12.5px; color: var(--muted); }
-label.field > span.lbl { display: block; margin-bottom: 3px; color: var(--text-2); }
+/* ช่องในตารางอยู่ชิดกันมาก ให้เตี้ยลงหน่อยไม่งั้นแถวสูงเกิน */
+td > input.cell, td > select.cell { min-height: 32px; padding: 5px 9px; font-size: 13px; }
+label.field { display: block; margin: 0 0 12px; font-size: 12.5px; color: var(--muted); }
+label.field > span.lbl { display: block; margin-bottom: 5px; color: var(--text-2); font-weight: 500; }
+
+/* ── ช่องอัปโหลด: ลากไฟล์มาวางได้ ────────────────────────────────────────
+   ปุ่ม input[type=file] ของเบราว์เซอร์หน้าตาคนละเรื่องกับทั้งแอป จึงซ่อนไว้
+   แล้ววาดกรอบเอง เปิดด้วยคลิกหรือปุ่ม Enter/Space ก็ได้ */
+.dropzone {
+  border: 2px dashed var(--line-2); border-radius: var(--r); background: var(--surface-2);
+  padding: 16px 18px; cursor: pointer; margin: 10px 0;
+  transition: border-color .15s, background .15s, transform .15s;
+}
+.dropzone:hover { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.dropzone.over { border-color: var(--accent); border-style: solid; background: var(--accent-soft); transform: scale(1.006); }
+.dz-row { display: flex; align-items: center; gap: 14px; }
+.dz-icon {
+  width: 44px; height: 44px; border-radius: 12px; flex: 0 0 auto; display: grid; place-items: center;
+  background: var(--surface); border: 1px solid var(--line); font-size: 20px; transition: all .15s;
+}
+.dropzone:hover .dz-icon, .dropzone.over .dz-icon { background: var(--accent); border-color: transparent; color: #fff; }
+.dz-main { flex: 1 1 auto; min-width: 0; }
+.dz-main b { display: block; font-size: 13.5px; color: var(--text); line-height: 1.4; }
+.dz-main span { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.dropzone .btn { flex: 0 0 auto; pointer-events: none; }
+@media (max-width: 560px) { .dropzone .btn { display: none; } }
+.dz-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.dz-files:empty { display: none; }
+.dz-file {
+  display: inline-flex; align-items: baseline; gap: 8px; font-size: 12.5px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px;
+}
+.dz-file .sz { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .grid2 { display: grid; grid-template-columns: 1fr; gap: 0 14px; }
 @media (min-width: 620px) { .grid2 { grid-template-columns: 1fr 1fr; } }
 

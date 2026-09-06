@@ -9,14 +9,17 @@
         text: 'เลือกได้ทีละ 1 หรือ 2 ไฟล์ (งบกำไรขาดทุน และ/หรือ งบแสดงฐานะการเงิน) ระบบแยกชนิดไฟล์จากข้อความในช่อง A1 เอง ' +
           'ไฟล์มี 5 ปี ระบบจะหยิบ 3 ปีล่าสุดมาลงตาราง และมีหน้ายืนยันให้ดูก่อนเขียนทับเสมอ',
       }),
-      h('input', { type: 'file', accept: '.xlsx,.xls', multiple: true, onchange: onPick }),
+      K.dropzone({
+        accept: '.xlsx,.xls', multiple: true, icon: '📊',
+        title: 'ลากไฟล์ .xlsx จาก DBD มาวางตรงนี้',
+        hint: 'หรือกดที่กรอบนี้เพื่อเลือกไฟล์ · เลือกพร้อมกันได้ 2 ไฟล์ (งบกำไรขาดทุน + งบแสดงฐานะการเงิน)',
+        onFiles: readFiles,
+      }),
       h('p.hint', { text: 'ถ้าชื่อบริษัทใน A1 ของสองไฟล์ไม่ตรงกัน ระบบจะปฏิเสธการนำเข้าทันที — กันงบของบริษัทหนึ่งไปโผล่ในเคสของอีกบริษัท' }),
     ]);
   };
 
-  function onPick(ev) {
-    const files = Array.prototype.slice.call(ev.target.files || []);
-    ev.target.value = '';
+  function readFiles(files) {
     if (!files.length) return;
     Promise.all(files.map((f) => f.arrayBuffer().then((buf) => Imp.readDbdWorkbook(new Uint8Array(buf), f.name))))
       .then(handleParsed)
