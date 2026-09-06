@@ -135,6 +135,13 @@ near(kn.after.totalExpense, 3070000, 0.01, 'โนวเลดเจอร์ ·
 near(kn.after.citSaving, 614000, 0.01, 'โนวเลดเจอร์ · ประหยัดภาษีนิติ');
 near(kn.after.netTax, 456000, 0.01, 'โนวเลดเจอร์ · ภาษีที่เสียสุทธิ');
 near(kn.after.ownerCash, 3440000, 0.01, 'โนวเลดเจอร์ · เงินเข้าเจ้าของ');
+// บล็อก "กรรมการรับเงินเดือน, โบนัสจริง" ของชีตเดิม — ฝั่ง After รับเต็มเพราะบริษัทออกภาษีให้
+near(kn.after.directorNet, 1440000, 0.01, 'โนวเลดเจอร์ · กรรมการรับจริงฝั่ง After');
+near(kn.before.directorNet, 1255000, 0.01, 'โนวเลดเจอร์ · กรรมการรับจริงฝั่ง Before (ถูกหักภาษีไว้)');
+near(kn.directorNetDiff, 185000, 0.01, 'โนวเลดเจอร์ · ผลต่างเงินที่กรรมการรับจริง');
+near(kn.salaryTotal, 1440000, 0.01, 'โนวเลดเจอร์ · เงินเดือนรวมที่ใช้เทียบสองฝั่ง');
+eq(kn.after.dividendTax, 0, 'ฝั่ง After ไม่มีภาษีเงินปันผล');
+eq(kn.before.totalExpense, 0, 'ฝั่ง Before ไม่มีค่าใช้จ่ายที่บันทึกได้');
 
 const sjCmp = E.compareScenarios({
   premiumTotal: 1000000, allTierTaxTotal: 87083.3333333 * 3, salaryTotal: 1800000,

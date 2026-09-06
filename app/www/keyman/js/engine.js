@@ -520,6 +520,9 @@
       citSaving,
       netTax: afterNetTax,
       ownerCash: salaryTotal + premium,              // ไม่ถูกหัก เพราะบริษัทออกภาษีให้
+      // เงินเดือน+โบนัสที่กรรมการรับจริง — ฝั่งนี้รับเต็มเพราะบริษัทออกภาษีให้ (ชีตเดิม: "กรรมการรับเงินเดือน, โบนัสจริง")
+      directorNet: salaryTotal,
+      dividendTax: 0,
       profitAfter: profit - totalExpense,
       cit: citAfter,
     };
@@ -535,6 +538,8 @@
       dividendTax,
       totalTax: salaryOnlyPit + citOnLump + dividendTax,
       ownerCash: salaryTotal - salaryOnlyPit + (lump - citOnLump - dividendTax),
+      directorNet: salaryTotal - salaryOnlyPit,      // ฝั่งนี้ถูกหักภาษีไว้ก่อน
+      totalExpense: 0,
       profitAfter: profit,
       citFull: citBefore,
     };
@@ -560,8 +565,10 @@
       citBefore,
       citAfter,
       isSme,
+      salaryTotal,
       taxDiff: before.totalTax - after.netTax,
       cashDiff: after.ownerCash - before.ownerCash,
+      directorNetDiff: after.directorNet - before.directorNet,
       caveats,
       // เคสที่บริษัทไม่เคยเสียภาษีเลย → ไม่มีผลประหยัดให้คำนวณ ต้องบอกตรง ๆ
       noTaxBenefit: citBefore <= 0,
