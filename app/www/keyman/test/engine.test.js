@@ -174,6 +174,7 @@ function baseCase(over) {
     financials: {
       years: ['2563', '2564', '2565'],
       revenues: [13413308.16, 21796187.29, 25533511.14],
+      sga: [9000000, 9500000, 10000000],
       profitsBeforeTax: [3000000, 3500000, 4000000],
       taxPaid: [500000, 600000, 700000],
     },
@@ -186,15 +187,21 @@ function baseCase(over) {
 const has = (r, code) => r.items.some((i) => i.code === code && i.level === 'block');
 const hasWarn = (r, code) => r.items.some((i) => i.code === code && i.level === 'warn');
 
-let k = baseCase();
-k.policy.premiumTotal = 2000000; k.directors[0].premiumAllocated = 2000000;
+let // ฐานคิดเบี้ย = ค่าใช้จ่ายในการขายและบริการ (ต่ำกว่าระหว่างปีล่าสุด 10,000,000 กับเฉลี่ย 9,500,000)
+k = baseCase();
+k.policy.premiumTotal = 2500000; k.directors[0].premiumAllocated = 2500000;
 let r = E.runChecks(k, {});
-eq(has(r, 'CHK-02'), true, 'เบี้ย 2,000,000 บนรายได้เฉลี่ย 20,247,668.86 → CHK-02 บล็อก');
+eq(has(r, 'CHK-02'), true, 'เบี้ย+ภาษีที่ออกให้ เกิน 20% ของค่าใช้จ่ายในการขายและบริการ → CHK-02 บล็อก');
 eq(r.canQuote, false, 'มีข้อบล็อก → canQuote = false');
 
 k = baseCase(); r = E.runChecks(k, {});
 eq(has(r, 'CHK-02'), false, 'ลดเบี้ยเหลือ 900,000 → CHK-02 ผ่าน');
 eq(r.canQuote, true, 'ไม่มีข้อบล็อก → canQuote = true');
+// ห้ามมีคำที่อ้างรายได้หรือกำไรเป็นที่มาของเบี้ยในข้อความ CHK ใด ๆ
+const premiumTexts = r.items.filter((i) => i.code === 'CHK-02' || i.code === 'CHK-03')
+  .map((i) => i.title + ' ' + (i.detail || '')).join(' ');
+eq(/ของรายได้|ยอดขาย|ของกำไร/.test(premiumTexts), false, 'ข้อความ CHK-02/03 ต้องไม่อ้างรายได้หรือกำไรเป็นฐานคิดเบี้ย');
+eq(premiumTexts.indexOf('ค่าใช้จ่ายในการขายและบริการ') >= 0, true, 'ข้อความ CHK-02/03 ต้องอ้างฐานค่าใช้จ่ายในการขายและบริการ');
 eq(r.items.some((i) => i.code === 'CHK-01'), true, 'CHK-01 รายงานผลตัดสิน SME เสมอ');
 
 k = baseCase(); k.docs.welfareRule = false; r = E.runChecks(k, {});
@@ -239,13 +246,11 @@ k = baseCase(); k.financials.profitsBeforeTax = [-45239.75, -24059.23, 2.87]; k.
 r = E.runChecks(k, {});
 eq(hasWarn(r, 'CHK-04'), true, 'คชจ.ต้องห้ามติดลบ/ไม่มีฐาน → CHK-04 เตือน');
 eq(r.forbidden.amount, 0, 'CHK-04 → ตัวเลขที่แสดงเป็น 0 ไม่ใช่ค่าติดลบ');
-// บริษัทขาดทุนเฉลี่ย: ห้ามเตือนด้วยเพดาน 30% ที่เป็นค่าติดลบ ต้องบอกว่าไม่มีฐานกำไรให้คิด
+// บริษัทที่ผลประกอบการติดลบ: CHK-03 ต้องเตือนโดยไม่โชว์ตัวเลขติดลบ และไม่มีคำต้องห้าม
 const lossChk = r.items.filter((i) => i.code === 'CHK-03');
-eq(lossChk.length, 1, 'กำไรเฉลี่ยติดลบ → ยังมี CHK-03 หนึ่งข้อ');
-eq(lossChk[0].title.indexOf('ไม่มีฐานกำไร') > 0, true, 'CHK-03 บอกว่าไม่มีฐานกำไรให้เทียบสัดส่วน');
+eq(lossChk.length, 1, 'ผลประกอบการติดลบ → ยังมี CHK-03 หนึ่งข้อ');
 eq(/-[\d,]/.test(lossChk[0].title), false, 'หัวข้อ CHK-03 ไม่มีตัวเลขติดลบ');
-eq(E.premiumCeiling({ revenues: [480696, 447401.87, 267402.77], profitsBeforeTax: [-45239.75, -24059.23, 2.87] }).avgProfit < 0, true,
-  'ค่าเฉลี่ยกำไรติดลบยังคืนค่าจริงให้ชั้นหน้าจอตัดสินใจเอง');
+eq(/ของรายได้|ยอดขาย|ของกำไร/.test(lossChk[0].title + lossChk[0].detail), false, 'CHK-03 ต้องไม่อ้างรายได้หรือกำไรเป็นฐานคิดเบี้ย');
 
 // ── นำเข้าและช่องว่าง ─────────────────────────────────────────────────────
 section('การอ่านตัวเลขและช่องว่าง');
@@ -278,6 +283,53 @@ const autoAmounts = E.allocatePremium(kAuto).perDirector;
 kAuto.directors.forEach((d, i) => { d.premiumAllocated = autoAmounts[i]; });
 const rAuto = E.runChecks(kAuto, {});
 eq(rAuto.items.some((x) => x.code === 'CHK-06' && x.level === 'block'), false, 'จัดสรรอัตโนมัติแล้ว CHK-06 ไม่บล็อก');
+
+section('เบี้ยประกันที่แนะนำ — ฐานค่าใช้จ่ายในการขายและบริการ');
+// เคสจริงจากแฟ้ม Excel เดิม (ตัดไฟล์ที่งบซ้ำกันออกแล้ว) — ล็อกไว้กันสูตรเปลี่ยนโดยไม่ตั้งใจ
+function recCase(sga, revenues, pbt, tax, nDirectors, salaryEach) {
+  return {
+    taxYear: Y,
+    company: { paidUpCapital: 5000000 },
+    financials: { years: ['2563', '2564', '2565'], sga, revenues, profitsBeforeTax: pbt, taxPaid: tax },
+    directors: Array.from({ length: nDirectors }, () => ({ salary: salaryEach, allowances: { personal: 60000 } })),
+    policy: { taxMethod: 'perpetual' },
+  };
+}
+// สุนทรไทย — ไม่ถูกเพดานบีบ เบี้ยแนะนำใกล้กับที่เคยเสนอจริง 1,500,000
+const recSun = E.recommendPremium(recCase(
+  [14620720, 14620720, 15784478], [null, null, 25533511.14], [null, null, 9673985.31], [null, null, 1840912.27], 2, 1110000), Y);
+near(recSun.base, 15008639.33, 0.5, 'ฐานคิดเบี้ย = ค่าที่ต่ำกว่าระหว่างปีล่าสุดกับเฉลี่ย 3 ปี');
+near(recSun.levels[1].amount, 1500863.93, 0.5, 'ระดับแนะนำ = 10% ของฐาน');
+near(recSun.suggested, 1500863.93, 0.5, 'ไม่ถูกเพดานบีบ → ใช้ระดับแนะนำเต็ม');
+eq(recSun.suggested <= recSun.cap, true, 'เบี้ยแนะนำต้องไม่เกินเพดานของเคสนี้เสมอ');
+
+// เอสเจ — ฐานะการเงินของกิจการเป็นตัวบีบ
+const recSj = E.recommendPremium(recCase(
+  [5240332.33, 10375476.30, 10857209.59], [32077355.87, 35578533.65, 54244192.14],
+  [3123119.04, 2522143.45, 2835268.30], [680296.27, 521206.15, 617470.38], 3, 600000), Y);
+near(recSj.base, 8824339.41, 0.5, 'เอสเจ · ฐานคิดเบี้ย');
+near(recSj.cap, 443559.58, 0.5, 'เอสเจ · เพดานของเคสนี้');
+eq(recSj.binding.key, 'financial', 'เอสเจ · ตัวที่บีบคือฐานะการเงินของกิจการ');
+eq(recSj.suggested < recSj.levels[1].amount, true, 'เอสเจ · เบี้ยแนะนำถูกบีบต่ำกว่าค่ากลาง');
+
+// ควอลิตี้ เกจ — กรรมการคนเดียวเงินเดือน 600,000 ค่าตอบแทนรายท่านเป็นตัวบีบ
+const recQg = E.recommendPremium(recCase(
+  [21760523, 21760523, 20592601], [null, null, 101502430], [null, null, 3786771.51], [null, null, 255322.38], 1, 600000), Y);
+eq(recQg.binding.key, 'perDirector', 'ควอลิตี้ · ตัวที่บีบคือค่าตอบแทนรายกรรมการ');
+near(recQg.cap, 600000, 0.5, 'ควอลิตี้ · เพดาน = ค่าจ้างทั้งปีของกรรมการท่านนั้น');
+eq(recQg.levels[1].overCap, true, 'ควอลิตี้ · ระดับแนะนำเกินเพดาน ต้องขึ้นธงไว้');
+
+// เพดานทุกตัวต้องแปลงเป็นสัดส่วนของฐานเดียวกันให้ชั้นหน้าจอใช้แสดง
+recSj.caps.forEach((cp) => {
+  eq(typeof cp.pctOfBase === 'number' && cp.pctOfBase > 0, true, 'เพดาน "' + cp.label + '" มีสัดส่วนต่อฐานให้แสดง');
+  eq(/รายได้|ยอดขาย|กำไร/.test(cp.label), false, 'ป้ายเพดาน "' + cp.label + '" ต้องไม่มีคำว่ารายได้/ยอดขาย/กำไร');
+});
+eq(/ของรายได้|ยอดขาย|ของกำไร/.test(recSj.disclaimer), false, 'ข้อความกำกับต้องไม่อ้างรายได้หรือกำไรเป็นฐานคิดเบี้ย');
+
+// ยังไม่มีงบ → บอกให้ไปนำเข้างบก่อน ไม่ใช่เดาตัวเลขให้
+const recNone = E.recommendPremium({ taxYear: Y, financials: {}, directors: [{ salary: 600000 }], policy: {} }, Y);
+eq(recNone.available, false, 'ไม่มีค่าใช้จ่ายในการขายและบริการ → ยังแนะนำเบี้ยไม่ได้');
+eq(recNone.reason.indexOf('ค่าใช้จ่ายในการขายและบริการ') >= 0, true, 'บอกเหตุผลว่าขาดฐานอะไร');
 
 section('fingerprint สำหรับ CHK-05');
 const fa = E.fingerprint({ years: ['2563'], revenues: [100], profitsBeforeTax: [10], taxPaid: [2] });

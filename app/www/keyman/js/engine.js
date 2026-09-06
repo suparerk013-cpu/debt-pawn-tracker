@@ -315,23 +315,182 @@
     };
   }
 
-  // ── เพดานเบี้ยประกัน ─────────────────────────────────────────────────────
-  function premiumCeiling({ revenues, profitsBeforeTax, taxPaidLatest }) {
+  // ── ฐานคิดเบี้ยประกัน ────────────────────────────────────────────────────
+  // ฐานเดียวที่ใช้อธิบายที่มาของเบี้ยทั้งแอปคือ "ค่าใช้จ่ายในการขายและบริการ" (SG&A)
+  // เพราะเบี้ยคีย์แมนถูกบันทึกลงบรรทัดนั้นจริง — ตัวเลขที่คำนวณจากบรรทัดอื่นมีไว้เป็น
+  // ตัวคุมภายในเท่านั้น และต้องแปลงกลับเป็น % ของฐานนี้ก่อนแสดงเสมอ (ห้ามพิมพ์ฐานอื่น)
+  const PREMIUM_BAND = { low: 0.08, mid: 0.10, high: 0.12 };  // ช่วงที่ได้จากเคสจริงในแฟ้มเดิม
+  const BOOKED_SHARE_CAP = 0.20;                              // เบี้ย+ภาษีทุกทอด ไม่เกิน 20% ของฐาน
+
+  function premiumCeiling({ revenues, profitsBeforeTax, taxPaidLatest, sga, netProfits }) {
     const avgRevenue = avg(lastN(revenues, 3));
     const avgProfit = avg(lastN(profitsBeforeTax, 3));
     const tax = num(taxPaidLatest);
+    // ฐานคิดเบี้ย: ใช้ค่าที่ต่ำกว่าระหว่างปีล่าสุดกับค่าเฉลี่ย 3 ปี เพื่อไม่ให้ปีที่สูงผิดปกติดันเบี้ยขึ้น
+    const sgaLatest = lastValue(sga);
+    const sgaAvg = avg(lastN(sga, 3));
+    const base = sgaLatest === null ? sgaAvg : (sgaAvg === null ? sgaLatest : Math.min(sgaLatest, sgaAvg));
     return {
+      // ── ฐานที่ใช้แสดงผลได้ ──
+      base,
+      sgaLatest,
+      sgaAvg,
+      band: base === null ? null : { low: base * PREMIUM_BAND.low, mid: base * PREMIUM_BAND.mid, high: base * PREMIUM_BAND.high },
+      bookedShareCap: base === null ? null : base * BOOKED_SHARE_CAP,
+      // ── ตัวคุมภายใน ห้ามพิมพ์ตรง ๆ ใช้แปลงเป็น % ของ base ก่อนแสดง ──
       avgRevenue,
       avgProfit,
+      netProfitLatest: lastValue(netProfits),
       ceiling5pctAvgRevenue: avgRevenue === null ? null : avgRevenue * 0.05,
       target2to3pct: avgRevenue === null ? null : { low: avgRevenue * 0.02, high: avgRevenue * 0.03 },
       ceiling30pctAvgProfit: avgProfit === null ? null : avgProfit * 0.30,
       reference20pctTax: tax === null ? null : tax * 0.20,
-      // เพดาน 5% ไม่ใช่กฎหมาย — ต้องแสดงข้อความนี้ทุกครั้งที่โชว์ตัวเลขข้างบน
+      // ข้อความกำกับที่ต้องติดไปกับตัวเลขเสมอ
       disclaimer:
-        'เพดาน 5% ของรายได้ไม่มีอยู่ในประมวลรัษฎากร เป็นแนวปฏิบัติของตลาดที่ใช้เป็น "ขีดที่ห้ามเกิน" ' +
-        'ไม่ใช่ตัวเลขที่เอาไปเสนอ — กฎหมายเขียนไว้เพียงว่ารายจ่ายต้องเป็นไปเพื่อกิจการโดยเฉพาะ (ม.65 ตรี (13))',
+        'ช่วงเบี้ยที่แนะนำเป็นแนวปฏิบัติจากเคสจริง ไม่ใช่อัตราที่กำหนดไว้ในประมวลรัษฎากร — ' +
+        'กฎหมายเขียนไว้เพียงว่ารายจ่ายต้องเป็นไปเพื่อกิจการโดยเฉพาะ (ม.65 ตรี (13)) และต้องจ่ายให้กรรมการ' +
+        'ทุกคนเป็นการทั่วไปตามระเบียบสวัสดิการ (กค 0811/408)',
     };
+  }
+
+  // ── เบี้ยประกันที่แนะนำ ───────────────────────────────────────────────────
+  // คืนช่วงเบี้ย 3 ระดับจากฐานค่าใช้จ่ายในการขายและบริการ พร้อม "เพดานของเคสนี้"
+  // ที่บีบด้วยตัวคุมภายใน 4 ตัว — ทุกค่าที่คืนออกไปมี pctOfBase ให้แสดงเป็น % ของฐานเดียวกัน
+  function recommendPremium(kase, year) {
+    const fin = (kase && kase.financials) || {};
+    const policy = (kase && kase.policy) || {};
+    const directors = (kase && kase.directors) || [];
+    const mode = policy.taxMethod === 'once' ? 'once' : 'perpetual';
+    const netProfits = (fin.profitsBeforeTax || []).map((p, i) => {
+      const pbt = num(p);
+      const t = num((fin.taxPaid || [])[i]);
+      return pbt === null ? null : pbt - (t || 0);
+    });
+    const ceiling = premiumCeiling({
+      revenues: fin.revenues, profitsBeforeTax: fin.profitsBeforeTax,
+      taxPaidLatest: lastValue(fin.taxPaid), sga: fin.sga, netProfits,
+    });
+    const base = ceiling.base;
+    const pct = (v) => (base && v !== null && v !== undefined ? v / base : null);
+
+    if (!base || base <= 0) {
+      return {
+        available: false,
+        reason: 'ยังไม่มีตัวเลขค่าใช้จ่ายในการขายและบริการ — นำเข้างบกำไรขาดทุนที่แท็บ 2 ก่อน',
+        base: null, ceiling,
+      };
+    }
+
+    // ภาษีทุกทอดรวมทุกท่าน เมื่อเบี้ยรวมเท่ากับ p (จัดสรรตามโหมดที่เลือกไว้)
+    const grossUpAt = (p) => {
+      if (!directors.length) return 0;
+      const alloc = allocationFor(kase, p);
+      return directors.reduce((sum, d, i) => sum + grossUpTax({
+        salary: d.salary, bonus: d.bonus, keymanPremium: alloc[i],
+        allowances: d.allowances, donations: d.donations,
+      }, year, { mode, trace: false }).tax, 0);
+    };
+    const bookedAt = (p) => p + grossUpAt(p);
+
+    // หาเบี้ยสูงสุดที่ยังทำให้ fn(p) ไม่เกิน limit (fn เพิ่มตามเบี้ยเสมอ จึงหาด้วยการแบ่งครึ่ง)
+    const solve = (fn, limit, hi) => {
+      if (limit === null || limit === undefined) return null;
+      if (limit <= 0) return 0;
+      let lo = 0; let high = Math.max(hi, 1);
+      if (fn(high) <= limit) return high;
+      for (let i = 0; i < 44; i++) {
+        const mid = (lo + high) / 2;
+        if (fn(mid) <= limit) lo = mid; else high = mid;
+      }
+      return lo;
+    };
+
+    const searchTop = base * 2;
+    const caps = [];
+    // 1) ยอดบันทึกเป็นรายจ่าย (เบี้ย + ภาษีทุกทอด) ไม่เกิน 20% ของฐาน — พูดได้ตรง ๆ
+    caps.push({
+      key: 'bookedShare',
+      label: 'สัดส่วนต่อค่าใช้จ่ายในการขายและบริการ',
+      detail: 'ยอดที่บันทึกเป็นรายจ่าย (เบี้ย + ภาษีที่บริษัทออกให้) ไม่ควรเกิน 20% ของค่าใช้จ่ายในการขายและบริการ',
+      value: solve(bookedAt, ceiling.bookedShareCap, searchTop),
+    });
+    // 2) ฐานะการเงินของกิจการ — ตัวคุมภายใน (คิดจากผลประกอบการปีล่าสุด) ห้ามพิมพ์ฐานนี้
+    if (ceiling.netProfitLatest !== null) {
+      caps.push({
+        key: 'financial',
+        label: 'ฐานะการเงินของกิจการ',
+        detail: 'เบี้ยที่เสนอต้องอยู่ในวิสัยที่ผลประกอบการของกิจการรองรับได้อย่างต่อเนื่องตลอดอายุการชำระเบี้ย',
+        value: Math.max(0, ceiling.netProfitLatest * 0.20),   // เกณฑ์คิดกับตัวเบี้ย ไม่รวมภาษีที่ออกให้
+      });
+    }
+    // 3) กิจการต้องไม่ติดลบหลังบันทึกรายจ่ายชุดนี้
+    const pbtLatest = lastValue(fin.profitsBeforeTax);
+    if (pbtLatest !== null) {
+      caps.push({
+        key: 'solvency',
+        label: 'ความสามารถรองรับรายจ่ายของปีล่าสุด',
+        detail: 'ยอดที่บันทึกเป็นรายจ่ายต้องไม่มากกว่าที่ผลประกอบการปีล่าสุดรองรับไหว',
+        value: solve(bookedAt, Math.max(0, pbtLatest), searchTop),
+      });
+    }
+    // 4) ค่าตอบแทนรายกรรมการ — เบี้ยของแต่ละท่านไม่ควรเกินค่าจ้างทั้งปีของท่านนั้น
+    if (directors.length) {
+      const pays = directors.map((d) => n0(d.salary) + n0(d.bonus));
+      const minPay = Math.min.apply(null, pays);
+      const sumPay = pays.reduce((a, b) => a + b, 0);
+      const capPay = policy.allocationMode === 'manual' ? sumPay : minPay * directors.length;
+      caps.push({
+        key: 'perDirector',
+        label: 'ค่าตอบแทนรายกรรมการ',
+        detail: 'เบี้ยที่จัดสรรให้กรรมการแต่ละท่าน ไม่ควรเกินค่าจ้างทั้งปีของท่านนั้น เพื่อให้อธิบายความสมเหตุสมผลได้',
+        value: capPay,
+      });
+    }
+
+    const usable = caps.filter((c) => c.value !== null && isFinite(c.value));
+    const binding = usable.length ? usable.reduce((a, b) => (b.value < a.value ? b : a)) : null;
+    const cap = binding ? binding.value : null;
+    const levels = ['low', 'mid', 'high'].map((k) => ({
+      key: k,
+      label: k === 'low' ? 'ระมัดระวัง' : k === 'mid' ? 'แนะนำ' : 'สูงสุดที่อธิบายได้',
+      pct: PREMIUM_BAND[k],
+      amount: ceiling.band[k],
+      overCap: cap !== null && ceiling.band[k] > cap,
+    }));
+    const suggested = cap === null ? ceiling.band.mid : Math.min(ceiling.band.mid, cap);
+
+    return {
+      available: true,
+      base,
+      sgaLatest: ceiling.sgaLatest,
+      sgaAvg: ceiling.sgaAvg,
+      levels,
+      cap,
+      capPct: pct(cap),
+      binding,
+      caps: usable.map((c) => Object.assign({}, c, { pctOfBase: pct(c.value) })),
+      suggested,
+      suggestedPct: pct(suggested),
+      capBelowBand: cap !== null && cap < ceiling.band.low,
+      perDirector: directors.length ? suggested / directors.length : null,
+      grossUpAtSuggested: grossUpAt(suggested),
+      bookedAtSuggested: bookedAt(suggested),
+      ceiling,
+      disclaimer: ceiling.disclaimer,
+    };
+  }
+
+  // จัดสรรเบี้ยรวม p ให้กรรมการตามโหมดที่เคสเลือกไว้ (ใช้ภายใน recommendPremium)
+  function allocationFor(kase, p) {
+    const directors = (kase && kase.directors) || [];
+    const policy = (kase && kase.policy) || {};
+    if (!directors.length) return [];
+    if (policy.allocationMode === 'manual') {
+      const current = directors.map((d) => n0(d.premiumAllocated));
+      const total = current.reduce((a, b) => a + b, 0);
+      if (total > 0) return current.map((v) => (v / total) * p);
+    }
+    return directors.map(() => p / directors.length);
   }
 
   // ── เทียบ After (เบี้ยคีย์แมน) กับ Before (ปล่อยเป็นกำไรแล้วปันผล) ────────
@@ -444,12 +603,22 @@
       return null;
     })();
     const sme = determineSme({ paidUpCapital: kase && kase.company && kase.company.paidUpCapital, revenueLatest }, year);
+    const netProfits = (fin.profitsBeforeTax || []).map((p, i) => {
+      const pbt = num(p);
+      const t = num((fin.taxPaid || [])[i]);
+      return pbt === null ? null : pbt - (t || 0);
+    });
     const ceiling = premiumCeiling({
       revenues,
       profitsBeforeTax: fin.profitsBeforeTax || [],
       taxPaidLatest: lastValue(fin.taxPaid),
+      sga: fin.sga,
+      netProfits,
     });
     const premiumTotal = n0(policy.premiumTotal);
+    const rec = recommendPremium(kase, year);
+    const bookedTotal = premiumTotal + (c.grossUps || []).reduce((s, g) => s + (g && g.tax ? g.tax : 0), 0);
+    const pctOfBase = (v) => (ceiling.base ? (v / ceiling.base * 100).toFixed(2) + '%' : '–');
 
     // CHK-01 — รายงานผลตัดสิน SME
     add('CHK-01', 'info',
@@ -457,28 +626,31 @@
         : sme.isSme ? 'เข้าเกณฑ์ SME (ใช้อัตรา 15%/20% แบบขั้นบันได)' : 'ไม่เข้าเกณฑ์ SME (ใช้อัตรา 20% ตลอด)',
       sme.reason);
 
-    // CHK-02 — เบี้ยรวมเกิน 5% ของรายได้เฉลี่ย 3 ปี = บล็อก
-    if (ceiling.ceiling5pctAvgRevenue === null) {
-      add('CHK-02', 'warn', 'ยังตรวจเพดานเบี้ย 5% ไม่ได้', 'ยังไม่มีตัวเลขรายได้รวมในงบกำไรขาดทุน');
-    } else if (premiumTotal > ceiling.ceiling5pctAvgRevenue) {
-      add('CHK-02', 'block', 'เบี้ยรวมเกินเพดาน 5% ของรายได้เฉลี่ย 3 ปี',
-        `เบี้ยที่เสนอ ${fmt(premiumTotal)} บาท > เพดาน ${fmt(ceiling.ceiling5pctAvgRevenue)} บาท ` +
-        `(${((premiumTotal / (ceiling.avgRevenue || 1)) * 100).toFixed(2)}% ของรายได้เฉลี่ย) — ${ceiling.disclaimer}`);
+    // CHK-02 — ยอดที่บันทึกเป็นรายจ่าย (เบี้ย + ภาษีที่บริษัทออกให้) เทียบกับฐานคิดเบี้ย = บล็อก
+    // ฐานเดียวที่อ้างได้คือค่าใช้จ่ายในการขายและบริการ ตัวเลขจากบรรทัดอื่นเป็นตัวคุมภายในเท่านั้น
+    if (ceiling.base === null) {
+      add('CHK-02', 'warn', 'ยังตรวจสัดส่วนเบี้ยไม่ได้',
+        'ยังไม่มีตัวเลขค่าใช้จ่ายในการขายและบริการในงบกำไรขาดทุน — นำเข้างบที่แท็บ 2 ก่อน');
+    } else if (bookedTotal > ceiling.bookedShareCap) {
+      add('CHK-02', 'block', 'ยอดที่บันทึกเป็นรายจ่ายเกิน 20% ของค่าใช้จ่ายในการขายและบริการ',
+        `เบี้ย + ภาษีที่บริษัทออกให้ รวม ${fmt(bookedTotal)} บาท = ${pctOfBase(bookedTotal)} ของฐาน ` +
+        `(เพดาน ${fmt(ceiling.bookedShareCap)} บาท) — ${ceiling.disclaimer}`);
     } else {
-      add('CHK-02', 'info', 'เบี้ยรวมอยู่ในเพดาน 5% ของรายได้เฉลี่ย 3 ปี',
-        `เบี้ย ${fmt(premiumTotal)} บาท = ${((premiumTotal / (ceiling.avgRevenue || 1)) * 100).toFixed(2)}% ของรายได้เฉลี่ย ` +
-        `(ช่วงที่ปลอดภัยกว่าคือ 2–3% = ${fmt(ceiling.target2to3pct.low)}–${fmt(ceiling.target2to3pct.high)} บาท)`);
+      add('CHK-02', 'info', 'สัดส่วนเบี้ยต่อค่าใช้จ่ายในการขายและบริการอยู่ในเกณฑ์',
+        `เบี้ย + ภาษีที่บริษัทออกให้ รวม ${fmt(bookedTotal)} บาท = ${pctOfBase(bookedTotal)} ของฐาน ` +
+        `(ช่วงที่แนะนำคือ 8–12% ของฐาน = ${fmt(ceiling.band.low)}–${fmt(ceiling.band.high)} บาท)`);
     }
 
-    // CHK-03 — เบี้ยรวมเกิน 30% ของกำไรก่อนภาษีเฉลี่ย 3 ปี = เตือน
-    // บริษัทที่ขาดทุนเฉลี่ยไม่มีฐานกำไรให้คิดสัดส่วน จึงไม่แสดงตัวเลขเพดานติดลบให้ผู้ใช้เห็น
-    if (ceiling.avgProfit !== null && ceiling.avgProfit <= 0 && premiumTotal > 0) {
-      add('CHK-03', 'warn', 'กำไรก่อนภาษีเฉลี่ย 3 ปีติดลบ ไม่มีฐานกำไรให้เทียบสัดส่วน 30%',
-        `กำไรก่อนภาษีเฉลี่ย 3 ปี ${fmt(ceiling.avgProfit)} บาท — เบี้ยทุกบาทกินเข้าไปในผลขาดทุน ` +
-        'ควรเสนอด้วยเหตุผลด้านสวัสดิการและการรักษาคนสำคัญ ไม่ใช่ด้านภาษี');
-    } else if (ceiling.ceiling30pctAvgProfit !== null && ceiling.ceiling30pctAvgProfit > 0 && premiumTotal > ceiling.ceiling30pctAvgProfit) {
-      add('CHK-03', 'warn', 'เบี้ยรวมเกิน 30% ของกำไรก่อนภาษีเฉลี่ย 3 ปี',
-        `เบี้ย ${fmt(premiumTotal)} บาท > ${fmt(ceiling.ceiling30pctAvgProfit)} บาท — เบี้ยกินกำไรมากพอที่สรรพากรจะตั้งคำถามว่าจ่ายเพื่อกิจการจริงหรือไม่`);
+    // CHK-03 — เบี้ยที่เสนอสูงกว่าเพดานของเคสนี้ = เตือน (แสดงเป็น % ของฐานเดียวกันเสมอ)
+    if (rec.available && rec.cap !== null && premiumTotal > rec.cap) {
+      add('CHK-03', 'warn', `เบี้ยที่เสนอสูงกว่าเพดานของเคสนี้ (${pctOfBase(rec.cap)} ของค่าใช้จ่ายในการขายและบริการ)`,
+        `เบี้ยที่เสนอ ${fmt(premiumTotal)} บาท = ${pctOfBase(premiumTotal)} ของฐาน · เพดานของเคสนี้ ${fmt(rec.cap)} บาท ` +
+        `— ตัวที่บีบคือ${rec.binding ? '"' + rec.binding.label + '"' : 'เกณฑ์ภายใน'} ` +
+        'ถ้ายังยืนเบี้ยเท่านี้ ต้องเตรียมเหตุผลและเอกสารรองรับเป็นพิเศษ');
+    } else if (rec.available && rec.capBelowBand && premiumTotal > 0) {
+      add('CHK-03', 'warn', 'ฐานะการเงินของกิจการยังรองรับเบี้ยได้จำกัด',
+        `เพดานของเคสนี้อยู่ที่ ${fmt(rec.cap)} บาท (${pctOfBase(rec.cap)} ของค่าใช้จ่ายในการขายและบริการ) ` +
+        'ต่ำกว่าช่วงที่แนะนำ — ควรเสนอด้วยเหตุผลด้านสวัสดิการและการรักษาคนสำคัญควบคู่ไปด้วย');
     }
 
     // CHK-04 — คชจ.ต้องห้ามได้ค่าติดลบ → ซ่อนตัวเลข
@@ -572,6 +744,7 @@
       canQuote: blocking.length === 0,
       sme,
       ceiling,
+      recommendation: rec,
       forbidden: forb,
       taxYearInfo: yearInfo,
     };
@@ -667,6 +840,7 @@
       year,
       yearInfo,
       sme,
+      recommendation: recommendPremium(kase, year),
       perDirector,
       allTierTaxTotal,
       salaryOnlyPitTotal,
@@ -709,6 +883,7 @@
     sumDonations,
     forbiddenExpense,
     premiumCeiling,
+    recommendPremium,
     compareScenarios,
     fingerprint,
     allocatePremium,

@@ -55,6 +55,7 @@
 
   function render(main) {
     const k = K.state.kase;
+    const c = K.state.computed || {};
     main.appendChild(K.dbdImportCard());
 
     // ── ตารางหลัก 10 แถว × 12 คอลัมน์ ───────────────────────────────────
@@ -130,12 +131,11 @@
         { label: 'ค่าเบี้ยประกันที่เสนอ', tone: 'accent', value: () => K.money(premium()) + ' บาท' },
         { label: 'ค่าเบี้ยประกันเฉลี่ยคนละ (C22)', value: (c, kk) => K.money(kk.directors.length ? premium() / kk.directors.length : null) + ' บาท',
           note: () => (K.isAutoAllocation() ? 'ส่งไปแท็บ 4 และ 7 ให้อัตโนมัติ' : 'โหมดจัดสรรรายคนเอง') },
-        { label: 'เพดาน 5% ของรายได้เฉลี่ย 3 ปี', value: (c) => (c ? K.money(c.ceiling.ceiling5pctAvgRevenue) + ' บาท' : '–'),
-          note: 'แนวปฏิบัติของตลาด ไม่ใช่กฎหมาย' },
-        { label: 'สัดส่วนเบี้ยต่อรายได้เฉลี่ย',
-          tone: (function () { return ''; })(),
-          value: (c) => (c && c.ceiling.avgRevenue ? (premium() / c.ceiling.avgRevenue * 100).toFixed(2) + '%' : '–'),
-          note: 'ช่วงที่ปลอดภัยกว่าคือ 2–3%' },
+        { label: 'ฐานคิดเบี้ย — ค่าใช้จ่ายในการขายและบริการ', value: (c) => (c && c.ceiling.base ? K.money(c.ceiling.base) + ' บาท' : '–'),
+          note: 'ใช้ค่าที่ต่ำกว่าระหว่างปีล่าสุดกับเฉลี่ย 3 ปี' },
+        { label: 'สัดส่วนเบี้ยต่อฐานนี้',
+          value: (c) => (c && c.ceiling.base ? (premium() / c.ceiling.base * 100).toFixed(2) + '%' : '–'),
+          note: 'ช่วงที่แนะนำคือ 8–12% ของฐาน' },
       ]),
       K.table([h('tr', null, [
         h('th.label', { text: 'เปรียบเทียบ' }), h('th', { text: 'ค่าเบี้ยประกัน' }), h('th', { text: 'รายจ่ายรวม' }),
@@ -145,18 +145,14 @@
         h('tr', null, [
           K.labelCell('จำนวนกรรมการบริหาร', 'B21'),
           K.outCell((c, kk) => K.int(kk.directors.length), { ref: 'C21' }),
-          K.labelCell('เพดานอ้างอิง: รายได้ปีล่าสุด × 5%', 'I21'),
+          K.labelCell('ช่องอ้างอิงจากไฟล์เดิม (ไม่ใช้คิดเบี้ย)', 'I21'),
           K.outCell(() => K.money(latest('revenues') === null ? null : latest('revenues') * 0.05), { ref: 'I21' }),
-          K.outCell(() => {
-            const cap = latest('revenues') === null ? null : latest('revenues') * 0.05;
-            if (cap === null) return '–';
-            return premium() > cap ? '⚠️ เบี้ยที่เสนอเกินเพดานนี้' : 'เบี้ยที่เสนออยู่ในเพดาน';
-          }),
+          K.outCell(() => 'เก็บไว้ให้ตรงไฟล์ Excel เดิมเท่านั้น'),
         ]),
         h('tr', null, [
           K.labelCell('ค่าเบี้ยประกันเฉลี่ยคนละ', 'B22'),
           K.outCell((c, kk) => K.money(kk.directors.length ? premium() / kk.directors.length : null), { ref: 'C22' }),
-          K.labelCell('เกณฑ์อ้างอิง: ภาษีเงินได้ปีล่าสุด × 20%', 'I22'),
+          K.labelCell('ช่องอ้างอิงจากไฟล์เดิม (ไม่ใช้คิดเบี้ย)', 'I22'),
           K.outCell(() => K.money(latest('taxPaid') === null ? null : latest('taxPaid') * 0.2), { ref: 'I22' }),
           K.outCell(() => {
             const ref20 = latest('taxPaid') === null ? null : latest('taxPaid') * 0.2;
@@ -176,35 +172,91 @@
         K.out((c, kk) => K.money(kk.directors.reduce((s2, d) => s2 + E.n0(d.premiumAllocated), 0))),
         ' บาท',
       ]),
-      h('p.hint', { text: 'ในไฟล์เดิมช่อง I21 และ I22 ลอยอยู่ ไม่มีสูตรไหนอ้างถึง — ที่นี่เอามาเทียบกับเบี้ยที่เสนอจริงแล้ว' }),
+      h('p.hint', { text: 'ช่อง I21 และ I22 เก็บไว้ให้ตรงกับไฟล์ Excel เดิม แต่ระบบไม่ได้ใช้สองช่องนี้เป็นที่มาของเบี้ยที่แนะนำ' }),
       h('p.note', null, [
-        'เพดาน 5% ของรายได้เฉลี่ย 3 ปี = ',
-        K.out((c) => (c ? K.money(c.ceiling.ceiling5pctAvgRevenue) : '–')),
-        ' บาท · ช่วงที่ปลอดภัยกว่า (2–3%) = ',
-        K.out((c) => (c && c.ceiling.target2to3pct ? K.money(c.ceiling.target2to3pct.low) + ' – ' + K.money(c.ceiling.target2to3pct.high) : '–')),
-        ' บาท · 30% ของกำไรก่อนภาษีเฉลี่ย = ',
-        K.out((c) => {
-          if (!c) return '–';
-          // กำไรเฉลี่ยติดลบ = ไม่มีฐานให้คิดสัดส่วน ห้ามโชว์เพดานติดลบ
-          if (c.ceiling.avgProfit === null || c.ceiling.avgProfit <= 0) return 'ไม่มีฐานกำไรให้คิด (ขาดทุนเฉลี่ย)';
-          return K.money(c.ceiling.ceiling30pctAvgProfit) + ' บาท';
-        }),
+        'ยอดที่บันทึกเป็นรายจ่าย (เบี้ย + ภาษีที่บริษัทออกให้) = ',
+        K.out((c) => (c ? K.money(c.recordedExpenseTotal) : '–')),
+        ' บาท = ',
+        K.out((c) => (c && c.ceiling.base ? (c.recordedExpenseTotal / c.ceiling.base * 100).toFixed(2) + '%' : '–')),
+        ' ของค่าใช้จ่ายในการขายและบริการ (เพดาน 20% = ',
+        K.out((c) => (c && c.ceiling.bookedShareCap ? K.money(c.ceiling.bookedShareCap) : '–')),
+        ' บาท)',
       ]),
-      h('p.hint', { text: E.premiumCeiling({ revenues: [] }).disclaimer }),
+      h('p.hint', { text: E.premiumCeiling({ sga: [] }).disclaimer }),
     ]));
 
-    // ── งบ pro-forma (ของใหม่ ไม่มีใน Excel) ────────────────────────────
-    main.appendChild(K.card('งบ pro-forma ก่อน/หลังใส่เบี้ยคีย์แมน', 'ของใหม่ — ไม่มีในไฟล์ Excel เดิม', [
-      K.table([h('tr', null, [h('th.label', { text: 'รายการ' }), h('th', { text: 'ก่อนทำคีย์แมน' }), h('th', { text: 'หลังทำคีย์แมน' }), h('th', { text: 'ผลต่าง' })])], [
-        proformaRow('กำไรก่อนภาษี', (c) => c.comparison.profitBeforeTax, (c) => c.comparison.profitAfter),
-        proformaRow('ภาษีเงินได้นิติบุคคล', (c) => c.comparison.citBefore, (c) => c.comparison.citAfter),
-        proformaRow('เบี้ยประกันคีย์แมนที่บันทึกเป็นรายจ่าย', () => 0, (c) => c.premiumTotal),
-        proformaRow('ภาษีทุกทอดที่บริษัทออกให้ (บันทึกเป็นรายจ่าย)', () => 0, (c) => c.allTierTaxTotal),
-        proformaRow('กำไรสุทธิหลังภาษี', (c) => c.comparison.profitBeforeTax - c.comparison.citBefore,
-          (c) => c.comparison.profitAfter - c.comparison.citAfter),
+    // ── เบี้ยประกันที่แนะนำ ─────────────────────────────────────────────
+    // ฐานเดียวที่ใช้อธิบายที่มาของเบี้ยคือค่าใช้จ่ายในการขายและบริการ
+    // เพดานที่คำนวณจากตัวคุมภายในถูกแปลงเป็น % ของฐานนี้ก่อนแสดงเสมอ
+    const rec = c.recommendation || {};
+    const recRows = [];
+    if (rec.available && rec.capBelowBand) {
+      recRows.push(h('tr.total', null, [
+        K.labelCell('แนะนำสำหรับเคสนี้ — ' + ((rec.suggestedPct || 0) * 100).toFixed(1) + '% ของฐาน (ตามเพดาน)'),
+        h('td.calc.num', { text: K.money(rec.suggested) }),
+        h('td.calc.num', { text: K.money(rec.perDirector) }),
+        h('td', null, [h('button.btn.primary', { text: 'ใช้ตัวเลขนี้', onclick: () => usePremium(rec.suggested) })]),
+      ]));
+    }
+    (rec.levels || []).forEach((lv) => recRows.push(h('tr', { class: lv.key === 'mid' ? 'total' : '' }, [
+      K.labelCell(lv.label + ' — ' + (lv.pct * 100).toFixed(0) + '% ของฐาน'),
+      h('td.calc.num', { text: K.money(lv.amount) }),
+      h('td.calc.num', { text: K.money(k.directors.length ? lv.amount / k.directors.length : null) }),
+      h('td', null, [
+        lv.overCap
+          ? h('span.badge', { text: 'เกินเพดานของเคสนี้' })
+          : h('button.btn', { text: 'ใช้ตัวเลขนี้', onclick: () => usePremium(lv.amount) }),
       ]),
-      h('p.hint', { text: 'ผู้สอบบัญชีจะถามตัวเลขชุดนี้เป็นอันดับแรก — กำไรและภาษีเปลี่ยนไปเท่าไรหลังบันทึกเบี้ยและภาษีที่ออกให้เป็นรายจ่าย' }),
-    ]));
+    ])));
+
+    main.appendChild(K.card('เบี้ยประกันที่แนะนำ', 'ฐานคิด: ค่าใช้จ่ายในการขายและบริการ', rec.available === false
+      ? [h('p.note', { text: rec.reason || 'ยังคำนวณไม่ได้' })]
+      : [
+        K.stats([
+          { label: 'ฐานคิดเบี้ย', value: () => K.money(rec.base) + ' บาท',
+            note: () => 'ปีล่าสุด ' + K.money(rec.sgaLatest) + ' · เฉลี่ย 3 ปี ' + K.money(rec.sgaAvg) },
+          { label: 'เบี้ยที่แนะนำ', tone: 'accent', value: () => K.money(rec.suggested) + ' บาท',
+            note: () => (rec.suggestedPct === null ? '' : (rec.suggestedPct * 100).toFixed(1) + '% ของฐาน') },
+          { label: 'เพดานของเคสนี้', value: () => (rec.cap === null ? '–' : K.money(rec.cap) + ' บาท'),
+            note: () => (rec.binding ? 'ตัวที่บีบ: ' + rec.binding.label : '') },
+          { label: 'เบี้ยเฉลี่ยคนละ', value: () => K.money(rec.perDirector) + ' บาท',
+            note: () => 'กรรมการ ' + k.directors.length + ' ท่าน' },
+        ]),
+        K.callout('warn', () => {
+          const r = (K.state.computed || {}).recommendation;
+          if (!r || !r.available || r.cap === null) return '';
+          if (r.capBelowBand) {
+            return 'เพดานของเคสนี้ (' + K.money(r.cap) + ' บาท = ' + (r.capPct * 100).toFixed(1) + '% ของฐาน) ต่ำกว่าช่วงที่แนะนำ ' +
+              '— ตัวที่บีบคือ "' + (r.binding ? r.binding.label : '') + '" ถ้าจะเสนอสูงกว่านี้ต้องเตรียมเหตุผลและเอกสารรองรับเป็นพิเศษ';
+          }
+          if (r.levels.some((lv) => lv.overCap)) {
+            return 'ระดับที่เกินเพดานของเคสนี้ถูกปิดปุ่มไว้ — เพดานอยู่ที่ ' + K.money(r.cap) + ' บาท (' +
+              (r.capPct * 100).toFixed(1) + '% ของฐาน) ตัวที่บีบคือ "' + (r.binding ? r.binding.label : '') + '"';
+          }
+          return '';
+        }),
+        K.table([h('tr', null, [
+          h('th.label', { text: 'ระดับ' }), h('th', { text: 'เบี้ยรวมทั้งปี' }),
+          h('th', { text: 'เฉลี่ยคนละ' }), h('th', { text: '' }),
+        ])], recRows),
+        h('h3.sub', { text: 'เพดานที่ใช้บีบตัวเลข (แสดงเป็นสัดส่วนของฐานเดียวกัน)' }),
+        K.table([h('tr', null, [
+          h('th.label', { text: 'เกณฑ์' }), h('th', { text: 'เพดาน (บาท)' }), h('th', { text: '% ของฐาน' }),
+        ])], (rec.caps || []).map((cap) => h('tr', { class: rec.binding && rec.binding.key === cap.key ? 'total' : '' }, [
+          h('td.label', null, [h('span', { text: cap.label }),
+            h('span.hint', { text: cap.detail, style: 'display:block;margin-top:2px' })]),
+          h('td.calc.num', { text: K.money(cap.value) }),
+          h('td.calc.num', { text: cap.pctOfBase === null ? '–' : (cap.pctOfBase * 100).toFixed(1) + '%' }),
+        ]))),
+        h('p.note', null, [
+          'ที่ระดับแนะนำ: ภาษีที่บริษัทออกให้ ',
+          K.out(() => K.money((K.state.computed.recommendation || {}).grossUpAtSuggested)),
+          ' บาท · ยอดบันทึกเป็นรายจ่ายรวม ',
+          K.out(() => K.money((K.state.computed.recommendation || {}).bookedAtSuggested)),
+          ' บาท',
+        ]),
+        h('p.hint', { text: rec.disclaimer }),
+      ]));
 
     // ── ค่าใช้จ่ายต้องห้าม (แถว 25–33) ──────────────────────────────────
     const fRows = (label, pick, ref) => h('tr', null, [K.labelCell(label, ref)].concat(IDX.map((i) =>
@@ -251,13 +303,11 @@
     ]));
   }
 
-  function proformaRow(label, beforeFn, afterFn) {
-    return h('tr', null, [
-      K.labelCell(label),
-      K.outCell((c) => (c ? K.money(beforeFn(c)) : '–')),
-      K.outCell((c) => (c ? K.money(afterFn(c)) : '–')),
-      K.outCell((c) => (c ? K.money(afterFn(c) - beforeFn(c)) : '–')),
-    ]);
+  // กดจากตารางเบี้ยแนะนำ → เติมลงช่องเบี้ยรวม (C18) แล้ววาดหน้าใหม่ทั้งหน้า
+  function usePremium(amount) {
+    K.state.kase.policy.premiumTotal = E.round2(amount);
+    K.touch();
+    K.render();
   }
 
   function fillPct() {

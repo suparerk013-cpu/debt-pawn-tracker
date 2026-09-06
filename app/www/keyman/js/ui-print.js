@@ -56,10 +56,10 @@
     paper.appendChild(h('p', { text: 'บริษัท: ' + nameOf(k) + '  ·  เลขทะเบียน: ' + (k.company.regNo || '–') + '  ·  วันที่ ' + today() }));
     paper.appendChild(tbl([
       ['สถานะทางภาษี', c.sme.isSme ? 'เข้าเกณฑ์ SME (ยกเว้น 300,000 · 15% · 20%)' : 'ไม่เข้าเกณฑ์ SME (อัตรา 20%)'],
-      ['รายได้รวมปีล่าสุด', money(E.lastValue(k.financials.revenues))],
-      ['กำไรก่อนภาษีปีล่าสุด', money(E.lastValue(k.financials.profitsBeforeTax))],
+      ['ค่าใช้จ่ายในการขายและบริการ ปีล่าสุด', money(E.lastValue(k.financials.sga))],
       ['เบี้ยประกันคีย์แมนที่เสนอ', money(c.premiumTotal) + ' บาท/ปี'],
-      ['เพดาน 5% ของรายได้เฉลี่ย 3 ปี (แนวปฏิบัติ ไม่ใช่กฎหมาย)', money(c.ceiling.ceiling5pctAvgRevenue)],
+      ['ฐานคิดเบี้ย — ค่าใช้จ่ายในการขายและบริการ', money(c.ceiling.base)],
+      ['สัดส่วนเบี้ยต่อฐานคิดเบี้ย', c.ceiling.base ? (c.premiumTotal / c.ceiling.base * 100).toFixed(2) + '%' : '–'],
       ['ภาษีทุกทอดที่บริษัทออกให้', money(c.allTierTaxTotal)],
       ['รวมบันทึกเป็นรายจ่ายของบริษัท', money(c.recordedExpenseTotal)],
       ['ประหยัดภาษีนิติบุคคล', money(c.comparison.after.citSaving)],

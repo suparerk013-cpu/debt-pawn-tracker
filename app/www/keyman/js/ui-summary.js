@@ -33,10 +33,11 @@
       h('p', null, [K.out((c) => {
         if (!c) return '';
         if (!c.comparison.noTaxBenefit) return '';
-        const ceil = c.ceiling.ceiling5pctAvgRevenue;
+        const rec = c.recommendation || {};
+        const ceil = rec.available ? rec.suggested : null;
         return 'บริษัทนี้ไม่ได้เสียภาษีเงินได้นิติบุคคลเลยในปีล่าสุด การทำประกันคีย์แมนจึงไม่มีผลประหยัดภาษีให้คำนวณ ' +
-          'เพดานเบี้ยที่สมเหตุสมผลอยู่ที่ราว ' + (ceil === null ? '–' : K.money(ceil)) + ' บาทต่อปี (5% ของรายได้เฉลี่ย 3 ปี) ' +
-          'ควรเสนอด้วยเหตุผลด้านสวัสดิการและการรักษาคนสำคัญ ไม่ใช่ด้านภาษี';
+          'เบี้ยที่สมเหตุสมผลอยู่ที่ราว ' + (ceil === null ? '–' : K.money(ceil)) + ' บาทต่อปี ' +
+          '(คิดจากฐานค่าใช้จ่ายในการขายและบริการ) ควรเสนอด้วยเหตุผลด้านสวัสดิการและการรักษาคนสำคัญ ไม่ใช่ด้านภาษี';
       }, { class: 'pill warn' })]),
       h('h3', { style: 'font-size:14px;margin:12px 0 4px', text: 'ข้อควรระวังที่ต้องอ่านคู่กับตัวเลข' }),
       h('ul', { style: 'font-size:12.5px;color:var(--muted);padding-left:18px' }, [K.out((c) => {
