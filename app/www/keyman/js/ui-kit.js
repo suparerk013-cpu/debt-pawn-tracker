@@ -212,7 +212,13 @@
   K.callout = function (tone, textOrFn) {
     if (typeof textOrFn === 'function') {
       const node = h('div', { class: 'callout ' + tone });
-      node.appendChild(K.out(textOrFn));
+      // ซ่อนกล่องทั้งใบเมื่อไม่มีข้อความ ไม่งั้นจะเหลือแถบสีว่าง ๆ ค้างอยู่บนหน้าจอ
+      node.appendChild(K.out((c, k) => {
+        const v = textOrFn(c, k);
+        node.hidden = !v;
+        return v || '';
+      }));
+      node.hidden = !node.textContent;
       return node;
     }
     return h('div', { class: 'callout ' + tone, text: textOrFn });

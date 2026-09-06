@@ -3,6 +3,12 @@
   'use strict';
   const K = root.K, h = K.h, E = root.KeymanEngine, Imp = root.KeymanImport;
 
+  // หนึ่งแถวของชีต "ข้อมูลบริษัท" — ชื่อช่องและลำดับตรงกับ A1–A8 ของไฟล์ Excel
+  function row(label, path, ref, opts) {
+    const o = opts || {};
+    return field(label, K.input(path, o.money ? { onchange: () => K.refreshOutputs() } : { kind: 'text' }), ref, o.note);
+  }
+
   function field(label, node, ref, hint) {
     return h('label.field', null, [
       h('span.lbl', null, [label, ref ? h('span.ref', { text: ref }) : null]),
@@ -48,24 +54,18 @@
         : '')),
       h('p.hint', { text: 'ขนาดธุรกิจ S/M/L ของ DBD ดูจากรายได้และการจ้างงานตามนิยาม สสว. ส่วน "SME" ที่ใช้คิดภาษีนิติบุคคลดูสองข้อคือ ' +
         'ทุนชำระแล้วไม่เกิน 5 ล้าน และรายได้ไม่เกิน 30 ล้าน — คนละเกณฑ์กัน ระบบจึงตัดสินเองจากตัวเลขจริง ไม่ได้ใช้ค่าจาก DBD' }),
+      // แถวเหมือนชีต "ข้อมูลบริษัท" ของไฟล์ Excel เป๊ะ — A1–A8 ลำดับเดิม ไม่เพิ่มไม่ลด
+      // (รายชื่อกรรมการ B10+ อยู่การ์ดถัดไป · ประเด็นปรึกษา B14+ อยู่ใต้ตารางนี้)
       h('div.grid2', null, [
-        field('ชื่อนิติบุคคล', K.input('company.name', { kind: 'text' }), 'B1'),
-        field('เลขทะเบียนนิติบุคคล (13 หลัก)', K.input('company.regNo', { kind: 'text' }), 'B5'),
-        field('สถานะนิติบุคคล', K.input('company.status', { kind: 'text' }), 'B2'),
-        field('วันที่จดทะเบียนจัดตั้ง', K.input('company.registeredDate', { kind: 'text' }), 'B3'),
-        field('ทุนจดทะเบียนที่ชำระแล้ว (บาท)', K.input('company.paidUpCapital'), 'B4', 'ตัวเลขนี้เป็นตัวตัดสินสถานะ SME — ระบบตัดสินเอง ผู้ใช้เลือกเทมเพลตเองไม่ได้'),
-        field('ประเภทนิติบุคคล', K.input('company.entityType', { kind: 'text' })),
-        field('กลุ่มธุรกิจ / หมวดธุรกิจ', K.input('company.businessGroup', { kind: 'text' }), 'B6'),
-        field('ขนาดธุรกิจตาม DBD (S/M/L)', K.input('company.sizeLabel', { kind: 'text' }), 'B7'),
-        field('เลขทะเบียนเดิม', K.input('company.oldRegNo', { kind: 'text' })),
-        field('ปีที่ส่งงบการเงิน', K.input('company.fiscalYearsFiled', { kind: 'text' })),
-        field('ประเภทธุรกิจ', K.input('company.businessType', { kind: 'text' })),
-        field('Website', K.input('company.website', { kind: 'text' })),
+        row('ชื่อนิติบุคคล', 'company.name', 'B1'),
+        row('สถานะนิติบุคคล', 'company.status', 'B2'),
+        row('วันที่จดทะเบียนจัดตั้ง', 'company.registeredDate', 'B3'),
+        row('ทุนจดทะเบียน', 'company.paidUpCapital', 'B4', { money: true, note: '(ข้อมูลจำเป็น) — ตัวเลขนี้เป็นตัวตัดสินสถานะ SME' }),
+        row('เลขทะเบียนเดิม', 'company.regNo', 'B5', { note: 'เลขทะเบียนนิติบุคคล 13 หลัก' }),
+        row('กลุ่มธุรกิจ', 'company.businessGroup', 'B6'),
+        row('ขนาดธุรกิจ', 'company.sizeLabel', 'B7'),
       ]),
-      field('ที่ตั้งสำนักงานแห่งใหญ่', K.input('company.address', { kind: 'text' }), 'B8'),
-      field('วัตถุประสงค์', K.input('company.objective', { kind: 'text' })),
-      field('กรรมการลงชื่อผูกพัน', K.input('company.signingAuthority', { kind: 'text' }), null,
-        'ใช้เติมในร่างมติที่ประชุมให้อัตโนมัติ (แท็บ 9)'),
+      row('ที่ตั้งสำนักงานแห่งใหญ่', 'company.address', 'B8'),
       field('ประเด็นปรึกษา', K.textarea('company.consultIssues', { rows: 3, placeholder: '1. …' }), 'B14–B17'),
       h('p.note', null, ['เหตุผลของผลตัดสิน: ', K.out((c) => (c ? c.sme.reason : ''))]),
       K.legend(),
@@ -178,14 +178,16 @@
     const out = Imp.parseCompanyText(text);
     const k = K.state.kase;
     const rows = [];
+    // เก็บเฉพาะช่องที่ชีต "ข้อมูลบริษัท" ของ Excel มี (บวกกรรมการลงชื่อผูกพันที่ใช้เติมร่างมติที่ประชุม)
+    // ช่องอื่นที่ตัวแกะอ่านได้ เช่น Website / ประเภทธุรกิจ / วัตถุประสงค์ ไม่ต้องเอาเข้ามาให้รก
     const labels = {
-      name: 'ชื่อนิติบุคคล', regNo: 'เลขทะเบียนนิติบุคคล', oldRegNo: 'เลขทะเบียนเดิม', entityType: 'ประเภทนิติบุคคล',
-      registeredDate: 'วันที่จดทะเบียนจัดตั้ง', status: 'สถานะนิติบุคคล', paidUpCapital: 'ทุนจดทะเบียน',
-      address: 'ที่ตั้ง', businessGroup: 'กลุ่มธุรกิจ', sizeLabel: 'ขนาดธุรกิจตาม DBD',
-      fiscalYearsFiled: 'ปีที่ส่งงบการเงิน', website: 'Website', businessType: 'ประเภทธุรกิจ',
-      objective: 'วัตถุประสงค์', signingAuthority: 'กรรมการลงชื่อผูกพัน',
+      name: 'ชื่อนิติบุคคล', status: 'สถานะนิติบุคคล', registeredDate: 'วันที่จดทะเบียนจัดตั้ง',
+      paidUpCapital: 'ทุนจดทะเบียน', regNo: 'เลขทะเบียนเดิม (เลขนิติบุคคล 13 หลัก)',
+      businessGroup: 'กลุ่มธุรกิจ', sizeLabel: 'ขนาดธุรกิจ', address: 'ที่ตั้งสำนักงานแห่งใหญ่',
+      signingAuthority: 'กรรมการลงชื่อผูกพัน (ใช้ในร่างมติที่ประชุม)',
     };
     Object.keys(out.fields).forEach((key) => {
+      if (!labels[key]) { delete out.fields[key]; return; }
       const oldV = k.company[key];
       rows.push(h('tr', null, [
         h('td.label', { text: labels[key] || key }),

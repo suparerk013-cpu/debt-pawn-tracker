@@ -29,9 +29,11 @@
       updatedAt: now,
       taxYear: K.currentThaiYear(),
       company: {
-        name: name || '', regNo: '', oldRegNo: '', entityType: '', status: '', registeredDate: '',
-        paidUpCapital: null, address: '', businessGroup: '', sizeLabel: '', fiscalYearsFiled: '',
-        website: '', businessType: '', objective: '', signingAuthority: '', consultIssues: '',
+        // ช่องชุดนี้ตรงกับชีต "ข้อมูลบริษัท" ของ Excel (A1–A8) ไม่มีมากกว่านั้น
+        // ยกเว้น signingAuthority ที่เก็บไว้เติมร่างมติที่ประชุมในแท็บ 9
+        name: name || '', status: '', registeredDate: '', paidUpCapital: null,
+        regNo: '', businessGroup: '', sizeLabel: '', address: '',
+        signingAuthority: '', consultIssues: '',
       },
       directors: [K.newDirector(1)],
       policy: {
