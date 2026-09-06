@@ -176,32 +176,75 @@
     });
     return best ? best.hit : null;
   }
+  // ตัวอักษรที่ norm() ทิ้ง — ใช้เดินนับตัวอักษร "ที่มีความหมาย" เพื่อหาว่าค่าเริ่มตรงไหน
+  const IGNORED = /[()\s\-–—.]/;
+
+  // แยกบรรทัดที่ขึ้นต้นด้วยชื่อ label แล้วตามด้วยค่าในบรรทัดเดียวกัน โดยไม่มี ":" คั่น
+  // (เจอตอน copy จากตารางในหน้าเว็บ ซึ่งได้ tab หรือช่องว่างคั่นแทน)
+  // ต้องรับ "บรรทัดดิบ" ที่ยังไม่ยุบช่องว่าง เพราะตัวคั่นคือหลักฐานว่าอะไรคือค่า อะไรคือคำต่อของหัวข้อ
+  // เช่น "ประเภทธุรกิจตอนจดทะเบียน" ไม่มีตัวคั่น = หัวข้อทั้งบรรทัด ไม่ใช่ "ประเภทธุรกิจ" + ค่า
+  function splitLabelValue(rawLine) {
+    const n = norm(rawLine);
+    if (!n) return null;
+    let best = null;
+    const consider = (nameNorm, hit, isDirector) => {
+      if (!nameNorm || n.indexOf(nameNorm) !== 0) return;
+      if (!best || nameNorm.length > best.len) best = { hit, isDirector, len: nameNorm.length };
+    };
+    LABELS.forEach((l) => l.names.forEach((nm) => consider(norm(nm), l, false)));
+    DIRECTOR_LABELS.forEach((nm) => consider(norm(nm), null, true));
+    if (!best) return null;
+    // เดินตามบรรทัดจริงจนนับตัวอักษรที่มีความหมายครบเท่าความยาวของ label แล้วที่เหลือคือค่า
+    let seen = 0;
+    let cut = rawLine.length;
+    for (let i = 0; i < rawLine.length; i++) {
+      if (!IGNORED.test(rawLine[i])) seen++;
+      if (seen === best.len) { cut = i + 1; break; }
+    }
+    const after = rawLine.slice(cut);
+    const rest = after.replace(/^\s*\([^)]*\)/, '');          // ตัดวงเล็บที่เป็นส่วนหนึ่งของหัวข้อ เช่น "(บาท)"
+    const sep = rest.match(/^[\s\t:：]+/);
+    if (!sep && rest === after) return { hit: best.hit, isDirector: best.isDirector, value: '' };
+    const value = (sep ? rest.slice(sep[0].length) : rest).trim();
+    return { hit: best.hit, isDirector: best.isDirector, value };
+  }
+
   const isDirectorLabel = (text) => DIRECTOR_LABELS.some((x) => norm(x) === norm(text));
   const isEmptyValue = (v) => EMPTY_VALUES.indexOf(String(v).trim()) >= 0;
 
-  function parseCompanyText(text) {
+  function parseCompanyText(text, retry) {
     const raw = String(text || '').replace(/ /g, ' ').replace(/ํา/g, 'ำ');
-    const lines = raw.split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter((l) => l !== '');
+    const rawLines = raw.split(/\r?\n/).map((l) => l.replace(/\t/g, '\t').trimEnd()).filter((l) => l.trim() !== '');
+    const lines = rawLines.map((l) => l.replace(/\s+/g, ' ').trim());
     const fields = {};
     const directors = [];
     let name = '';
     let inDirectors = false;
     const pending = [];   // label ที่ยังไม่มีค่า รอค่าจากบรรทัดถัด ๆ ไป
 
-    lines.forEach((line) => {
+    lines.forEach((line, li) => {
       // แยกเป็น key/value ถ้ามี ":" คั่น ไม่งั้นถือว่าทั้งบรรทัดคือ key ที่ยังไม่มีค่า
       const m = line.match(/^([^:]{2,45}?)\s*:\s*(.*)$/);
       const key = m ? m[1].trim() : line;
       const value = m ? m[2].trim() : '';
 
-      if (isDirectorLabel(key)) {                       // "รายชื่อกรรมการ" / "กรรมการ :"
+      // บรรทัดที่ไม่มี ":" อาจเป็น "label<tab>ค่า" หรือ "label ค่า" ในบรรทัดเดียวกัน
+      const split = m ? null : splitLabelValue(rawLines[li]);
+
+      if (isDirectorLabel(key) || (split && split.isDirector)) {   // "รายชื่อกรรมการ" / "กรรมการ :"
         inDirectors = true;
         pending.length = 0;
-        if (value) pushDirector(directors, value);
+        const dv = m ? value : (split ? split.value : '');
+        if (dv) pushDirector(directors, dv);
         return;
       }
 
-      const hit = matchLabel(key);
+      const hit = matchLabel(key) || (split ? split.hit : null);
+      if (!m && split && split.value) {                 // ได้ค่าจากบรรทัดเดียวกันแล้ว
+        inDirectors = false;
+        if (!isEmptyValue(split.value)) setField(fields, hit, split.value);
+        return;
+      }
       if (hit) {
         inDirectors = false;
         if (value && !isEmptyValue(value)) { setField(fields, hit, value); return; }
@@ -251,7 +294,29 @@
       if (digits) fields.regNo = digits;
     }
     if (name) fields.name = name;
-    return { fields, directors };
+
+    // บางครั้ง copy มาแล้วได้ก้อนเดียวไม่มีขึ้นบรรทัดใหม่ (เช่นลากคลุมทั้งหน้าแล้ววางในช่อง
+    // ที่ตัดบรรทัดทิ้ง) — ลองใส่ขึ้นบรรทัดใหม่หน้าทุกหัวข้อที่รู้จักแล้วแกะอีกรอบ
+    // ถ้าได้ข้อมูลมากกว่าเดิมจริงค่อยใช้ผลรอบใหม่ ไม่งั้นยึดผลรอบแรกไว้
+    const result = { fields, directors };
+    if (!retry) {
+      const reflowed = reflow(raw);
+      if (reflowed !== raw) {
+        const alt = parseCompanyText(reflowed, true);
+        const score = (o) => Object.keys(o.fields).length + o.directors.length;
+        if (score(alt) > score(result)) return alt;
+      }
+    }
+    return result;
+  }
+
+  const escapeRx = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  function reflow(text) {
+    const names = [];
+    LABELS.forEach((l) => l.names.forEach((nm) => names.push(nm)));
+    DIRECTOR_LABELS.forEach((nm) => names.push(nm));
+    names.sort((a, b) => b.length - a.length);          // ยาวก่อน กัน "กรรมการ" ไปตัดกลาง "กรรมการลงชื่อผูกพัน"
+    return text.replace(new RegExp('(' + names.map(escapeRx).join('|') + ')', 'g'), '\n$1');
   }
 
   function setField(fields, hit, value) {
@@ -266,10 +331,14 @@
   function pushDirector(list, line) {
     const cleaned = String(line)
       .replace(/^\s*\d+\s*[.)]\s*/, '')   // ตัดเลขนำหน้า "1." "2)"
-      .replace(/\s*\/\s*$/, '')           // ตัดเครื่องหมาย / ท้ายชื่อ
       .replace(/\s+/g, ' ')
       .trim();
-    if (cleaned) list.push(cleaned);
+    if (!cleaned) return;
+    // เผื่อกรณีที่ชื่อหลายท่านติดกันมาในบรรทัดเดียว เช่น "1. นาย ก 2. นาย ข"
+    cleaned.split(/\s+\d+\s*[.)]\s*/)
+      .map((x) => x.replace(/\s*\/\s*$/, '').trim())   // ตัดเครื่องหมาย / ท้ายชื่อ
+      .filter(Boolean)
+      .forEach((x) => list.push(x));
   }
 
   root.KeymanImport = {

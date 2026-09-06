@@ -34,7 +34,7 @@ app/www/keyman/
 
 ```bash
 node app/www/keyman/test/engine.test.js     # 131 ข้อ — เอนจินคำนวณ
-node app/www/keyman/test/import.test.js     # 52 ข้อ — ตัวอ่านไฟล์ DBD และตัวแกะข้อความข้อมูลนิติบุคคล
+node app/www/keyman/test/import.test.js     # 63 ข้อ — ตัวอ่านไฟล์ DBD และตัวแกะข้อความข้อมูลนิติบุคคล
 node app/dev-server.js                      # เปิด http://localhost:5522/keyman/
 ```
 
