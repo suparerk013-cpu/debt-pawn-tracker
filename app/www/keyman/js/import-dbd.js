@@ -160,6 +160,16 @@
   // "กรรมการลงชื่อผูกพัน" ซึ่งเป็นคนละเรื่อง)
   const DIRECTOR_LABELS = ['รายชื่อกรรมการ', 'กรรมการ'];
   const EMPTY_VALUES = ['-', '–', 'ไม่มี', 'N/A'];
+  // คำพวกนี้คือ "ประเภทนิติบุคคล" ไม่ใช่ชื่อบริษัท — ห้ามหยิบไปใส่ช่องชื่อนิติบุคคล
+  const ENTITY_TYPE_WORDS = ['บริษัทจำกัด', 'บริษัทมหาชนจำกัด', 'ห้างหุ้นส่วนจำกัด',
+    'ห้างหุ้นส่วนสามัญ', 'ห้างหุ้นส่วนสามัญนิติบุคคล'];
+  // ชื่อบริษัทของ DBD ขึ้นต้นด้วยคำพวกนี้เสมอ
+  const looksLikeCompanyName = (line) => {
+    const t = String(line).trim();
+    if (!/^(บริษัท|ห้างหุ้นส่วน|บมจ|หจก)/.test(t)) return false;
+    if (ENTITY_TYPE_WORDS.some((w) => norm(w) === norm(t))) return false;   // "บริษัทจำกัด" เฉย ๆ ไม่ใช่ชื่อ
+    return norm(t).length >= 10;
+  };
 
   // หา label ที่ยาวที่สุดที่ตรงกับข้อความนี้ (ตรงตัวหรือเป็นคำขึ้นต้น)
   function matchLabel(text) {
@@ -271,9 +281,8 @@
         if (!isEmptyValue(line) && line.length <= 250) setField(fields, target, line);
         return;
       }
-      // ชื่อบริษัท: บรรทัดลอย ๆ ที่ขึ้นต้นด้วย บริษัท/ห้างหุ้นส่วน และมีช่องว่างคั่น
-      // (กัน "บริษัทจำกัด" ซึ่งเป็นค่าของช่องประเภทนิติบุคคล ไม่ให้กลายเป็นชื่อบริษัท)
-      if (!name && /^(บริษัท|ห้างหุ้นส่วน)\s/.test(line) && line.length >= 10) name = line;
+      // ชื่อบริษัท: บรรทัดลอย ๆ ที่ขึ้นต้นด้วย บริษัท/ห้างหุ้นส่วน/บมจ./หจก.
+      if (!name && looksLikeCompanyName(line)) name = line;
     });
 
     // หมวดธุรกิจในไฟล์ PDF อยู่คนละบรรทัดกับ label และขึ้นต้นด้วยรหัส 5 หลัก
@@ -292,6 +301,10 @@
       const bare = raw.match(/(?:^|[^\d])(\d{13})(?![\d])/);
       const digits = fromUrl ? fromUrl[1].slice(-13) : (bare ? bare[1] : null);
       if (digits) fields.regNo = digits;
+    }
+    if (!name) {
+      const found = lines.find(looksLikeCompanyName);
+      if (found) name = found;
     }
     if (name) fields.name = name;
 
