@@ -354,6 +354,10 @@
   // ตัวคุมภายในเท่านั้น และต้องแปลงกลับเป็น % ของฐานนี้ก่อนแสดงเสมอ (ห้ามพิมพ์ฐานอื่น)
   const PREMIUM_BAND = { low: 0.08, mid: 0.10, high: 0.12 };  // ช่วงที่ได้จากเคสจริงในแฟ้มเดิม
   const BOOKED_SHARE_CAP = 0.20;                              // เบี้ย+ภาษีทุกทอด ไม่เกิน 20% ของฐาน
+  // เพดานตามแนวปฏิบัติที่ทุกแหล่งในตลาดอ้างตรงกัน — ใช้เป็นตัวคุมภายในเท่านั้น
+  // ห้ามพิมพ์ฐานสองตัวนี้ออกหน้าจอ ต้องแปลงเป็น % ของ base ก่อนแสดงเสมอ
+  const MARKET_TURNOVER_CAP = 0.05;
+  const MARKET_NET_PROFIT_CAP = 0.20;
 
   function premiumCeiling({ revenues, profitsBeforeTax, taxPaidLatest, sga, netProfits }) {
     const avgRevenue = avg(lastN(revenues, 3));
@@ -363,6 +367,10 @@
     const sgaLatest = lastValue(sga);
     const sgaAvg = avg(lastN(sga, 3));
     const base = sgaLatest === null ? sgaAvg : (sgaAvg === null ? sgaLatest : Math.min(sgaLatest, sgaAvg));
+    const netProfitLatest = lastValue(netProfits);
+    const netProfitAvg = avg(lastN(netProfits, 3));
+    const netProfitBase = netProfitLatest === null ? netProfitAvg
+      : (netProfitAvg === null ? netProfitLatest : Math.min(netProfitLatest, netProfitAvg));
     return {
       // ── ฐานที่ใช้แสดงผลได้ ──
       base,
@@ -373,11 +381,13 @@
       // ── ตัวคุมภายใน ห้ามพิมพ์ตรง ๆ ใช้แปลงเป็น % ของ base ก่อนแสดง ──
       avgRevenue,
       avgProfit,
-      netProfitLatest: lastValue(netProfits),
-      ceiling5pctAvgRevenue: avgRevenue === null ? null : avgRevenue * 0.05,
-      target2to3pct: avgRevenue === null ? null : { low: avgRevenue * 0.02, high: avgRevenue * 0.03 },
-      ceiling30pctAvgProfit: avgProfit === null ? null : avgProfit * 0.30,
-      reference20pctTax: tax === null ? null : tax * 0.20,
+      netProfitLatest,
+      netProfitAvg,
+      taxPaidLatest: tax,
+      ceiling5pctAvgRevenue: avgRevenue === null ? null : avgRevenue * MARKET_TURNOVER_CAP,
+      // ใช้ค่าที่ต่ำกว่าระหว่างปีล่าสุดกับค่าเฉลี่ย 3 ปี หลักเดียวกับฐานคิดเบี้ย
+      // ปีเดียวที่ผลประกอบการเด้งขึ้นต้องไม่ดันเพดานให้สูงตาม
+      ceilingNetProfit: netProfitBase === null ? null : Math.max(0, netProfitBase * MARKET_NET_PROFIT_CAP),
       // ข้อความกำกับที่ต้องติดไปกับตัวเลขเสมอ
       disclaimer:
         'ช่วงเบี้ยที่แนะนำเป็นแนวปฏิบัติจากเคสจริง ไม่ใช่อัตราที่กำหนดไว้ในประมวลรัษฎากร — ' +
@@ -447,16 +457,26 @@
       detail: 'ยอดที่บันทึกเป็นรายจ่าย (เบี้ย + ภาษีที่บริษัทออกให้) ไม่ควรเกิน 20% ของฐานคิดเบี้ย',
       value: solve(bookedAt, ceiling.bookedShareCap, searchTop),
     });
-    // 2) ฐานะการเงินของกิจการ — ตัวคุมภายใน (คิดจากผลประกอบการปีล่าสุด) ห้ามพิมพ์ฐานนี้
-    if (ceiling.netProfitLatest !== null) {
+    // 2) ขนาดของกิจการโดยรวม — เพดานตามแนวปฏิบัติของตลาด ห้ามพิมพ์ฐานนี้ออกหน้าจอ
+    // เดิมคำนวณไว้แล้วแต่ไม่ได้เอามาบีบเลย ทำให้บางเคสระบบเสนอสูงกว่าเพดานที่ตลาดใช้กัน
+    if (ceiling.ceiling5pctAvgRevenue !== null) {
+      caps.push({
+        key: 'businessSize',
+        label: 'ขนาดของกิจการโดยรวม',
+        detail: 'เบี้ยที่เสนอต้องได้สัดส่วนกับขนาดของกิจการทั้งหมด ไม่ใช่ได้สัดส่วนเฉพาะกับบรรทัดที่บันทึกเบี้ยลงไป',
+        value: Math.max(0, ceiling.ceiling5pctAvgRevenue),
+      });
+    }
+    // 3) ฐานะการเงินของกิจการ — ตัวคุมภายใน ห้ามพิมพ์ฐานนี้
+    if (ceiling.ceilingNetProfit !== null) {
       caps.push({
         key: 'financial',
         label: 'ฐานะการเงินของกิจการ',
         detail: 'เบี้ยที่เสนอต้องอยู่ในวิสัยที่ผลประกอบการของกิจการรองรับได้อย่างต่อเนื่องตลอดอายุการชำระเบี้ย',
-        value: Math.max(0, ceiling.netProfitLatest * 0.20),   // เกณฑ์คิดกับตัวเบี้ย ไม่รวมภาษีที่ออกให้
+        value: ceiling.ceilingNetProfit,   // เกณฑ์คิดกับตัวเบี้ย ไม่รวมภาษีที่ออกให้
       });
     }
-    // 3) กิจการต้องไม่ติดลบหลังบันทึกรายจ่ายชุดนี้
+    // 4) กิจการต้องไม่ติดลบหลังบันทึกรายจ่ายชุดนี้
     const pbtLatest = lastValue(fin.profitsBeforeTax);
     if (pbtLatest !== null) {
       caps.push({
@@ -466,7 +486,7 @@
         value: solve(bookedAt, Math.max(0, pbtLatest), searchTop),
       });
     }
-    // 4) ค่าตอบแทนรายกรรมการ — เบี้ยของแต่ละท่านไม่ควรเกินค่าจ้างทั้งปีของท่านนั้น
+    // 5) ค่าตอบแทนรายกรรมการ — เบี้ยของแต่ละท่านไม่ควรเกินค่าจ้างทั้งปีของท่านนั้น
     if (directors.length) {
       const pays = directors.map((d) => n0(d.salary) + n0(d.bonus));
       const minPay = Math.min.apply(null, pays);

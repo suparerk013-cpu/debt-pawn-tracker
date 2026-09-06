@@ -150,8 +150,13 @@ near(E.premiumCeiling({ revenues: [15901594.37, 16049353.24] }).ceiling5pctAvgRe
 near(E.premiumCeiling({ revenues: [480696, 447401.87, 267402.77] }).ceiling5pctAvgRevenue, 19925.01, 0.01, '5% ของรายได้เฉลี่ย (บริษัทเล็ก)');
 const ceilNull = E.premiumCeiling({ revenues: ['', null, 16049353.24] });
 near(ceilNull.avgRevenue, 16049353.24, 0.01, 'ช่องว่างไม่ถูกนับเป็น 0 ตอนหาค่าเฉลี่ย');
-near(E.premiumCeiling({ revenues: [20000000], profitsBeforeTax: [1000000], taxPaidLatest: 200000 }).ceiling30pctAvgProfit, 300000, 0.01, '30% ของกำไรก่อนภาษีเฉลี่ย');
-near(E.premiumCeiling({ revenues: [20000000], taxPaidLatest: 200000 }).reference20pctTax, 40000, 0.01, '20% ของภาษีที่จ่ายปีล่าสุด');
+// เพดานตัวคุมภายในตัวที่สอง: 20% ของกำไรสุทธิ โดยใช้ค่าที่ต่ำกว่าระหว่างปีล่าสุดกับเฉลี่ย 3 ปี
+// หลักเดียวกับฐานคิดเบี้ย — ปีเดียวที่เด้งขึ้นต้องไม่ดันเพดานตาม
+near(E.premiumCeiling({ netProfits: [3000000, 3000000, 3000000] }).ceilingNetProfit, 600000, 0.01, '20% ของกำไรสุทธิเมื่อทุกปีเท่ากัน');
+near(E.premiumCeiling({ netProfits: [1000000, 2000000, 6000000] }).ceilingNetProfit, 600000, 0.01, 'ปีล่าสุดเด้งขึ้น → ใช้ค่าเฉลี่ย 3 ปีที่ต่ำกว่า');
+near(E.premiumCeiling({ netProfits: [6000000, 6000000, 1500000] }).ceilingNetProfit, 300000, 0.01, 'ปีล่าสุดตก → ใช้ปีล่าสุดที่ต่ำกว่า');
+near(E.premiumCeiling({ netProfits: [-500000, -400000, -300000] }).ceilingNetProfit, 0, 0.01, 'ขาดทุนทุกปี → เพดานเป็นศูนย์ ไม่ติดลบ');
+eq(E.premiumCeiling({ revenues: [20000000] }).ceilingNetProfit, null, 'ยังไม่มีกำไรสุทธิ → ไม่มีเพดานตัวนี้');
 
 // ── เปรียบเทียบ Before / After ────────────────────────────────────────────
 section('เปรียบเทียบ Before / After');
@@ -429,6 +434,27 @@ const rAuto = E.runChecks(kAuto, {});
 eq(rAuto.items.some((x) => x.code === 'CHK-06' && x.level === 'block'), false, 'จัดสรรอัตโนมัติแล้ว CHK-06 ไม่บล็อก');
 
 section('เบี้ยประกันที่แนะนำ — ฐานค่าใช้จ่ายในการขายและบริการ');
+// เพดานตามแนวปฏิบัติของตลาดทั้งสองตัวต้องถูกนำมาบีบจริง ไม่ใช่คำนวณแล้วทิ้ง
+// เคสนี้เคยหลุด: ระบบเสนอ 400,000 ทั้งที่เพดานตลาดอยู่ที่ 250,000
+const recTight = E.recommendPremium({
+  taxYear: Y, company: { paidUpCapital: 2000000 },
+  directors: [{ salary: 900000, bonus: 100000, allowances: { personal: 60000 } }],
+  policy: { taxMethod: 'perpetual' },
+  financials: {
+    years: ['2565', '2566', '2567'],
+    revenues: [5000000, 5000000, 5000000], sga: [4000000, 4000000, 4000000],
+    profitsBeforeTax: [2500000, 2500000, 2500000], taxPaid: [500000, 500000, 500000],
+  },
+}, Y);
+near(recTight.levels[1].amount, 400000, 0.5, 'ระดับแนะนำจากฐาน = 400,000');
+near(recTight.suggested, 250000, 0.5, 'ถูกบีบลงมาที่เพดานขนาดของกิจการ 250,000');
+eq(recTight.binding.key, 'businessSize', 'เพดานที่บีบคือขนาดของกิจการโดยรวม');
+eq(recTight.caps.some((c) => c.key === 'businessSize'), true, 'เพดานขนาดของกิจการอยู่ในชุดที่ใช้บีบจริง');
+eq(recTight.caps.some((c) => c.key === 'financial'), true, 'เพดานฐานะการเงินอยู่ในชุดที่ใช้บีบจริง');
+// ทุกเพดานต้องมี % ของฐานติดมาด้วย เพราะหน้าจอห้ามพิมพ์ฐานอื่นนอกจากฐานคิดเบี้ย
+eq(recTight.caps.every((c) => c.pctOfBase !== null && c.pctOfBase !== undefined), true, 'ทุกเพดานแปลงเป็น % ของฐานคิดเบี้ยได้');
+eq(/รายได้|ยอดขาย|กำไร/.test(recTight.caps.map((c) => c.label + ' ' + c.detail).join(' ')), false,
+  'ชื่อและคำอธิบายเพดานต้องไม่มีคำว่ารายได้ ยอดขาย หรือกำไร');
 // เคสจริงจากแฟ้ม Excel เดิม (ตัดไฟล์ที่งบซ้ำกันออกแล้ว) — ล็อกไว้กันสูตรเปลี่ยนโดยไม่ตั้งใจ
 function recCase(sga, revenues, pbt, tax, nDirectors, salaryEach) {
   return {
@@ -439,12 +465,15 @@ function recCase(sga, revenues, pbt, tax, nDirectors, salaryEach) {
     policy: { taxMethod: 'perpetual' },
   };
 }
-// สุนทรไทย — ไม่ถูกเพดานบีบ เบี้ยแนะนำใกล้กับที่เคยเสนอจริง 1,500,000
+// สุนทรไทย — เคยเสนอจริง 1,500,000 แต่เพดานตามแนวปฏิบัติของตลาดอยู่ต่ำกว่านั้น
+// ระบบจึงต้องบีบลงมา ไม่ใช่ปล่อยให้เสนอเต็มระดับแนะนำ
 const recSun = E.recommendPremium(recCase(
   [14620720, 14620720, 15784478], [null, null, 25533511.14], [null, null, 9673985.31], [null, null, 1840912.27], 2, 1110000), Y);
 near(recSun.base, 15008639.33, 0.5, 'ฐานคิดเบี้ย = ค่าที่ต่ำกว่าระหว่างปีล่าสุดกับเฉลี่ย 3 ปี');
 near(recSun.levels[1].amount, 1500863.93, 0.5, 'ระดับแนะนำ = 10% ของฐาน');
-near(recSun.suggested, 1500863.93, 0.5, 'ไม่ถูกเพดานบีบ → ใช้ระดับแนะนำเต็ม');
+near(recSun.suggested, 1276675.56, 0.5, 'ถูกเพดานบีบลงจากระดับแนะนำ');
+eq(recSun.binding.key, 'businessSize', 'เพดานที่บีบคือขนาดของกิจการโดยรวม');
+eq(recSun.suggested < recSun.levels[1].amount, true, 'เบี้ยที่เสนอต้องไม่เกินเพดานที่บีบไว้');
 eq(recSun.suggested <= recSun.cap, true, 'เบี้ยแนะนำต้องไม่เกินเพดานของเคสนี้เสมอ');
 
 // เอสเจ — ฐานะการเงินของกิจการเป็นตัวบีบ
