@@ -250,6 +250,10 @@ td.label, th.label {
 thead th.label { background: var(--surface-3); z-index: 4; }
 tbody tr:nth-child(even) > td.label { background: color-mix(in srgb, var(--surface-2) 92%, var(--surface)); }
 tr.total > td, tr.total > th, tr.total > td.label { font-weight: 700; background: var(--surface-3); }
+/* แถวรวมต้องไม่กลบสีประจำเซลล์แบบ Excel — ภาษีที่เสียทอดสุดท้ายต้องแดง ทอดอื่นเขียว */
+tr.total > td.sum, tbody tr.total:nth-child(even) > td.sum { background: var(--xl-sum); color: var(--xl-sum-ink); }
+tr.total > td.tax-base, tbody tr.total:nth-child(even) > td.tax-base { background: var(--xl-green); color: var(--xl-green-ink); }
+tr.total > td.tax-final, tbody tr.total:nth-child(even) > td.tax-final { background: var(--xl-red); color: var(--xl-red-ink); }
 tr.head-band > th { background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%); color: #fff; border-color: rgba(255,255,255,.18); }
 tr.head-band > th.label { background: var(--brand); color: #fff; }
 td.calc { background: var(--calc-bg); color: var(--text); }
@@ -542,3 +546,20 @@ details.fold .tablewrap { max-width: 820px; }
 .pane .pin { display: flex; align-items: baseline; gap: 8px; margin: 7px 0 9px; }
 .pane .pin input.cell { font-size: 22px; font-weight: 700; padding: 4px 10px; }
 .pane .pin .baht { font-size: 13px; color: var(--muted); flex: 0 0 auto; }
+
+/* ── แท็บ 7 ตารางภาษี — ทำให้อ่านเหมือนชีตต้นฉบับ ────────────────────────
+   แถวหัวหมวด · กรอบสีคร่อมกลุ่มที่มีเพดานรวม · แถวยอดรวมกลุ่ม */
+tr.section > th {
+  background: var(--surface-3); color: var(--text-2); text-align: left;
+  font-size: 12px; font-weight: 700; letter-spacing: .02em; padding-top: 9px; padding-bottom: 9px;
+}
+tr.section > th.label { position: sticky; left: 0; z-index: 4; background: var(--surface-3); }
+tr.grp > td.label { border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface)); }
+tr.grp-lifeHealth > td.label { border-left-color: var(--ok); background: color-mix(in srgb, var(--ok-bg) 45%, var(--surface)); }
+tbody tr.grp:nth-child(even) > td.label { background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface)); }
+tr.grpsum > td, tbody tr.grpsum:nth-child(even) > td { background: var(--accent-soft); font-size: 12px; }
+tr.grpsum > td.label { background: var(--accent-soft); border-left: 3px solid var(--accent); font-weight: 600; }
+tr.grpsum > td.num { font-weight: 700; font-variant-numeric: tabular-nums; }
+tr.grpsum.over > td, tbody tr.grpsum.over:nth-child(even) > td { background: var(--block-bg); color: var(--block); }
+tr.grpsum.over > td.label { background: var(--block-bg); border-left-color: var(--block); color: var(--block); }
+tr.grpsum .badge { margin-left: 6px; }

@@ -225,6 +225,29 @@ near(before.dividendTax, 80000, 0.01, 'ภาษีปันผล 10% คิด
 eq(before.dividendTax !== 100000, true, 'ไม่ใช่ 10% ของยอดเต็มแบบไฟล์เดิม');
 near(before.ownerCash, 720000, 0.01, 'เงินถึงเจ้าของฝั่ง Before หัก CIT และปันผลแล้ว');
 
+// ── เพดานค่าลดหย่อนรายกลุ่ม ───────────────────────────────────────────────
+// ชีตต้นฉบับครอบกลุ่มไว้ด้วยสูตร MIN() ยอดที่หักได้จริงจึงต้องไม่เกินเพดาน
+section('เพดานค่าลดหย่อนรายกลุ่ม');
+const TB = T.tableFor(Y);
+const capped = E.sumAllowances({ personal: 60000, lifeInsurance: 100000, healthSelf: 25000, ssf: 200000, rmf: 400000 }, TB);
+near(capped.groups.lifeHealth, 125000, 0.01, 'ยอดดิบกลุ่มประกันชีวิต+สุขภาพ');
+near(capped.groups.retirement, 600000, 0.01, 'ยอดดิบกลุ่มเกษียณ');
+near(capped.groupsCounted.lifeHealth, 100000, 0.01, 'กลุ่มประกันหักได้แค่เพดาน 100,000');
+near(capped.groupsCounted.retirement, 500000, 0.01, 'กลุ่มเกษียณหักได้แค่เพดาน 500,000');
+near(capped.rawTotal, 785000, 0.01, 'ยอดที่ผู้ใช้กรอกรวม 785,000');
+near(capped.total, 660000, 0.01, 'ยอดที่หักได้จริง 60,000 + 100,000 + 500,000');
+eq(capped.exceeded.length, 2, 'รายงานว่าเกินเพดานสองกลุ่ม');
+near(capped.exceeded[0].excess, 25000, 0.01, 'ส่วนเกินกลุ่มประกัน 25,000');
+// ไม่เกินเพดาน → ยอดดิบกับยอดที่หักได้ต้องเท่ากัน
+const notCapped = E.sumAllowances({ personal: 60000, lifeInsurance: 80000, rmf: 300000 }, TB);
+near(notCapped.total, notCapped.rawTotal, 0.01, 'ไม่เกินเพดาน → หักได้เต็มที่กรอก');
+eq(notCapped.exceeded.length, 0, 'ไม่เกินเพดาน → ไม่มีรายการเกิน');
+// ภาษีต้องคิดจากยอดหลังตัดเพดาน ไม่ใช่ยอดดิบ
+const gCap = E.grossUpTax({ salary: 1400000, keymanPremium: 600000,
+  allowances: { personal: 60000, lifeInsurance: 100000, healthSelf: 25000, ssf: 200000, rmf: 400000 } }, Y);
+near(gCap.columnE.allowanceTotal, 660000, 0.01, 'ตารางภาษีใช้ค่าลดหย่อนหลังตัดเพดาน');
+near(gCap.columnE.netIncome, 1400000 - 100000 - 660000, 0.01, 'เงินได้สุทธิคิดจากยอดหลังตัดเพดาน');
+
 // ── กฎตรวจสอบ ─────────────────────────────────────────────────────────────
 section('กฎตรวจสอบ CHK');
 function baseCase(over) {

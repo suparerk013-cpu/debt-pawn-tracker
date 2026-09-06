@@ -12,7 +12,8 @@
   K.state.dirTab = 0;
   const delta = (v) => Number(v || 0).toLocaleString('th-TH', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
   const view = () => (localStorage.getItem('keyman.grossView') === 'all' ? 'all' : 'final');
-  const allowView = () => (localStorage.getItem('keyman.allowView') === 'all' ? 'all' : 'used');
+  // ชีตแสดงค่าลดหย่อนครบทุกแถวเสมอ แอปจึงตั้งต้นแบบเดียวกัน (กดย่อเหลือเฉพาะที่กรอกได้)
+  const allowView = () => (localStorage.getItem('keyman.allowView') === 'used' ? 'used' : 'all');
   const setPref = (k, v) => { localStorage.setItem(k, v); K.render(); };
 
   function render(main) {
@@ -47,11 +48,17 @@
       : h('div', null, [money('directors.' + i + '.premiumAllocated'), h('span.hint', { text: 'โหมดจัดสรรเอง — กรอกเบี้ยของท่านนี้ได้โดยตรง' })]);
 
     main.appendChild(K.card('ช่องกรอกของ ' + (d.name || 'กรรมการท่านที่ ' + (i + 1)), 'ชีต ภาษีทุกทอดกรรมการ' + (i + 1) + ' · E7 / F8', [
-      K.stats([
-        { label: 'ภาษีถ้ารับเงินเดือนอย่างเดียว', value: () => K.money(g.salaryOnlyTax) + ' บาท' },
-        { label: 'ภาษีทุกทอด (บริษัทออกให้)', tone: 'accent', value: () => K.money(g.tax) + ' บาท' },
-        { label: 'ส่วนต่างที่บริษัทรับภาระเพิ่ม', value: () => K.money(g.tax - g.salaryOnlyTax) + ' บาท' },
-        { label: 'หัก ณ ที่จ่ายต่อเดือน (ภ.ง.ด.1)', value: () => K.money(g.monthlyWithholding) + ' บาท', note: 'ต้องนำส่งทุกเดือน ไม่ใช่เฉพาะปีแรก' },
+      h('div.verdict', null, [
+        h('div.k', { text: 'ภาษีทุกทอดที่บริษัทออกให้ท่านนี้ ปีละ' }),
+        h('div.v', null, [K.money(g.tax), h('span.unit', { text: 'บาท' })]),
+        h('div.sub', {
+          text: 'ถ้ารับเงินเดือนอย่างเดียวเสีย ' + K.money(g.salaryOnlyTax) + ' บาท · บริษัทรับภาระเพิ่ม ' +
+            K.money(g.tax - g.salaryOnlyTax) + ' บาท · นำส่ง ภ.ง.ด.1 เดือนละ ' + K.money(g.monthlyWithholding) + ' บาท',
+        }),
+        h('div.side', null, [h('span', {
+          class: 'pill ' + (g.converged ? 'ok' : 'block'),
+          text: g.converged ? '✓ ลู่เข้าที่ทอดที่ ' + g.tiers : '⛔ ยังไม่ลู่เข้า',
+        })]),
       ]),
       h('div.grid2', null, [
         h('label.field', null, [h('span.lbl', null, ['เงินเดือนทั้งปี (บาท)', h('span.ref', { text: 'E7' })]), money('directors.' + i + '.salary')]),
@@ -95,6 +102,9 @@
       ]))));
 
     const rows = [];
+    const sectionRow = (text, ref) => rows.push(h('tr.section', null,
+      [h('th.label', null, [h('span', { text }), ref ? h('span.ref', { text: ref }) : null])]
+        .concat(cols.map(() => h('th', { text: '' })))));
     // cellClass ให้สีตามธรรมเนียมไฟล์เดิม (แถวรวม = ส้มอ่อน, ภาษีที่เสีย = เขียว/แดงที่ทอดสุดท้าย)
     const dataRow = (label, ref, fn, cls, cellClass) => rows.push(h('tr', { class: cls || '' },
       [K.labelCell(label, ref)].concat(cols.map((col, idx) =>
@@ -106,13 +116,33 @@
     dataRow('รวมรายได้', 'D10', (col) => col.totalIncome, 'total', () => 'sum');
     dataRow('หัก: ค่าใช้จ่าย 50% แต่สูงสุดไม่เกิน 100,000 บาท', 'D12', (col) => -col.expense, '', () => 'sum');
 
-    // ── ค่าลดหย่อน 19 รายการ ─────────────────────────────────────────────
+    // ── ค่าลดหย่อน 19 รายการ ตามลำดับแถว B15–B33 ของชีต ──────────────────
+    // ชีตตีกรอบสีคร่อมกลุ่มที่มีเพดานรวม แล้วเขียน "รวมกันไม่เกิน …" ไว้ข้าง ๆ
+    // แอปทำเป็นเส้นสีข้างแถว + แถวยอดรวมกลุ่มที่เปลี่ยนเป็นสีแดงเมื่อเกินเพดาน
     const used = (f) => f.key === 'personal' || E.n0((d.allowances || {})[f.key]) !== 0;
     const shown = allowView() === 'all' ? E.ALLOWANCE_FIELDS : E.ALLOWANCE_FIELDS.filter(used);
-    rows.push(h('tr', null, [h('th.label', { text: 'รายการค่าลดหย่อน' })]
-      .concat(cols.map((col, idx) => h('th', { text: (!allCols || idx === 0) ? 'ค่าลดหย่อน' : 'ค่าลดหย่อนใหม่' })))));
+    const GROUP_LABEL = { lifeHealth: 'ประกันชีวิต + ประกันสุขภาพตนเอง', retirement: 'กองทุนเพื่อการเกษียณและประกันบำนาญ' };
+    const sums = E.sumAllowances(d.allowances, K.T.tableFor(k.taxYear));
+    sectionRow('รายการค่าลดหย่อน', 'B15');
 
-    shown.forEach((f) => {
+    const groupSumRow = (gk) => {
+      const total = sums.groups[gk] || 0;
+      const counted = sums.groupsCounted[gk] || 0;
+      const cap = sums.caps[gk];
+      const over = cap !== undefined && total > cap;
+      rows.push(h('tr', { class: 'grpsum ' + (over ? 'over' : '') }, [
+        h('td.label', null, [
+          h('span', { text: 'รวมกลุ่ม ' + GROUP_LABEL[gk] }),
+          h('span.badge', { text: over ? 'เกินเพดาน ' + K.money(cap, '–') : 'เพดาน ' + K.money(cap, '–') }),
+        ]),
+        h('td.num', null, [
+          h('span', { text: K.money(total) }),
+          over ? h('small', { style: 'display:block;font-weight:600', text: 'หักได้จริง ' + K.money(counted) }) : null,
+        ]),
+      ].concat(cols.slice(1).map(() => h('td', { text: '' })))));
+    };
+
+    shown.forEach((f, n) => {
       const inp = K.input('directors.' + i + '.allowances.' + f.key, { onchange: () => K.refreshOutputs() });
       inp.addEventListener('change', () => K.render());
       const label = h('td.label', null, [
@@ -122,18 +152,16 @@
       ]);
       const cells = [label, h('td', null, [inp])];
       for (let x = 1; x < cols.length; x++) cells.push(h('td.calc.num', { text: K.money(E.n0((d.allowances || {})[f.key])) }));
-      rows.push(h('tr', null, cells));
+      rows.push(h('tr', { class: f.group ? 'grp grp-' + f.group : '' }, cells));
+      // ปิดท้ายกลุ่มเมื่อแถวถัดไปไม่ได้อยู่กลุ่มเดียวกันแล้ว
+      const next = shown[n + 1];
+      if (f.group && (!next || next.group !== f.group)) groupSumRow(f.group);
     });
-    if (allowView() !== 'all') {
-      rows.push(h('tr', null, [h('td', { class: 'label', colspan: cols.length + 1 }, [
-        h('button.btn', { text: 'แสดงค่าลดหย่อนทั้ง 19 รายการ', onclick: () => setPref('keyman.allowView', 'all') }),
-      ])]));
-    }
 
     dataRow('รวมค่าลดหย่อน', 'D34', (col) => col.allowanceTotal, 'total', () => 'sum');
     dataRow('เงินได้หลังหักค่าลดหย่อน', 'D36', (col) => col.afterAllowance, 'total', () => 'sum');
 
-    rows.push(h('tr', null, [h('th.label', { text: 'ส่วนของเงินบริจาค' })].concat(cols.map(() => h('th', { text: '' })))));
+    sectionRow('ส่วนของเงินบริจาค', 'B38');
     E.DONATION_FIELDS.forEach((f) => {
       const inp = K.input('directors.' + i + '.donations.' + f.key, { onchange: () => K.refreshOutputs() });
       inp.addEventListener('change', () => K.render());
@@ -160,9 +188,9 @@
     main.appendChild(K.card(allCols ? 'ตารางภาษีทุกทอด (กางทุกทอดแบบ Excel)' : 'ตารางสุดท้าย — ทอดที่ลู่เข้าแล้ว', 'ชีต ภาษีทุกทอดกรรมการ' + (i + 1), [
       h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px' }, [
         K.switch2([{ value: 'final', label: 'ตารางสุดท้าย' }, { value: 'all', label: 'กางทุกทอด' }], view(), (v) => setPref('keyman.grossView', v)),
-        allowView() === 'all'
-          ? h('button.btn', { text: 'ซ่อนค่าลดหย่อนที่ยังไม่ได้กรอก', onclick: () => setPref('keyman.allowView', 'used') })
-          : null,
+        K.switch2([{ value: 'all', label: 'ค่าลดหย่อนครบ 19 แถว' }, { value: 'used', label: 'เฉพาะที่กรอก' }],
+          allowView(), (v) => setPref('keyman.allowView', v)),
+        h('span.hint', { text: 'กรอกได้เฉพาะช่องพื้นสีเหลืองเท่านั้น', style: 'margin:0 0 0 auto' }),
       ]),
       tableNode,
       K.callout(g.converged ? 'ok' : 'block', convergeText),

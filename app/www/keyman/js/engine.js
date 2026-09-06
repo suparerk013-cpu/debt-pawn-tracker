@@ -242,22 +242,38 @@
     return s;
   }
 
+  // เพดานรายกลุ่มเป็นเพดานจริง ไม่ใช่แค่คำเตือน — ชีตต้นฉบับใช้สูตร MIN() ครอบไว้
+  // และตามกฎหมายส่วนที่เกินก็ใช้ลดหย่อนไม่ได้อยู่แล้ว total จึงต้องเป็นยอดหลังตัดเพดาน
+  // ส่วน groups เก็บยอดดิบไว้ให้ CHK-12 กับหน้าจอบอกได้ว่าเกินไปเท่าไร
   function sumAllowances(allowances, table) {
     const a = allowances || {};
     const byKey = {};
-    let total = 0;
     const groups = {};
+    let ungrouped = 0;
     for (const f of ALLOWANCE_FIELDS) {
       const v = n0(a[f.key]);
       byKey[f.key] = v;
-      total += v;
       if (f.group) groups[f.group] = (groups[f.group] || 0) + v;
+      else ungrouped += v;
     }
     const caps = (table && table.groupCaps) || {};
+    const groupsCounted = {};
+    let grouped = 0;
+    let rawGrouped = 0;
+    Object.keys(groups).forEach((g) => {
+      const cap = caps[g];
+      groupsCounted[g] = cap === undefined ? groups[g] : Math.min(groups[g], cap);
+      grouped += groupsCounted[g];
+      rawGrouped += groups[g];
+    });
     const exceeded = Object.keys(groups)
       .filter((g) => caps[g] !== undefined && groups[g] > caps[g])
-      .map((g) => ({ group: g, total: groups[g], cap: caps[g] }));
-    return { total, byKey, groups, caps, exceeded };
+      .map((g) => ({ group: g, total: groups[g], cap: caps[g], excess: groups[g] - caps[g] }));
+    return {
+      total: ungrouped + grouped,        // ยอดที่เอาไปหักจริง (ตัดเพดานแล้ว)
+      rawTotal: ungrouped + rawGrouped,  // ยอดที่ผู้ใช้กรอกมาทั้งหมด
+      byKey, groups, groupsCounted, caps, exceeded,
+    };
   }
 
   function sumDonations(donations) {
@@ -743,7 +759,8 @@
       s.exceeded.forEach((e) => {
         add('CHK-12', 'warn', `ค่าลดหย่อนเกินเพดาน (${d.name || 'กรรมการท่านที่ ' + (i + 1)})`,
           `${e.group === 'lifeHealth' ? 'กลุ่มเบี้ยประกันชีวิต + สุขภาพ' : 'กลุ่ม RMF/กบข./สำรองเลี้ยงชีพ/กอช./บำนาญ'} ` +
-          `รวม ${fmt(e.total)} บาท เกินเพดาน ${fmt(e.cap)} บาท — ส่วนที่เกินใช้ลดหย่อนไม่ได้ ถ้าปล่อยไว้ภาษีที่คำนวณจะต่ำกว่าความจริง`);
+          `รวม ${fmt(e.total)} บาท เกินเพดาน ${fmt(e.cap)} บาท — ระบบหักให้แค่ ${fmt(e.cap)} บาทตามกฎหมายแล้ว ` +
+          `ส่วนที่เกิน ${fmt(e.excess)} บาทใช้ลดหย่อนไม่ได้ ตรวจดูว่ากรอกถูกหรือไม่`);
       });
     });
 
