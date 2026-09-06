@@ -410,8 +410,8 @@
     // 1) ยอดบันทึกเป็นรายจ่าย (เบี้ย + ภาษีทุกทอด) ไม่เกิน 20% ของฐาน — พูดได้ตรง ๆ
     caps.push({
       key: 'bookedShare',
-      label: 'สัดส่วนต่อค่าใช้จ่ายในการขายและบริการ',
-      detail: 'ยอดที่บันทึกเป็นรายจ่าย (เบี้ย + ภาษีที่บริษัทออกให้) ไม่ควรเกิน 20% ของค่าใช้จ่ายในการขายและบริการ',
+      label: 'สัดส่วนต่อฐาน',
+      detail: 'ยอดที่บันทึกเป็นรายจ่าย (เบี้ย + ภาษีที่บริษัทออกให้) ไม่ควรเกิน 20% ของฐานคิดเบี้ย',
       value: solve(bookedAt, ceiling.bookedShareCap, searchTop),
     });
     // 2) ฐานะการเงินของกิจการ — ตัวคุมภายใน (คิดจากผลประกอบการปีล่าสุด) ห้ามพิมพ์ฐานนี้
@@ -458,9 +458,12 @@
       overCap: cap !== null && ceiling.band[k] > cap,
     }));
     const suggested = cap === null ? ceiling.band.mid : Math.min(ceiling.band.mid, cap);
+    // เพดานเหลือศูนย์ = โครงสร้างนี้ยังไม่เหมาะกับกิจการขนาดนี้ ต้องบอกตรง ๆ ไม่ใช่โชว์ 0.00
+    const notViable = cap !== null && cap <= 0;
 
     return {
       available: true,
+      notViable,
       base,
       sgaLatest: ceiling.sgaLatest,
       sgaAvg: ceiling.sgaAvg,

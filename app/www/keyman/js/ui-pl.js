@@ -131,11 +131,9 @@
         { label: 'ค่าเบี้ยประกันที่เสนอ', tone: 'accent', value: () => K.money(premium()) + ' บาท' },
         { label: 'ค่าเบี้ยประกันเฉลี่ยคนละ (C22)', value: (c, kk) => K.money(kk.directors.length ? premium() / kk.directors.length : null) + ' บาท',
           note: () => (K.isAutoAllocation() ? 'ส่งไปแท็บ 4 และ 7 ให้อัตโนมัติ' : 'โหมดจัดสรรรายคนเอง') },
-        { label: 'ฐานคิดเบี้ย — ค่าใช้จ่ายในการขายและบริการ', value: (c) => (c && c.ceiling.base ? K.money(c.ceiling.base) + ' บาท' : '–'),
-          note: 'ใช้ค่าที่ต่ำกว่าระหว่างปีล่าสุดกับเฉลี่ย 3 ปี' },
-        { label: 'สัดส่วนเบี้ยต่อฐานนี้',
+        { label: 'สัดส่วนเบี้ยต่อฐาน',
           value: (c) => (c && c.ceiling.base ? (premium() / c.ceiling.base * 100).toFixed(2) + '%' : '–'),
-          note: 'ช่วงที่แนะนำคือ 8–12% ของฐาน' },
+          note: 'ช่วงที่แนะนำ 8–12%' },
       ]),
       K.table([h('tr', null, [
         h('th.label', { text: 'เปรียบเทียบ' }), h('th', { text: 'ค่าเบี้ยประกัน' }), h('th', { text: 'รายจ่ายรวม' }),
@@ -165,98 +163,82 @@
         h('span.hint', { text: 'โหมดจัดสรรเบี้ย:', style: 'margin:0' }),
         allocationSwitch(),
       ]),
-      h('p.hint', null, [
-        'ช่อง "ค่าเบี้ยประกัน" (C18) พิมพ์ได้เลยที่นี่ — เป็นช่องเดียวกับ "เบี้ยประกันรวมทั้งปี" ในแท็บ 1 · ',
-        'โหมดเฉลี่ยเท่ากันจะส่ง "ค่าเบี้ยประกันเฉลี่ยคนละ" (C22) ไปลงแท็บ 4 ค่าตอบแทนกรรมการ และแท็บ 7 ภาษีทุกทอด ให้เองทันที ',
-        'เหมือนไฟล์ Excel ที่ทุกชีตอ้างค่า C22 · ยอดจัดสรรรวมตอนนี้ ',
-        K.out((c, kk) => K.money(kk.directors.reduce((s2, d) => s2 + E.n0(d.premiumAllocated), 0))),
-        ' บาท',
-      ]),
-      h('p.hint', { text: 'ช่อง I21 และ I22 เก็บไว้ให้ตรงกับไฟล์ Excel เดิม แต่ระบบไม่ได้ใช้สองช่องนี้เป็นที่มาของเบี้ยที่แนะนำ' }),
       h('p.note', null, [
-        'ยอดที่บันทึกเป็นรายจ่าย (เบี้ย + ภาษีที่บริษัทออกให้) = ',
-        K.out((c) => (c ? K.money(c.recordedExpenseTotal) : '–')),
+        'ยอดบันทึกเป็นรายจ่าย (เบี้ย + ภาษีที่บริษัทออกให้) ',
+        K.out((cc) => (cc ? K.money(cc.recordedExpenseTotal) : '–')),
         ' บาท = ',
-        K.out((c) => (c && c.ceiling.base ? (c.recordedExpenseTotal / c.ceiling.base * 100).toFixed(2) + '%' : '–')),
-        ' ของค่าใช้จ่ายในการขายและบริการ (เพดาน 20% = ',
-        K.out((c) => (c && c.ceiling.bookedShareCap ? K.money(c.ceiling.bookedShareCap) : '–')),
-        ' บาท)',
+        K.out((cc) => (cc && cc.ceiling.base ? (cc.recordedExpenseTotal / cc.ceiling.base * 100).toFixed(2) + '%' : '–')),
+        ' ของฐาน (เพดาน 20%)',
       ]),
-      h('p.hint', { text: E.premiumCeiling({ sga: [] }).disclaimer }),
+      h('p.hint', { text: 'ช่อง C18 พิมพ์ได้ที่นี่ · โหมดเฉลี่ยเท่ากันส่งค่า C22 ไปให้แท็บ 4 และ 7 เอง · ช่อง I21/I22 เก็บไว้ให้ตรงไฟล์เดิม ไม่ได้ใช้คิดเบี้ย' }),
     ]));
 
     // ── เบี้ยประกันที่แนะนำ ─────────────────────────────────────────────
-    // ฐานเดียวที่ใช้อธิบายที่มาของเบี้ยคือค่าใช้จ่ายในการขายและบริการ
-    // เพดานที่คำนวณจากตัวคุมภายในถูกแปลงเป็น % ของฐานนี้ก่อนแสดงเสมอ
+    // จัดหน้าให้เหลือเท่าที่ต้องตัดสินใจจริง: ตัวเลขเดียวตัวใหญ่ · ปุ่มเลือกระดับ ·
+    // บรรทัดเพดานหนึ่งบรรทัด · รายละเอียดที่เหลือพับเก็บไว้ใต้ปุ่ม
+    // ชื่อฐานพิมพ์ครั้งเดียวพอ ที่เหลือเรียกสั้น ๆ ว่า "ฐาน"
     const rec = c.recommendation || {};
-    const recRows = [];
-    if (rec.available && rec.capBelowBand) {
-      recRows.push(h('tr.total', null, [
-        K.labelCell('แนะนำสำหรับเคสนี้ — ' + ((rec.suggestedPct || 0) * 100).toFixed(1) + '% ของฐาน (ตามเพดาน)'),
-        h('td.calc.num', { text: K.money(rec.suggested) }),
-        h('td.calc.num', { text: K.money(rec.perDirector) }),
-        h('td', null, [h('button.btn.primary', { text: 'ใช้ตัวเลขนี้', onclick: () => usePremium(rec.suggested) })]),
+    const pctText = (v) => (v === null || v === undefined ? '–' : (v * 100).toFixed(1) + '%');
+
+    if (rec.available === false) {
+      main.appendChild(K.card('เบี้ยประกันที่แนะนำ', null, [h('p.note', { text: rec.reason || 'ยังคำนวณไม่ได้' })]));
+    } else {
+      // รายละเอียดเพดาน — ซ่อนไว้ก่อน กดปุ่มถึงจะกาง
+      const capRows = (rec.caps || []).map((cap) => h('tr', { class: rec.binding && rec.binding.key === cap.key ? 'total' : '' }, [
+        h('td.label', { title: cap.detail, text: cap.label }),
+        h('td.calc.num', { text: K.money(cap.value) }),
+        // เพดานที่สูงกว่าฐานมาก ๆ ไม่ต้องโชว์เปอร์เซ็นต์ให้รก แค่บอกว่าไม่ใช่ตัวบีบ
+        h('td.calc.num', { text: cap.pctOfBase !== null && cap.pctOfBase <= 2 ? pctText(cap.pctOfBase) : '–' }),
+      ]));
+      const details = h('div', { hidden: true }, [
+        K.table([h('tr', null, [h('th.label', { text: 'เพดานที่ใช้บีบ' }), h('th', { text: 'บาท' }), h('th', { text: '% ของฐาน' })])], capRows),
+        h('p.hint', null, [
+          'ที่ระดับแนะนำ: ภาษีที่บริษัทออกให้ ', K.out(() => K.money((K.state.computed.recommendation || {}).grossUpAtSuggested)),
+          ' บาท · บันทึกเป็นรายจ่ายรวม ', K.out(() => K.money((K.state.computed.recommendation || {}).bookedAtSuggested)), ' บาท',
+        ]),
+        h('p.hint', { text: 'ฐานคิดเบี้ยใช้ค่าที่ต่ำกว่าระหว่างปีล่าสุด (' + K.money(rec.sgaLatest) + ') กับค่าเฉลี่ย 3 ปี (' + K.money(rec.sgaAvg) + ')' }),
+        h('p.hint', { text: 'ช่วงที่แนะนำมาจากเคสจริง ไม่ใช่อัตราที่กำหนดไว้ในประมวลรัษฎากร — กฎหมายกำหนดเพียงว่ารายจ่ายต้องเป็นไปเพื่อกิจการโดยเฉพาะ (ม.65 ตรี (13)) และต้องจ่ายให้กรรมการทุกคนเป็นการทั่วไปตามระเบียบสวัสดิการ (กค 0811/408)' }),
+      ]);
+      const toggle = h('button.btn', {
+        text: 'ดูเพดานทั้งหมด ▾',
+        onclick: () => {
+          details.hidden = !details.hidden;
+          toggle.textContent = details.hidden ? 'ดูเพดานทั้งหมด ▾' : 'ซ่อนรายละเอียด ▴';
+        },
+      });
+
+      main.appendChild(K.card('เบี้ยประกันที่แนะนำ', null, [
+        // เพดานเหลือศูนย์ = ยังไม่ควรเสนอ บอกตรง ๆ แทนที่จะโชว์ 0.00
+        rec.notViable ? K.callout('warn',
+          'ยังไม่แนะนำให้เสนอคีย์แมนกับเคสนี้ — ' + (rec.binding ? '"' + rec.binding.label + '"' : 'เกณฑ์ภายใน') +
+          ' ไม่เหลือช่องให้เบี้ยเลย ควรรอให้ผลประกอบการดีขึ้นก่อน หรือเสนอด้วยเหตุผลด้านสวัสดิการล้วน ๆ') : null,
+        // ตัวเลขเดียวที่ต้องอ่าน
+        rec.notViable ? null : h('div.hero', null, [
+          h('b', { text: K.money(rec.suggested) + ' บาท' }),
+          h('span', { text: 'ต่อปี · เฉลี่ยคนละ ' + K.money(rec.perDirector) + ' บาท · ' + pctText(rec.suggestedPct) + ' ของฐาน' }),
+          h('button.btn.primary', { text: 'ใช้ตัวเลขนี้', onclick: () => usePremium(rec.suggested) }),
+        ]),
+        // เลือกระดับอื่นได้ด้วยปุ่มเดียว
+        rec.notViable ? null : h('div.chips', null, (rec.levels || []).map((lv) => h('button', {
+          class: 'chip' + (lv.overCap ? ' off' : '') + (!lv.overCap && Math.abs(lv.amount - rec.suggested) < 0.5 ? ' on' : ''),
+          disabled: lv.overCap,
+          title: lv.overCap ? 'เกินเพดานของเคสนี้' : 'กดเพื่อใช้ตัวเลขนี้',
+          onclick: () => usePremium(lv.amount),
+        }, [
+          h('span.k', { text: lv.label }),
+          h('span.v', { text: K.money(lv.amount) }),
+          h('span.p', { text: (lv.pct * 100).toFixed(0) + '%' }),
+        ]))),
+        // เพดานและฐาน อย่างละบรรทัด
+        h('p.note', null, [
+          'เพดานของเคสนี้ ', h('strong', { text: K.money(rec.cap) + ' บาท' }),
+          rec.binding ? h('span', { text: ' · ตัวบีบ: ' + rec.binding.label }) : null,
+        ]),
+        h('p.hint', { text: 'ฐานคิดเบี้ย: ค่าใช้จ่ายในการขายและบริการ ' + K.money(rec.base) + ' บาท' }),
+        h('div.btnrow', null, [toggle]),
+        details,
       ]));
     }
-    (rec.levels || []).forEach((lv) => recRows.push(h('tr', { class: lv.key === 'mid' ? 'total' : '' }, [
-      K.labelCell(lv.label + ' — ' + (lv.pct * 100).toFixed(0) + '% ของฐาน'),
-      h('td.calc.num', { text: K.money(lv.amount) }),
-      h('td.calc.num', { text: K.money(k.directors.length ? lv.amount / k.directors.length : null) }),
-      h('td', null, [
-        lv.overCap
-          ? h('span.badge', { text: 'เกินเพดานของเคสนี้' })
-          : h('button.btn', { text: 'ใช้ตัวเลขนี้', onclick: () => usePremium(lv.amount) }),
-      ]),
-    ])));
-
-    main.appendChild(K.card('เบี้ยประกันที่แนะนำ', 'ฐานคิด: ค่าใช้จ่ายในการขายและบริการ', rec.available === false
-      ? [h('p.note', { text: rec.reason || 'ยังคำนวณไม่ได้' })]
-      : [
-        K.stats([
-          { label: 'ฐานคิดเบี้ย', value: () => K.money(rec.base) + ' บาท',
-            note: () => 'ปีล่าสุด ' + K.money(rec.sgaLatest) + ' · เฉลี่ย 3 ปี ' + K.money(rec.sgaAvg) },
-          { label: 'เบี้ยที่แนะนำ', tone: 'accent', value: () => K.money(rec.suggested) + ' บาท',
-            note: () => (rec.suggestedPct === null ? '' : (rec.suggestedPct * 100).toFixed(1) + '% ของฐาน') },
-          { label: 'เพดานของเคสนี้', value: () => (rec.cap === null ? '–' : K.money(rec.cap) + ' บาท'),
-            note: () => (rec.binding ? 'ตัวที่บีบ: ' + rec.binding.label : '') },
-          { label: 'เบี้ยเฉลี่ยคนละ', value: () => K.money(rec.perDirector) + ' บาท',
-            note: () => 'กรรมการ ' + k.directors.length + ' ท่าน' },
-        ]),
-        K.callout('warn', () => {
-          const r = (K.state.computed || {}).recommendation;
-          if (!r || !r.available || r.cap === null) return '';
-          if (r.capBelowBand) {
-            return 'เพดานของเคสนี้ (' + K.money(r.cap) + ' บาท = ' + (r.capPct * 100).toFixed(1) + '% ของฐาน) ต่ำกว่าช่วงที่แนะนำ ' +
-              '— ตัวที่บีบคือ "' + (r.binding ? r.binding.label : '') + '" ถ้าจะเสนอสูงกว่านี้ต้องเตรียมเหตุผลและเอกสารรองรับเป็นพิเศษ';
-          }
-          if (r.levels.some((lv) => lv.overCap)) {
-            return 'ระดับที่เกินเพดานของเคสนี้ถูกปิดปุ่มไว้ — เพดานอยู่ที่ ' + K.money(r.cap) + ' บาท (' +
-              (r.capPct * 100).toFixed(1) + '% ของฐาน) ตัวที่บีบคือ "' + (r.binding ? r.binding.label : '') + '"';
-          }
-          return '';
-        }),
-        K.table([h('tr', null, [
-          h('th.label', { text: 'ระดับ' }), h('th', { text: 'เบี้ยรวมทั้งปี' }),
-          h('th', { text: 'เฉลี่ยคนละ' }), h('th', { text: '' }),
-        ])], recRows),
-        h('h3.sub', { text: 'เพดานที่ใช้บีบตัวเลข (แสดงเป็นสัดส่วนของฐานเดียวกัน)' }),
-        K.table([h('tr', null, [
-          h('th.label', { text: 'เกณฑ์' }), h('th', { text: 'เพดาน (บาท)' }), h('th', { text: '% ของฐาน' }),
-        ])], (rec.caps || []).map((cap) => h('tr', { class: rec.binding && rec.binding.key === cap.key ? 'total' : '' }, [
-          h('td.label', null, [h('span', { text: cap.label }),
-            h('span.hint', { text: cap.detail, style: 'display:block;margin-top:2px' })]),
-          h('td.calc.num', { text: K.money(cap.value) }),
-          h('td.calc.num', { text: cap.pctOfBase === null ? '–' : (cap.pctOfBase * 100).toFixed(1) + '%' }),
-        ]))),
-        h('p.note', null, [
-          'ที่ระดับแนะนำ: ภาษีที่บริษัทออกให้ ',
-          K.out(() => K.money((K.state.computed.recommendation || {}).grossUpAtSuggested)),
-          ' บาท · ยอดบันทึกเป็นรายจ่ายรวม ',
-          K.out(() => K.money((K.state.computed.recommendation || {}).bookedAtSuggested)),
-          ' บาท',
-        ]),
-        h('p.hint', { text: rec.disclaimer }),
-      ]));
 
     // ── ค่าใช้จ่ายต้องห้าม (แถว 25–33) ──────────────────────────────────
     const fRows = (label, pick, ref) => h('tr', null, [K.labelCell(label, ref)].concat(IDX.map((i) =>
