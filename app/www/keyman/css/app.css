@@ -538,3 +538,7 @@ details.fold .foldbody ul { margin: 0; padding-left: 18px; font-size: 12.5px; co
 details.fold .foldbody li { margin: 6px 0; }
 /* ตารางเปรียบเทียบ 3 คอลัมน์ ถ้าปล่อยยืดเต็มจอพีซีจะมีช่องว่างกลางตารางกว้างเกินไป */
 details.fold .tablewrap { max-width: 820px; }
+/* ช่องกรอกในบล็อกที่ 4 ของหน้าสรุป — ให้ตัวเลขใหญ่เท่าบล็อกอื่น */
+.pane .pin { display: flex; align-items: baseline; gap: 8px; margin: 7px 0 9px; }
+.pane .pin input.cell { font-size: 22px; font-weight: 700; padding: 4px 10px; }
+.pane .pin .baht { font-size: 13px; color: var(--muted); flex: 0 0 auto; }

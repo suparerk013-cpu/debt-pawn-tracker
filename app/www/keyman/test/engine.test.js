@@ -172,6 +172,30 @@ near(chain.after.ownerCash, 3440000, 0.01, 'สรุป · เงินเข�
 near(chain.before.dividendTax, 160000, 0.01, 'สรุป · ปันผล 10% ของ (เงินก้อน − ภาษีนิติ) ไม่ใช่ยอดเต็ม 200,000');
 near(chain.before.ownerCash, 2695000, 0.01, 'สรุป · เงินเข้าเจ้าของฝั่ง Before หักภาษีนิติออกด้วย');
 
+// กรรมการหลายท่านที่เงินเดือนแต่ละคนยังไม่ถึงเกณฑ์ → ภาษีบุคคลรวมเป็นศูนย์
+// สองฝั่งของบล็อก 2 จะเท่ากันโดยไม่ใช่บั๊ก หน้าจอต้องอธิบายเหตุผลให้ ไม่ใช่ปล่อยเลขซ้ำเฉย ๆ
+const under = E.computeCase({
+  taxYear: Y, company: { paidUpCapital: 5000000 },
+  directors: [300000, 300000, 300000, 300000, 300000].map((salary, i) =>
+    ({ id: 'd' + i, salary, premiumAllocated: 240000, allowances: { personal: 60000 }, donations: {} })),
+  policy: { premiumTotal: 1200000, taxMethod: 'perpetual', allocationMode: 'auto' },
+  financials: { years: ['', '', '2567'], revenues: ['', '', 20000000], profitsBeforeTax: ['', '', 5000000] },
+  balance: {}, docs: {},
+});
+near(under.salaryTotal, 1500000, 0.01, 'ต่ำกว่าเกณฑ์ · เงินเดือนรวมห้าท่าน');
+near(under.salaryOnlyPitTotal, 0, 0.01, 'ต่ำกว่าเกณฑ์ · ภาษีเงินเดือนอย่างเดียวเป็นศูนย์');
+near(under.comparison.directorNetDiff, 0, 0.01, 'ต่ำกว่าเกณฑ์ · บล็อก 2 สองฝั่งเท่ากันเพราะไม่มีภาษีให้หัก');
+// ท่านเดียวเงินเดือนก้อนเดียวกัน ภาษีไม่เป็นศูนย์ — พิสูจน์ว่าการหักยังทำงาน
+const oneDir = E.computeCase({
+  taxYear: Y, company: { paidUpCapital: 5000000 },
+  directors: [{ id: 'd0', salary: 1500000, premiumAllocated: 1200000, allowances: { personal: 60000 }, donations: {} }],
+  policy: { premiumTotal: 1200000, taxMethod: 'perpetual', allocationMode: 'auto' },
+  financials: { years: ['', '', '2567'], revenues: ['', '', 20000000], profitsBeforeTax: ['', '', 5000000] },
+  balance: {}, docs: {},
+});
+near(oneDir.salaryOnlyPitTotal, 200000, 0.01, 'ท่านเดียว · ภาษีเงินเดือนอย่างเดียว 200,000');
+near(oneDir.comparison.before.directorNet, 1300000, 0.01, 'ท่านเดียว · ฝั่งปันผลถูกหักภาษีออกจริง');
+
 const sjCmp = E.compareScenarios({
   premiumTotal: 1000000, allTierTaxTotal: 87083.3333333 * 3, salaryTotal: 1800000,
   salaryOnlyPitTotal: 21500 * 3, profitBeforeTax: 2835268.30, isSme: false,

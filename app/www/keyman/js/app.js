@@ -40,6 +40,8 @@
         premiumTotal: null, insurer: '', productName: '', premiumYears: null,
         beneficiary: '', taxMethod: 'perpetual', welfareWording: '', welfareText: '',
         lumpSum: null,
+        // บล็อก "ขอคืนภาษีบุคคลธรรมดา" ของชีตสรุป — ในไฟล์เดิมเป็นช่องว่างให้กรอกเอง
+        refundAfter: null, refundBefore: null,
         // 'auto' = เฉลี่ยเท่ากันทุกท่านตามสูตร C22 ของ Excel · 'manual' = กรอกรายคนเอง
         allocationMode: 'auto',
       },
