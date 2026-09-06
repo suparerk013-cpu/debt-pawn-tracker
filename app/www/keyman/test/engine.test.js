@@ -143,6 +143,35 @@ near(kn.salaryTotal, 1440000, 0.01, 'โนวเลดเจอร์ · เง
 eq(kn.after.dividendTax, 0, 'ฝั่ง After ไม่มีภาษีเงินปันผล');
 eq(kn.before.totalExpense, 0, 'ฝั่ง Before ไม่มีค่าใช้จ่ายที่บันทึกได้');
 
+// ── ชีต "ช่วยคำนวณภาษีเงินได้บุคคลธรรมดา" ต่อเข้าชีต "สรุปผลต่าง" โดยตรง ──────
+// ล็อกทั้งสายไว้ ไม่ใช่ต่างคนต่างเทสต์แล้วเสียบเลขกลางทางเอง
+section('สายเชื่อมจากชีตภาษีบุคคลเข้าชีตสรุป');
+const chainG = E.grossUpTax({ salary: 1440000, keymanPremium: 2000000, allowances: { personal: 60000 } }, Y);
+near(chainG.columnE.netIncome, 1280000, 0.01, 'คอลัมน์ 1 · เงินได้สุทธิ (1,440,000 − 100,000 − 60,000)');
+near(chainG.columnE.tax, 185000, 0.01, 'คอลัมน์ 1 · ภาษีเงินเดือนอย่างเดียว');
+near(chainG.trace[0].netIncome, 3280000, 0.01, 'คอลัมน์ 2 · เงินได้สุทธิเมื่อรวมเบี้ยแต่ยังไม่ออกภาษีให้');
+near(chainG.trace[0].tax, 749000, 0.01, 'คอลัมน์ 2 · ภาษีก่อนบริษัทออกให้');
+near(chainG.trace[chainG.trace.length - 1].netIncome, 4350000, 0.01, 'คอลัมน์ 3 · เงินได้สุทธิเมื่อออกภาษีให้ทุกทอด');
+near(chainG.tax, 1070000, 0.02, 'คอลัมน์ 3 · ภาษีทุกทอด');
+eq(chainG.converged, true, 'ภาษีทุกทอดลู่เข้าแล้ว ไม่ได้ตัดจบเพราะชนเพดานรอบ');
+// ป้อนผลจากชีตภาษีบุคคลเข้าชีตสรุปตรง ๆ ห้ามใส่เลขมือ
+const chain = E.compareScenarios({
+  premiumTotal: 2000000, allTierTaxTotal: chainG.tax, salaryTotal: 1440000,
+  salaryOnlyPitTotal: chainG.columnE.tax, profitBeforeTax: 9673985.31, isSme: true,
+}, Y);
+near(chain.after.allTierTax, 1070000, 0.02, 'สรุป · ภาษีทุกทอดมาจากชีตภาษีบุคคล');
+near(chain.after.totalExpense, 3070000, 0.02, 'สรุป · ค่าใช้จ่ายรวม');
+near(chain.after.citSaving, 614000, 0.02, 'สรุป · ประหยัดภาษีนิติ');
+near(chain.after.netTax, 456000, 0.02, 'สรุป · เสียภาษีรวมฝั่ง After');
+near(chain.before.personalTax, 185000, 0.01, 'สรุป · ภาษีบุคคลฝั่ง Before มาจากคอลัมน์ 1');
+near(chain.after.directorNet, 1440000, 0.01, 'สรุป · กรรมการรับจริงฝั่ง After');
+near(chain.before.directorNet, 1255000, 0.01, 'สรุป · กรรมการรับจริงฝั่ง Before');
+near(chain.after.ownerCash, 3440000, 0.01, 'สรุป · เงินเข้าเจ้าของฝั่ง After');
+// สองช่องนี้แอปคิดต่างจากไฟล์เดิมโดยตั้งใจ — ไฟล์เดิมคิดปันผล 10% จากยอดเต็ม
+// และแจกเงินให้เจ้าของโดยไม่หักภาษีนิติที่ตัวเองนับเป็นภาษีไปแล้ว
+near(chain.before.dividendTax, 160000, 0.01, 'สรุป · ปันผล 10% ของ (เงินก้อน − ภาษีนิติ) ไม่ใช่ยอดเต็ม 200,000');
+near(chain.before.ownerCash, 2695000, 0.01, 'สรุป · เงินเข้าเจ้าของฝั่ง Before หักภาษีนิติออกด้วย');
+
 const sjCmp = E.compareScenarios({
   premiumTotal: 1000000, allTierTaxTotal: 87083.3333333 * 3, salaryTotal: 1800000,
   salaryOnlyPitTotal: 21500 * 3, profitBeforeTax: 2835268.30, isSme: false,
