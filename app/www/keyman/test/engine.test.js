@@ -78,6 +78,16 @@ const bigRevenue = E.determineSme({ paidUpCapital: 5000000, revenueLatest: 54244
 eq(bigRevenue.isSme, false, 'รายได้ 54 ล้าน → ไม่เข้าเกณฑ์');
 eq(bigRevenue.capitalOk, true, 'รายได้ 54 ล้าน → ทุนยังไม่เกิน');
 
+// "ยังตัดสินไม่ได้" ต้องต่างจาก "ตัดสินแล้วว่าไม่เข้าเกณฑ์"
+const smePending = E.determineSme({ paidUpCapital: 375000, revenueLatest: null }, Y);
+eq(smePending.pending, true, 'มีทุนแต่ยังไม่มีรายได้ → ยังตัดสินไม่ได้');
+eq(smePending.isSme, false, 'ยังตัดสินไม่ได้ → ยังไม่ถือว่าเข้าเกณฑ์');
+eq(smePending.capitalOk, true, 'ทุน 375,000 ผ่านเกณฑ์ทุน');
+eq(E.determineSme({ paidUpCapital: 70000000, revenueLatest: null }, Y).pending, false, 'ทุนเกินแล้ว → ตัดสินได้เลยว่าไม่เข้า ไม่ต้องรอรายได้');
+eq(E.determineSme({ paidUpCapital: 1000000, revenueLatest: 16049353.24 }, Y).pending, false, 'ข้อมูลครบ → ไม่ pending');
+const chkPending = E.runChecks(Object.assign(baseCase(), { financials: { years: [], revenues: [], profitsBeforeTax: [], taxPaid: [] } }), {});
+eq(chkPending.items.some((i) => i.code === 'CHK-01' && i.title.indexOf('ยังตัดสิน') === 0), true, 'CHK-01 บอกว่ายังตัดสินไม่ได้ ไม่ใช่บอกว่าไม่เข้าเกณฑ์');
+
 section('ภาษีเงินได้นิติบุคคล');
 near(E.citTax(3000000, true, Y), 405000, 0.0001, 'SME กำไร 3 ล้าน = 405,000');
 near(E.citTax(300000, true, Y), 0, 0.0001, 'SME กำไร 300,000 = ยกเว้น');

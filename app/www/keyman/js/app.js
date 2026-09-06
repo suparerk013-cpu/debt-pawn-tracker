@@ -29,9 +29,9 @@
       updatedAt: now,
       taxYear: K.currentThaiYear(),
       company: {
-        name: name || '', regNo: '', entityType: '', status: '', registeredDate: '',
+        name: name || '', regNo: '', oldRegNo: '', entityType: '', status: '', registeredDate: '',
         paidUpCapital: null, address: '', businessGroup: '', sizeLabel: '', fiscalYearsFiled: '',
-        consultIssues: '',
+        website: '', businessType: '', objective: '', signingAuthority: '', consultIssues: '',
       },
       directors: [K.newDirector(1)],
       policy: {

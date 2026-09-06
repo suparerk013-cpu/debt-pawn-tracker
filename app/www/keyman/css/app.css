@@ -185,9 +185,9 @@ section.card > h2 {
 }
 section.card > h2 .sheet { font-size: 11.5px; font-weight: 400; color: var(--muted); }
 h3.sub { font-size: 13.5px; margin: 14px 0 6px; color: var(--text); }
-p.note { font-size: 12.5px; color: var(--text-2); margin: 6px 0; }
+p.note { font-size: 12.5px; color: var(--text-2); margin: 6px 0; overflow-wrap: anywhere; }
 p.note.strong { color: var(--text); font-weight: 500; }
-.hint, p.hint { font-size: 12px; color: var(--muted); margin: 6px 0; }
+.hint, p.hint { font-size: 12px; color: var(--muted); margin: 6px 0; overflow-wrap: anywhere; }
 
 /* ── แถบตัวเลขสำคัญ (KPI) ───────────────────────────────────────────────── */
 .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 2px 0 10px; }

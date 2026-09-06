@@ -117,14 +117,17 @@
     const capitalOk = cap !== null && cap <= t.smePaidUpCapitalMax;
     const revenueOk = rev !== null && rev <= t.smeRevenueMax;
     const isSme = capitalOk && revenueOk;
+    // ยังตัดสินไม่ได้ ≠ ไม่เข้าเกณฑ์ — ข้อมูลยังไม่ครบต้องบอกให้ต่างจากตัดสินแล้วว่าไม่เข้า
+    const pending = (cap === null && rev === null) || (cap === null && revenueOk) || (rev === null && capitalOk);
     const reasons = [];
     if (cap === null) reasons.push('ยังไม่ได้กรอกทุนจดทะเบียนที่ชำระแล้ว');
     else if (!capitalOk) reasons.push(`ทุนชำระแล้ว ${fmt(cap)} บาท เกิน ${fmt(t.smePaidUpCapitalMax)} บาท`);
-    if (rev === null) reasons.push('ยังไม่มีตัวเลขรายได้รวมปีล่าสุด');
+    if (rev === null) reasons.push('ยังไม่มีตัวเลขรายได้รวมปีล่าสุด (นำเข้างบกำไรขาดทุนที่แท็บ 2 ก่อน)');
     else if (!revenueOk) reasons.push(`รายได้รวมปีล่าสุด ${fmt(rev)} บาท เกิน ${fmt(t.smeRevenueMax)} บาท`);
     if (isSme) reasons.push(`ทุนชำระแล้ว ${fmt(cap)} ≤ ${fmt(t.smePaidUpCapitalMax)} และรายได้ ${fmt(rev)} ≤ ${fmt(t.smeRevenueMax)} ครบทั้งสองข้อ`);
     return {
       isSme,
+      pending,
       capitalOk,
       revenueOk,
       paidUpCapital: cap,
@@ -449,7 +452,10 @@
     const premiumTotal = n0(policy.premiumTotal);
 
     // CHK-01 — รายงานผลตัดสิน SME
-    add('CHK-01', 'info', sme.isSme ? 'เข้าเกณฑ์ SME (ใช้อัตรา 15%/20% แบบขั้นบันได)' : 'ไม่เข้าเกณฑ์ SME (ใช้อัตรา 20% ตลอด)', sme.reason);
+    add('CHK-01', 'info',
+      sme.pending ? 'ยังตัดสินสถานะ SME ไม่ได้ — ข้อมูลไม่ครบ'
+        : sme.isSme ? 'เข้าเกณฑ์ SME (ใช้อัตรา 15%/20% แบบขั้นบันได)' : 'ไม่เข้าเกณฑ์ SME (ใช้อัตรา 20% ตลอด)',
+      sme.reason);
 
     // CHK-02 — เบี้ยรวมเกิน 5% ของรายได้เฉลี่ย 3 ปี = บล็อก
     if (ceiling.ceiling5pctAvgRevenue === null) {

@@ -14,14 +14,14 @@
   function render(main) {
     const k = K.state.kase;
 
-    // อัปโหลดไฟล์ Excel จาก DBD ได้จากแท็บนี้เลย (การ์ดเดียวกับที่อยู่ในแท็บ 2 และ 3)
-    main.appendChild(K.dbdImportCard());
-
     // ── วางข้อมูลจากหน้าเว็บ DBD ─────────────────────────────────────────
     const pasteBox = h('textarea.cell', { rows: 5, placeholder: 'วางข้อความจากหน้า DBD DataWarehouse+ หรือจากไฟล์ Company_Profile.pdf ที่นี่ แล้วกด "แกะข้อมูล"' });
     main.appendChild(K.card('วางข้อมูลนิติบุคคลจาก DBD', 'DBD DataWarehouse+', [
-      h('p.note', { text: 'copy ทั้งบล็อกข้อมูลนิติบุคคลจากหน้าเว็บ DBD หรือเปิด Company_Profile.pdf แล้วลากคลุมข้อความมาวางก็ได้ ' +
-        'ระบบแกะจาก label ที่ลงท้ายด้วย ":" ให้เอง รองรับทั้งแบบที่ค่าอยู่บรรทัดเดียวกับ label และแบบ PDF ที่ค่าอยู่คนละบรรทัด' }),
+      h('p.note', { text: 'ลากคลุมบล็อก "ข้อมูลนิติบุคคล" ทั้งก้อนจากหน้าเว็บ DBD แล้ววางตรงนี้ กด "แกะข้อมูล" ระบบจะแยกลงช่องให้เอง ' +
+        'พร้อมตัดสินสถานะ SME และดึงรายชื่อกรรมการออกมาให้ — รองรับทั้งข้อความจากหน้าเว็บ (label อยู่คนละบรรทัดกับค่า), ' +
+        'แบบที่มี ":" คั่น และข้อความจาก Company_Profile.pdf' }),
+      h('p.hint', { text: 'วางลิงก์หน้า DBD ต่อท้ายมาด้วยก็ได้ ระบบจะดึงเลขทะเบียนนิติบุคคล 13 หลักจากลิงก์ให้ — ' +
+        'แต่ดึงข้อมูลจากลิงก์เองไม่ได้ เพราะเบราว์เซอร์บล็อกการอ่านข้ามโดเมน (CORS) และหน้านั้นต้องล็อกอินก่อน' }),
       pasteBox,
       h('div.btnrow', null, [
         h('button.btn.primary', { text: 'แกะข้อมูล', onclick: () => parsePaste(pasteBox.value) }),
@@ -29,8 +29,25 @@
       ]),
     ]));
 
+    // อัปโหลดไฟล์ Excel งบการเงินจาก DBD ได้จากแท็บนี้เลย (การ์ดเดียวกับที่อยู่ในแท็บ 2 และ 3)
+    main.appendChild(K.dbdImportCard());
+
     // ── ข้อมูลบริษัท ─────────────────────────────────────────────────────
     main.appendChild(K.card('ข้อมูลบริษัท', 'ชีต ข้อมูลบริษัท', [
+      K.stats([
+        { label: 'สถานะทางภาษี (ระบบตัดสินเอง)', tone: 'accent',
+          value: (c) => (!c ? '–' : c.sme.pending ? 'ยังตัดสินไม่ได้' : c.sme.isSme ? 'เข้าเกณฑ์ SME' : 'ไม่เข้าเกณฑ์ SME'),
+          note: (c) => (!c ? '' : c.sme.pending ? 'ข้อมูลยังไม่ครบ' : c.sme.isSme ? 'ยกเว้น 300,000 · 15% · 20%' : 'อัตรา 20% ตลอด') },
+        { label: 'ทุนจดทะเบียนที่ชำระแล้ว', value: (c, kk) => K.money(kk.company.paidUpCapital) + ' บาท', note: 'เกณฑ์ SME ไม่เกิน 5,000,000' },
+        { label: 'รายได้รวมปีล่าสุด', value: (c) => (c && c.sme.revenueLatest !== null ? K.money(c.sme.revenueLatest) + ' บาท' : 'ยังไม่มีข้อมูล'),
+          note: 'เกณฑ์ SME ไม่เกิน 30,000,000' },
+        { label: 'ขนาดธุรกิจตาม DBD', value: (c, kk) => (kk.company.sizeLabel || '–'), note: 'คนละเกณฑ์กับ SME ทางภาษี' },
+      ]),
+      K.callout('warn', (c) => (c && c.sme.pending
+        ? 'ยังตัดสินสถานะ SME ไม่ได้ — ' + c.sme.reason + ' (สถานะนี้มีผลกับอัตราภาษีนิติบุคคลทั้งหน้าสรุป)'
+        : '')),
+      h('p.hint', { text: 'ขนาดธุรกิจ S/M/L ของ DBD ดูจากรายได้และการจ้างงานตามนิยาม สสว. ส่วน "SME" ที่ใช้คิดภาษีนิติบุคคลดูสองข้อคือ ' +
+        'ทุนชำระแล้วไม่เกิน 5 ล้าน และรายได้ไม่เกิน 30 ล้าน — คนละเกณฑ์กัน ระบบจึงตัดสินเองจากตัวเลขจริง ไม่ได้ใช้ค่าจาก DBD' }),
       h('div.grid2', null, [
         field('ชื่อนิติบุคคล', K.input('company.name', { kind: 'text' }), 'B1'),
         field('เลขทะเบียนนิติบุคคล (13 หลัก)', K.input('company.regNo', { kind: 'text' }), 'B5'),
@@ -39,16 +56,18 @@
         field('ทุนจดทะเบียนที่ชำระแล้ว (บาท)', K.input('company.paidUpCapital'), 'B4', 'ตัวเลขนี้เป็นตัวตัดสินสถานะ SME — ระบบตัดสินเอง ผู้ใช้เลือกเทมเพลตเองไม่ได้'),
         field('ประเภทนิติบุคคล', K.input('company.entityType', { kind: 'text' })),
         field('กลุ่มธุรกิจ / หมวดธุรกิจ', K.input('company.businessGroup', { kind: 'text' }), 'B6'),
-        field('ขนาดธุรกิจ', K.input('company.sizeLabel', { kind: 'text' }), 'B7'),
+        field('ขนาดธุรกิจตาม DBD (S/M/L)', K.input('company.sizeLabel', { kind: 'text' }), 'B7'),
+        field('เลขทะเบียนเดิม', K.input('company.oldRegNo', { kind: 'text' })),
+        field('ปีที่ส่งงบการเงิน', K.input('company.fiscalYearsFiled', { kind: 'text' })),
+        field('ประเภทธุรกิจ', K.input('company.businessType', { kind: 'text' })),
+        field('Website', K.input('company.website', { kind: 'text' })),
       ]),
       field('ที่ตั้งสำนักงานแห่งใหญ่', K.input('company.address', { kind: 'text' }), 'B8'),
+      field('วัตถุประสงค์', K.input('company.objective', { kind: 'text' })),
+      field('กรรมการลงชื่อผูกพัน', K.input('company.signingAuthority', { kind: 'text' }), null,
+        'ใช้เติมในร่างมติที่ประชุมให้อัตโนมัติ (แท็บ 9)'),
       field('ประเด็นปรึกษา', K.textarea('company.consultIssues', { rows: 3, placeholder: '1. …' }), 'B14–B17'),
-      h('p.note.strong', null, [
-        'ผลตัดสินสถานะ SME: ',
-        K.out((c) => (c ? (c.sme.isSme ? 'เข้าเกณฑ์ SME' : 'ไม่เข้าเกณฑ์ SME') : '–')),
-        ' — ',
-        K.out((c) => (c ? c.sme.reason : '')),
-      ]),
+      h('p.note', null, ['เหตุผลของผลตัดสิน: ', K.out((c) => (c ? c.sme.reason : ''))]),
       K.legend(),
     ]));
 
@@ -160,9 +179,11 @@
     const k = K.state.kase;
     const rows = [];
     const labels = {
-      name: 'ชื่อนิติบุคคล', regNo: 'เลขทะเบียนนิติบุคคล', entityType: 'ประเภทนิติบุคคล',
+      name: 'ชื่อนิติบุคคล', regNo: 'เลขทะเบียนนิติบุคคล', oldRegNo: 'เลขทะเบียนเดิม', entityType: 'ประเภทนิติบุคคล',
       registeredDate: 'วันที่จดทะเบียนจัดตั้ง', status: 'สถานะนิติบุคคล', paidUpCapital: 'ทุนจดทะเบียน',
-      address: 'ที่ตั้ง', businessGroup: 'หมวดธุรกิจ', fiscalYearsFiled: 'ปีที่ส่งงบการเงิน',
+      address: 'ที่ตั้ง', businessGroup: 'กลุ่มธุรกิจ', sizeLabel: 'ขนาดธุรกิจตาม DBD',
+      fiscalYearsFiled: 'ปีที่ส่งงบการเงิน', website: 'Website', businessType: 'ประเภทธุรกิจ',
+      objective: 'วัตถุประสงค์', signingAuthority: 'กรรมการลงชื่อผูกพัน',
     };
     Object.keys(out.fields).forEach((key) => {
       const oldV = k.company[key];
@@ -181,8 +202,15 @@
     }
     if (!rows.length) { K.alert('แกะข้อมูลไม่ได้', 'ไม่พบ label ที่รู้จักในข้อความนี้ — ต้องมีบรรทัดแบบ "เลขทะเบียนนิติบุคคล : 0105557181201"'); return; }
 
+    // บอกผลตัดสิน SME ให้เห็นตั้งแต่ในหน้ายืนยัน จะได้รู้ทันทีว่าต้องไปเอางบมาเพิ่มไหม
+    const cap = E.num(out.fields.paidUpCapital);
+    const rev = E.lastValue(k.financials.revenues);
+    const verdict = E.determineSme({ paidUpCapital: cap === null ? k.company.paidUpCapital : cap, revenueLatest: rev }, k.taxYear);
     K.dialog('ยืนยันก่อนเขียนทับข้อมูลบริษัท', [
       h('p.note', { text: 'ตรวจดูก่อนว่าค่าใหม่จะไปลงช่องไหน (ค่าเดิมขีดฆ่า / ค่าใหม่สีเขียว)' }),
+      K.callout(verdict.pending ? 'warn' : verdict.isSme ? 'ok' : 'warn',
+        (verdict.pending ? 'ยังตัดสินสถานะ SME ไม่ได้' : verdict.isSme ? 'ผลตัดสิน: เข้าเกณฑ์ SME' : 'ผลตัดสิน: ไม่เข้าเกณฑ์ SME')
+        + ' — ' + verdict.reason),
       K.table([h('tr', null, [h('th.label', { text: 'ช่อง' }), h('th', { text: 'ค่าเดิม' }), h('th', { text: 'ค่าใหม่' })])], rows),
     ], [
       { label: 'ยกเลิก', onclick: (d) => d.close() },

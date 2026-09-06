@@ -135,62 +135,120 @@
   }
 
   // ── แกะข้อความหน้าข้อมูลนิติบุคคลจาก DBD (ผู้ใช้ copy มาวาง) ─────────────
+  // รองรับสามแบบที่เจอจริง:
+  //   1) copy จากหน้าเว็บ DBD แบบใหม่ — label อยู่บรรทัดหนึ่ง ค่าอยู่บรรทัดถัดไป ไม่มี ":"
+  //   2) copy แบบที่มี ":" คั่นในบรรทัดเดียวกัน  เช่น "ทุนจดทะเบียน (บาท) : 5,000,000.00"
+  //   3) copy จาก Company_Profile.pdf — label กองอยู่ก่อนหลายบรรทัดแล้วค่าตามมาทีหลัง
   const LABELS = [
-    { key: 'regNo', label: 'เลขทะเบียนนิติบุคคล' },
-    { key: 'entityType', label: 'ประเภทนิติบุคคล' },
-    { key: 'registeredDate', label: 'วันที่จดทะเบียนจัดตั้ง' },
-    { key: 'status', label: 'สถานะนิติบุคคล' },
-    { key: 'paidUpCapital', label: 'ทุนจดทะเบียน', numeric: true },
-    { key: 'address', label: 'ที่ตั้ง' },
-    { key: 'businessGroup', label: 'หมวดธุรกิจ' },
-    { key: 'fiscalYearsFiled', label: 'ปีที่ส่งงบการเงิน' },
+    { key: 'name', names: ['ชื่อนิติบุคคล'] },
+    { key: 'regNo', names: ['เลขทะเบียนนิติบุคคล'] },
+    { key: 'oldRegNo', names: ['เลขทะเบียนเดิม'] },
+    { key: 'entityType', names: ['ประเภทนิติบุคคล'] },
+    { key: 'status', names: ['สถานะนิติบุคคล'] },
+    { key: 'registeredDate', names: ['วันที่จดทะเบียนจัดตั้ง'] },
+    { key: 'paidUpCapital', names: ['ทุนจดทะเบียน'], numeric: true },
+    { key: 'businessGroup', names: ['กลุ่มธุรกิจ', 'หมวดธุรกิจ'] },
+    { key: 'sizeLabel', names: ['ขนาดธุรกิจ'] },
+    { key: 'address', names: ['ที่ตั้งสำนักงานแห่งใหญ่', 'ที่ตั้ง'] },
+    { key: 'website', names: ['Website', 'เว็บไซต์'] },
+    { key: 'fiscalYearsFiled', names: ['ปีที่ส่งงบการเงิน'] },
+    { key: 'signingAuthority', names: ['กรรมการลงชื่อผูกพัน', 'คณะกรรมการลงชื่อผูกพัน'] },
+    { key: 'businessType', names: ['ประเภทธุรกิจ'] },
+    { key: 'objective', names: ['วัตถุประสงค์'] },
   ];
+  // ป้ายที่บอกว่าบรรทัดถัด ๆ ไปคือรายชื่อกรรมการ (ต้องเทียบแบบตรงตัว ไม่งั้นจะไปชนกับ
+  // "กรรมการลงชื่อผูกพัน" ซึ่งเป็นคนละเรื่อง)
+  const DIRECTOR_LABELS = ['รายชื่อกรรมการ', 'กรรมการ'];
+  const EMPTY_VALUES = ['-', '–', 'ไม่มี', 'N/A'];
 
-  // รับได้ทั้งข้อความที่ copy จากหน้าเว็บ DBD (label กับค่าอยู่บรรทัดเดียวกัน)
-  // และข้อความจาก Company_Profile.pdf ซึ่ง label จะกองอยู่ก่อนแล้วค่าตามมาทีหลัง
+  // หา label ที่ยาวที่สุดที่ตรงกับข้อความนี้ (ตรงตัวหรือเป็นคำขึ้นต้น)
+  function matchLabel(text) {
+    const n = norm(text);
+    if (!n) return null;
+    let best = null;
+    LABELS.forEach((l) => {
+      l.names.forEach((name) => {
+        const nn = norm(name);
+        if (n === nn || n.indexOf(nn) === 0 || nn.indexOf(n) === 0) {
+          if (!best || nn.length > best.len) best = { hit: l, len: nn.length };
+        }
+      });
+    });
+    return best ? best.hit : null;
+  }
+  const isDirectorLabel = (text) => DIRECTOR_LABELS.some((x) => norm(x) === norm(text));
+  const isEmptyValue = (v) => EMPTY_VALUES.indexOf(String(v).trim()) >= 0;
+
   function parseCompanyText(text) {
-    const raw = String(text || '').replace(/\u00a0/g, ' ').replace(/\u0e4d\u0e32/g, '\u0e33');
-    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
+    const raw = String(text || '').replace(/ /g, ' ').replace(/ํา/g, 'ำ');
+    const lines = raw.split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter((l) => l !== '');
     const fields = {};
     const directors = [];
     let name = '';
     let inDirectors = false;
-    const pending = [];   // label ที่ยังไม่มีค่า รอค่าจากบรรทัดถัด ๆ ไป (แบบ PDF)
+    const pending = [];   // label ที่ยังไม่มีค่า รอค่าจากบรรทัดถัด ๆ ไป
 
     lines.forEach((line) => {
-      // ชื่อบริษัทมักเป็นบรรทัดที่ขึ้นต้นด้วย บริษัท / ห้างหุ้นส่วน และไม่มี label
-      if (!name && /^(บริษัท|ห้างหุ้นส่วน)/.test(line) && line.indexOf(':') === -1) name = line;
+      // แยกเป็น key/value ถ้ามี ":" คั่น ไม่งั้นถือว่าทั้งบรรทัดคือ key ที่ยังไม่มีค่า
+      const m = line.match(/^([^:]{2,45}?)\s*:\s*(.*)$/);
+      const key = m ? m[1].trim() : line;
+      const value = m ? m[2].trim() : '';
 
-      const m = line.match(/^([^:]{2,40}?)\s*:\s*(.*)$/);
-      if (m) {
-        const key = m[1].replace(/\s+/g, ' ').trim();
-        const value = m[2].trim();
-        if (/^กรรมการ/.test(key)) { inDirectors = true; pending.length = 0; if (value) pushDirector(directors, value); return; }
-        inDirectors = false;
-        if (/^ชื่อนิติบุคคล/.test(key) && value) { name = value; return; }
-        const hit = LABELS.find((l) => key.indexOf(l.label) === 0 || l.label.indexOf(key) === 0);
-        if (!hit) return;                       // label ที่ไม่รู้จัก ไม่ล้างคิวที่รออยู่
-        if (value) { setField(fields, hit, value); return; }
-        pending.push(hit);                      // "label :" ลอย ๆ → รอค่าบรรทัดถัดไป
+      if (isDirectorLabel(key)) {                       // "รายชื่อกรรมการ" / "กรรมการ :"
+        inDirectors = true;
+        pending.length = 0;
+        if (value) pushDirector(directors, value);
         return;
       }
-      // บรรทัดรายชื่อกรรมการ "1.นายจรูญ ทางชอบ" หรือ "2.นางสาวกัลยา ศรไชย/"
-      // นับเฉพาะตอนที่อยู่ใต้ label "กรรมการ :" เท่านั้น ไม่งั้นข้อความ "ข้อควรทราบ" ที่ขึ้นต้น
-      // ด้วยเลขข้อท้ายเอกสาร DBD จะถูกดูดมาเป็นชื่อกรรมการด้วย
+
+      const hit = matchLabel(key);
+      if (hit) {
+        inDirectors = false;
+        if (value && !isEmptyValue(value)) { setField(fields, hit, value); return; }
+        if (value) return;                              // ค่าเป็น "-" = ไม่มีข้อมูล ไม่ต้องรอ
+        // อย่าเข้าคิวซ้ำ: หน้า DBD มีคำว่า "ประเภทธุรกิจ" สองรอบ (ตอนจดทะเบียน / ปีล่าสุด)
+        // ถ้าปล่อยให้ค้างคิวซ้ำ ค่าจะเลื่อนไปลงผิดช่องทั้งแถบ
+        const already = fields[hit.key] !== undefined && fields[hit.key] !== null && fields[hit.key] !== '';
+        if (!already && pending.indexOf(hit) < 0 && pending.length < 4) pending.push(hit);
+        return;
+      }
+
+      // บรรทัดที่มี ":" แต่ key ไม่ใช่ label ที่รู้จัก (เช่น "49209 : การขนส่ง…" หรือหัวกระดาษ)
+      // ข้ามไปเลย ห้ามเอาไปเป็นค่าของ label ที่รออยู่
+      if (m) return;
+
+      // บรรทัดรายชื่อกรรมการ "1. นายประจักษ์ กากแก้ว" หรือ "2.นางสาวกัลยา ศรไชย/"
+      // นับเฉพาะตอนที่อยู่ใต้ป้ายรายชื่อกรรมการ ไม่งั้นข้อความ "ข้อควรทราบ" ท้ายเอกสาร
+      // ที่ขึ้นต้นด้วยเลขข้อจะถูกดูดมาเป็นชื่อกรรมการด้วย
       if (inDirectors && /^\d+\s*[.)]\s*\S/.test(line)) { pushDirector(directors, line); return; }
       inDirectors = false;
-      // บรรทัดที่ไม่มี label และมี label ค้างอยู่ในคิว → เป็นค่าของ label ตัวแรกในคิว
-      if (pending.length && line.length <= 200) setField(fields, pending.shift(), line);
+
+      if (pending.length) {                             // เป็นค่าของ label ตัวแรกที่รออยู่
+        const target = pending.shift();
+        if (!isEmptyValue(line) && line.length <= 250) setField(fields, target, line);
+        return;
+      }
+      // ชื่อบริษัท: บรรทัดลอย ๆ ที่ขึ้นต้นด้วย บริษัท/ห้างหุ้นส่วน และมีช่องว่างคั่น
+      // (กัน "บริษัทจำกัด" ซึ่งเป็นค่าของช่องประเภทนิติบุคคล ไม่ให้กลายเป็นชื่อบริษัท)
+      if (!name && /^(บริษัท|ห้างหุ้นส่วน)\s/.test(line) && line.length >= 10) name = line;
     });
 
     // หมวดธุรกิจในไฟล์ PDF อยู่คนละบรรทัดกับ label และขึ้นต้นด้วยรหัส 5 หลัก
-    // ถ้าที่แกะได้ยาวผิดปกติ (ไปติดข้อความวัตถุประสงค์) ให้ใช้บรรทัดรหัสแทน
     const groupCode = lines.find((l) => /^\d{4,6}\s*:\s*\S/.test(l));
-    if (groupCode) fields.businessGroup = groupCode.replace(/\s+/g, ' ').trim();
+    if (groupCode) fields.businessGroup = groupCode.trim();
     else if (fields.businessGroup && fields.businessGroup.length > 120) delete fields.businessGroup;
-    if (fields.paidUpCapital === undefined) {
-      const m = raw.match(/ทุนจดทะเบียน[^\d]{0,20}([\d,]+(?:\.\d+)?)/);
-      if (m) fields.paidUpCapital = E.num(m[1]);
+
+    if (fields.paidUpCapital === undefined || fields.paidUpCapital === null) {
+      const m2 = raw.match(/ทุนจดทะเบียน[^\d]{0,20}([\d,]+(?:\.\d+)?)/);
+      if (m2) fields.paidUpCapital = E.num(m2[1]);
+    }
+    // เลขทะเบียนนิติบุคคล 13 หลัก: เอาจากลิงก์หน้า DBD ที่วางมาด้วยก็ได้
+    // (เช่น https://datawarehouse.dbd.go.th/company/profile/5/0345563002001)
+    if (!fields.regNo) {
+      const fromUrl = raw.match(/datawarehouse\.dbd\.go\.th[^\s]*?\/(\d{13,14})/);
+      const bare = raw.match(/(?:^|[^\d])(\d{13})(?![\d])/);
+      const digits = fromUrl ? fromUrl[1].slice(-13) : (bare ? bare[1] : null);
+      if (digits) fields.regNo = digits;
     }
     if (name) fields.name = name;
     return { fields, directors };
@@ -198,8 +256,11 @@
 
   function setField(fields, hit, value) {
     if (fields[hit.key] !== undefined && fields[hit.key] !== null && fields[hit.key] !== '') return; // ค่าแรกที่เจอชนะ
-    const clean = String(value).replace(/\s*:\s*$/, '').trim();
-    fields[hit.key] = hit.numeric ? E.num(clean) : clean;
+    const clean = String(value).replace(/\s*[:\/]\s*$/, '').trim();   // ตัด ":" หรือ "/" ที่ DBD ใส่ท้ายบรรทัด
+    if (!hit.numeric) { fields[hit.key] = clean; return; }
+    // ค่าตัวเลขมักมีหน่วยติดมาด้วย เช่น "375,000.00 บาท"
+    const m = clean.match(/-?[\d,]+(?:\.\d+)?/);
+    fields[hit.key] = m ? E.num(m[0]) : null;
   }
 
   function pushDirector(list, line) {
