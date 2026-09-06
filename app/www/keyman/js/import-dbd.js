@@ -220,6 +220,22 @@
   }
 
   const isDirectorLabel = (text) => DIRECTOR_LABELS.some((x) => norm(x) === norm(text));
+  // คำนำหน้าชื่อที่เจอในทะเบียนกรรมการของ DBD
+  const TITLE_RX = /^(นาย|นาง|นางสาว|น\.?ส\.?|ดร|ด\.?ร\.?|ผศ|รศ|ศ|พล|พ\.?[ตอทจ]|ร\.?[ตอท]|ว่าที่|หม่อม|ม\.[ลร]|Mr|Mrs|Ms|Miss|Dr)/i;
+  const THAI_NAME_RX = /^[\u0E00-\u0E7F\s.'’\-]+$/;
+  const LATIN_NAME_RX = /^[A-Za-z\s.'’\-]+$/;
+  // บรรทัดใต้หัวข้อ "รายชื่อกรรมการ" — หน้าเว็บ DBD บางที copy มาแล้วเลขข้อ (1. 2.) หายไป
+  // เพราะเป็น list marker ของ HTML จึงห้ามบังคับว่าต้องมีเลขนำหน้า
+  function isDirectorNameLine(line) {
+    const t = String(line).trim();
+    if (!t || t.length > 100) return false;
+    if (/^\d+\s*[.)]\s*\S/.test(t)) return true;          // มีเลขข้อนำหน้า
+    if (t.indexOf(':') >= 0 || t.indexOf('：') >= 0) return false;  // เป็นหัวข้ออื่น
+    if (/^[\d\s.,\-\/()]+$/.test(t)) return false;        // ตัวเลข/วันที่ล้วน
+    if (TITLE_RX.test(t)) return true;                     // ขึ้นต้นด้วยคำนำหน้าชื่อ
+    const bare = t.replace(/\s*\/\s*$/, '');
+    return /\s/.test(bare) && bare.length <= 60 && (THAI_NAME_RX.test(bare) || LATIN_NAME_RX.test(bare));
+  }
   const isEmptyValue = (v) => EMPTY_VALUES.indexOf(String(v).trim()) >= 0;
 
   function parseCompanyText(text, retry) {
@@ -273,7 +289,7 @@
       // บรรทัดรายชื่อกรรมการ "1. นายประจักษ์ กากแก้ว" หรือ "2.นางสาวกัลยา ศรไชย/"
       // นับเฉพาะตอนที่อยู่ใต้ป้ายรายชื่อกรรมการ ไม่งั้นข้อความ "ข้อควรทราบ" ท้ายเอกสาร
       // ที่ขึ้นต้นด้วยเลขข้อจะถูกดูดมาเป็นชื่อกรรมการด้วย
-      if (inDirectors && /^\d+\s*[.)]\s*\S/.test(line)) { pushDirector(directors, line); return; }
+      if (inDirectors && isDirectorNameLine(line)) { pushDirector(directors, line); return; }
       inDirectors = false;
 
       if (pending.length) {                             // เป็นค่าของ label ตัวแรกที่รออยู่
