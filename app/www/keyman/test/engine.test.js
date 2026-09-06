@@ -246,6 +246,29 @@ eq(E.num('(1,000.50)'), -1000.5, 'วงเล็บ = ค่าติดลบ'
 eq(E.avg(['', 100, 200]), 150, 'ค่าเฉลี่ยข้ามช่องว่าง');
 eq(E.avg(['', '']), null, 'ไม่มีข้อมูลเลย → null');
 
+section('จัดสรรเบี้ยรายกรรมการ (สูตร C22 ของ Excel)');
+const alloc3 = E.allocatePremium({ policy: { premiumTotal: 1000000 }, directors: [{}, {}, {}] });
+eq(alloc3.mode, 'auto', 'ไม่ระบุโหมด → ใช้ auto');
+eq(alloc3.perDirector.join('|'), '333333.33|333333.33|333333.34', 'เฉลี่ยเท่ากัน เศษไปรวมที่ท่านสุดท้าย');
+near(alloc3.perDirector.reduce((a, b) => a + b, 0), 1000000, 0, 'ยอดจัดสรรรวมตรงกับเบี้ยรวมเป๊ะ (CHK-06 ต้องผ่าน)');
+near(alloc3.average, 1000000 / 3, 0.0001, 'ค่าเฉลี่ยคนละ = เบี้ยรวม ÷ จำนวนกรรมการ');
+const alloc1 = E.allocatePremium({ policy: { premiumTotal: 750000 }, directors: [{}] });
+eq(alloc1.perDirector.join('|'), '750000', 'กรรมการคนเดียวได้เบี้ยทั้งก้อน');
+const allocManual = E.allocatePremium({ policy: { premiumTotal: 1000000, allocationMode: 'manual' }, directors: [{ premiumAllocated: 700000 }, { premiumAllocated: 300000 }] });
+eq(allocManual.mode, 'manual', 'โหมด manual ไม่แตะตัวเลขที่ผู้ใช้กรอก');
+eq(allocManual.perDirector.join('|'), '700000|300000', 'โหมด manual คืนค่าที่กรอกไว้ตามเดิม');
+eq(E.allocatePremium({ policy: { premiumTotal: 100 }, directors: [] }).perDirector.length, 0, 'ยังไม่มีกรรมการ → ไม่หารด้วยศูนย์');
+
+// เบี้ยที่จัดสรรอัตโนมัติต้องทำให้ CHK-06 ผ่าน (ยอดตรงกันเสมอ)
+const kAuto = baseCase();
+kAuto.policy.premiumTotal = 900000;
+kAuto.directors.push({ name: 'ข', salary: 600000, premiumAllocated: null, positionCriteria: 'กรรมการ', allowances: { personal: 60000 } });
+kAuto.directors.push({ name: 'ค', salary: 600000, premiumAllocated: null, positionCriteria: 'กรรมการ', allowances: { personal: 60000 } });
+const autoAmounts = E.allocatePremium(kAuto).perDirector;
+kAuto.directors.forEach((d, i) => { d.premiumAllocated = autoAmounts[i]; });
+const rAuto = E.runChecks(kAuto, {});
+eq(rAuto.items.some((x) => x.code === 'CHK-06' && x.level === 'block'), false, 'จัดสรรอัตโนมัติแล้ว CHK-06 ไม่บล็อก');
+
 section('fingerprint สำหรับ CHK-05');
 const fa = E.fingerprint({ years: ['2563'], revenues: [100], profitsBeforeTax: [10], taxPaid: [2] });
 const fb = E.fingerprint({ years: ['2563'], revenues: [100], profitsBeforeTax: [10], taxPaid: [2] });

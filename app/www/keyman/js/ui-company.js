@@ -53,21 +53,22 @@
     ]));
 
     // ── กรรมการ ──────────────────────────────────────────────────────────
-    const dirCard = K.card('รายชื่อกรรมการและการจัดสรรเบี้ยรายคน', 'ชีต ข้อมูลบริษัท B10+ · CHK-06', []);
+    const dirCard = K.card('รายชื่อกรรมการและการจัดสรรเบี้ยรายคน', 'ชีต ข้อมูลบริษัท B10+ · CHK-06', [
+      h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px' }, [
+        h('span.hint', { text: 'โหมดจัดสรรเบี้ย:', style: 'margin:0' }),
+        K.switch2([{ value: 'auto', label: 'เฉลี่ยเท่ากันทุกท่าน' }, { value: 'manual', label: 'จัดสรรรายคนเอง' }],
+          K.isAutoAllocation() ? 'auto' : 'manual',
+          (v) => { k.policy.allocationMode = v; K.touch(); K.render(); }),
+      ]),
+      h('p.hint', { text: K.isAutoAllocation()
+        ? 'โหมดเฉลี่ยเท่ากัน: เบี้ยรายคน = เบี้ยรวม ÷ จำนวนกรรมการ (สูตร C22 ของ Excel) และส่งไปให้แท็บ 4 กับแท็บ 7 ใช้ต่อทันที — เศษสตางค์ไปรวมที่ท่านสุดท้ายเพื่อให้ยอดรวมตรงเป๊ะ'
+        : 'โหมดจัดสรรรายคนเอง: กรอกเบี้ยของแต่ละท่านเอง ยอดรวมต้องเท่ากับเบี้ยรวมพอดี ไม่งั้น CHK-06 จะบล็อก' }),
+    ]);
     k.directors.forEach((d, i) => dirCard.appendChild(directorBlock(d, i)));
     dirCard.appendChild(h('div.btnrow', null, [
       h('button.btn', {
         text: '+ เพิ่มกรรมการ',
         onclick: () => { k.directors.push(K.newDirector(k.directors.length + 1)); K.touch(); K.render(); },
-      }),
-      h('button.btn', {
-        text: 'เฉลี่ยเบี้ยให้ทุกท่านเท่ากัน',
-        onclick: () => {
-          const total = E.n0(k.policy.premiumTotal);
-          const per = k.directors.length ? total / k.directors.length : 0;
-          k.directors.forEach((d) => { d.premiumAllocated = per; });
-          K.touch(); K.render();
-        },
       }),
     ]));
     dirCard.appendChild(h('p.note', null, [
@@ -133,7 +134,11 @@
       h('div.grid2', null, [
         field('ชื่อ-สกุล', K.input(idx + '.name', { kind: 'text' })),
         field('ตำแหน่ง', K.input(idx + '.position', { kind: 'text' })),
-        field('เบี้ยที่จัดสรรให้ท่านนี้ (บาท)', K.input(idx + '.premiumAllocated', { onchange: () => K.refreshOutputs() })),
+        K.isAutoAllocation()
+          ? field('เบี้ยที่จัดสรรให้ท่านนี้ (บาท)',
+              h('input.cell.num', { value: K.money(d.premiumAllocated), disabled: true }),
+              'งบกำไรขาดทุน!C22', 'คำนวณให้อัตโนมัติ = เบี้ยรวม ÷ จำนวนกรรมการ')
+          : field('เบี้ยที่จัดสรรให้ท่านนี้ (บาท)', K.input(idx + '.premiumAllocated', { onchange: () => K.refreshOutputs() })),
         field('เกณฑ์ตามระดับตำแหน่ง (ช่องบังคับ)', K.input(idx + '.positionCriteria', { kind: 'text', placeholder: 'เช่น กรรมการผู้จัดการ = 3 เท่าของกรรมการทั่วไป' })),
         field('เงินเดือนทั้งปี (บาท)', K.input(idx + '.salary', { onchange: () => K.refreshOutputs() }), 'ภาษีทุกทอดกรรมการ' + (i + 1) + '!E7'),
         field('โบนัสทั้งปี (บาท)', K.input(idx + '.bonus', { onchange: () => K.refreshOutputs() })),

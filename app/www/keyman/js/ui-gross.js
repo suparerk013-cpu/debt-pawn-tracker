@@ -1,14 +1,19 @@
 // แท็บ 7 — ภาษีทุกทอด (ชีต "ภาษีทุกทอดกรรมการ1..N") มีแท็บย่อยรายกรรมการ
+// ────────────────────────────────────────────────────────────────────────────
 // การนับคอลัมน์ตาม Excel: E (เงินเดือนอย่างเดียว) → F (เงินเดือน+เบี้ย) → ทอดที่ 1 → 2 → …
 // ทอดที่ 1 ดึงภาษีมาจากคอลัมน์ F (H9 = F42) จึงห้ามเริ่มนับ "ทอดที่ 1" ที่คอลัมน์ F
+//
+// หน้าจอปกติแสดง "ตารางสุดท้าย" คือทอดที่ลู่เข้าแล้วคอลัมน์เดียว เพราะนั่นคือตัวเลข
+// ที่เอาไปใช้จริง — กดสวิตช์เพื่อกางทุกทอดแบบ Excel ไว้ตรวจทานได้
 (function (root) {
   'use strict';
   const K = root.K, h = K.h, E = root.KeymanEngine;
 
   K.state.dirTab = 0;
-
-  // ผลต่างสองทอดสุดท้ายเป็นหลักฐานว่าลู่เข้าแล้ว จึงต้องเห็นทศนิยมจริง ไม่ใช่ปัดเป็นสตางค์
   const delta = (v) => Number(v || 0).toLocaleString('th-TH', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  const view = () => (localStorage.getItem('keyman.grossView') === 'all' ? 'all' : 'final');
+  const allowView = () => (localStorage.getItem('keyman.allowView') === 'all' ? 'all' : 'used');
+  const setPref = (k, v) => { localStorage.setItem(k, v); K.render(); };
 
   function render(main) {
     const k = K.state.kase;
@@ -17,53 +22,97 @@
     const i = K.state.dirTab;
     const d = k.directors[i];
     const g = c.perDirector[i].gross;
-    const collapsed = localStorage.getItem('keyman.collapseAllowances') === '1';
+    const auto = K.isAutoAllocation();
 
-    // แท็บย่อยรายกรรมการ
-    main.appendChild(h('nav.tabs', { style: 'background:transparent;border:0;padding:0 0 8px' },
-      k.directors.map((dd, j) => h('button', {
-        class: j === i ? 'on' : '',
-        text: 'กรรมการ ' + (j + 1) + (dd.name ? ' — ' + dd.name : ''),
-        onclick: () => { K.state.dirTab = j; K.render(); },
-      }))));
+    // ── แท็บย่อยรายกรรมการ ───────────────────────────────────────────────
+    main.appendChild(h('nav.subtabs', null, k.directors.map((dd, j) => {
+      const gg = c.perDirector[j].gross;
+      return h('button', { class: j === i ? 'on' : '', onclick: () => { K.state.dirTab = j; K.render(); } }, [
+        h('span.who', { text: dd.name || 'กรรมการท่านที่ ' + (j + 1) }),
+        h('span.amt', { text: 'ภาษีทุกทอด ' + K.money(gg.tax) + ' บาท' }),
+      ]);
+    })));
 
-    const cols = [g.columnE].concat(g.trace);      // E, F, ทอดที่ 1..N
-    const colLabel = (col, idx) => idx === 0 ? 'รายได้ (เงินเดือนอย่างเดียว)' : idx === 1 ? 'รายได้ + สวัสดิการ' : 'ออกให้ทอดที่ ' + (idx - 1);
-    const colRef = (idx) => idx === 0 ? 'E' : idx === 1 ? 'F' : E.columnLetter(6 + idx); // E, F, H, I, J…
-
-    const head = h('tr.head-band', null, [h('th.label', { text: 'ประเภทเงินได้' })]
-      .concat(cols.map((col, idx) => h('th', null, [h('span', { text: colLabel(col, idx) }), h('span.ref', { text: colRef(idx) })]))));
-
-    const rows = [];
-    // editors = { ดัชนีคอลัมน์: โหนดช่องกรอก } — คอลัมน์ที่เหลือเป็นช่องสูตร
-    const dataRow = (label, ref, fn, cls, editors) => rows.push(h('tr', { class: cls || '' },
-      [K.labelCell(label, ref)].concat(cols.map((col, idx) =>
-        (editors && editors[idx]) ? h('td', null, [editors[idx]]) : h('td', { class: 'calc num' }, K.money(fn(col, idx)))))));
-
-    // ช่องกรอกสีเหลืองตาม Excel: E7 = เงินเดือน+โบนัส, F8 = เบี้ยคีย์แมนของท่านนี้
-    // จำนวนทอดเปลี่ยนตามตัวเลข จึงวาดตารางใหม่ตอนออกจากช่อง (event change) ไม่ใช่ทุกครั้งที่พิมพ์
+    // ── ช่องกรอกของกรรมการท่านนี้ ────────────────────────────────────────
     const money = (path) => {
       const inp = K.input(path, { onchange: () => K.refreshOutputs() });
       inp.addEventListener('change', () => K.render());
       return inp;
     };
-    const salaryCell = h('div', { style: 'display:flex;gap:4px;min-width:190px' }, [
-      h('label.field', { style: 'margin:0;flex:1' }, [h('span.lbl', { text: 'เงินเดือนทั้งปี' }), money('directors.' + i + '.salary')]),
-      h('label.field', { style: 'margin:0;flex:1' }, [h('span.lbl', { text: 'โบนัสทั้งปี' }), money('directors.' + i + '.bonus')]),
-    ]);
+    const premiumField = auto
+      ? h('div', null, [
+          h('input.cell.num', { value: K.money(d.premiumAllocated), disabled: true }),
+          h('span.hint', { text: 'มาจาก "ค่าเบี้ยประกันเฉลี่ยคนละ" (งบกำไรขาดทุน!C22) = เบี้ยรวม ÷ จำนวนกรรมการ' }),
+        ])
+      : h('div', null, [money('directors.' + i + '.premiumAllocated'), h('span.hint', { text: 'โหมดจัดสรรเอง — กรอกเบี้ยของท่านนี้ได้โดยตรง' })]);
 
-    dataRow('เงินเดือน + โบนัส', 'B7', (col) => col.salaryBonus, '', { 0: salaryCell });
-    dataRow('สวัสดิการพิเศษอื่น เช่น ประกัน Keyman', 'B8', (col) => col.keymanPremium, '',
-      { 1: money('directors.' + i + '.premiumAllocated') });
+    main.appendChild(K.card('ช่องกรอกของ ' + (d.name || 'กรรมการท่านที่ ' + (i + 1)), 'ชีต ภาษีทุกทอดกรรมการ' + (i + 1) + ' · E7 / F8', [
+      K.stats([
+        { label: 'ภาษีถ้ารับเงินเดือนอย่างเดียว', value: () => K.money(g.salaryOnlyTax) + ' บาท' },
+        { label: 'ภาษีทุกทอด (บริษัทออกให้)', tone: 'accent', value: () => K.money(g.tax) + ' บาท' },
+        { label: 'ส่วนต่างที่บริษัทรับภาระเพิ่ม', value: () => K.money(g.tax - g.salaryOnlyTax) + ' บาท' },
+        { label: 'หัก ณ ที่จ่ายต่อเดือน (ภ.ง.ด.1)', value: () => K.money(g.monthlyWithholding) + ' บาท', note: 'ต้องนำส่งทุกเดือน ไม่ใช่เฉพาะปีแรก' },
+      ]),
+      h('div.grid2', null, [
+        h('label.field', null, [h('span.lbl', null, ['เงินเดือนทั้งปี (บาท)', h('span.ref', { text: 'E7' })]), money('directors.' + i + '.salary')]),
+        h('label.field', null, [h('span.lbl', { text: 'โบนัสทั้งปี (บาท)' }), money('directors.' + i + '.bonus')]),
+        h('label.field', null, [
+          h('span.lbl', null, ['เบี้ยประกันคีย์แมนของท่านนี้ (บาท)', h('span.ref', { text: 'F8' }),
+            auto ? h('span.badge.auto', { text: 'อัตโนมัติ' }) : null]),
+          premiumField,
+        ]),
+        h('label.field', null, [h('span.lbl', { text: 'เกณฑ์ตามระดับตำแหน่ง (CHK-06)' }), K.input('directors.' + i + '.positionCriteria', { kind: 'text' })]),
+      ]),
+      h('p.hint', { text: 'เปลี่ยนโหมดจัดสรรเบี้ย (เฉลี่ยเท่ากัน / กรอกรายคนเอง) ได้ที่แท็บ 2 งบกำไรขาดทุน หรือแท็บ 1 ข้อมูลบริษัท' }),
+    ]));
+
+    // ── ตารางคำนวณ ──────────────────────────────────────────────────────
+    // มุมมองปกติวางคอลัมน์แบบเดียวกับที่ใช้จริงในไฟล์ Excel (ซ่อนทอดกลางไว้):
+    //   E = รายได้ (เงินเดือนอย่างเดียว) · F = รายได้ + สวัสดิการ · ทอดสุดท้ายที่ลู่เข้าแล้ว
+    // กด "กางทุกทอด" เพื่อดูทีละทอดตั้งแต่ทอดที่ 1
+    const allCols = view() === 'all';
+    const lastTier = g.trace[g.trace.length - 1];
+    const cols = allCols
+      ? [g.columnE].concat(g.trace)
+      : (g.trace.length > 1 ? [g.columnE, g.trace[0], lastTier] : [g.columnE, g.trace[0]]);
+    const isFinalCol = (idx) => !allCols ? (idx === 2) : (idx === cols.length - 1 && cols.length > 2);
+    const colLabel = (idx) => {
+      if (allCols) return idx === 0 ? 'รายได้' : idx === 1 ? 'รายได้ + สวัสดิการ' : 'ออกให้ทอดที่ ' + (idx - 1);
+      return idx === 0 ? 'รายได้' : idx === 1 ? 'รายได้ + สวัสดิการ' : 'ออกให้ทอดที่ ' + g.tiers;
+    };
+    const colSub = (idx) => (idx === 0 ? 'เงินเดือนอย่างเดียว' : idx === 1 ? 'ยังไม่มีภาษีออกให้' : isFinalCol(idx) ? 'ลู่เข้าแล้ว' : '');
+    const colRef = (idx) => {
+      if (idx === 0) return 'E';
+      if (idx === 1) return 'F';
+      return E.columnLetter(5 + (allCols ? idx : g.trace.length));   // ทอดที่ 1 = คอลัมน์ H ของ Excel
+    };
+
+    const head = h('tr.head-band', null, [h('th.label', { text: 'ประเภทเงินได้' })]
+      .concat(cols.map((col, idx) => h('th', null, [
+        h('span', { text: colLabel(idx) }),
+        colSub(idx) ? h('span', { style: 'display:block;font-weight:400;font-size:11px;opacity:.8', text: colSub(idx) }) : null,
+        h('span.ref', { text: colRef(idx) }),
+      ]))));
+
+    const rows = [];
+    // cellClass ให้สีตามธรรมเนียมไฟล์เดิม (แถวรวม = ส้มอ่อน, ภาษีที่เสีย = เขียว/แดงที่ทอดสุดท้าย)
+    const dataRow = (label, ref, fn, cls, cellClass) => rows.push(h('tr', { class: cls || '' },
+      [K.labelCell(label, ref)].concat(cols.map((col, idx) =>
+        h('td', { class: 'calc num ' + (cellClass ? cellClass(idx) : '') }, K.money(fn(col, idx)))))));
+
+    dataRow('เงินเดือน + โบนัส', 'B7', (col) => col.salaryBonus);
+    dataRow('สวัสดิการพิเศษอื่น เช่น ประกัน Keyman', 'B8', (col) => col.keymanPremium);
     dataRow('ภาษีที่ออกแทน', 'B9', (col) => col.taxCarried);
-    dataRow('รวมรายได้', 'D10', (col) => col.totalIncome, 'total');
-    dataRow('หัก: ค่าใช้จ่าย 50% แต่สูงสุดไม่เกิน 100,000 บาท', 'D12', (col) => -col.expense);
+    dataRow('รวมรายได้', 'D10', (col) => col.totalIncome, 'total', () => 'sum');
+    dataRow('หัก: ค่าใช้จ่าย 50% แต่สูงสุดไม่เกิน 100,000 บาท', 'D12', (col) => -col.expense, '', () => 'sum');
 
     // ── ค่าลดหย่อน 19 รายการ ─────────────────────────────────────────────
+    const used = (f) => f.key === 'personal' || E.n0((d.allowances || {})[f.key]) !== 0;
+    const shown = allowView() === 'all' ? E.ALLOWANCE_FIELDS : E.ALLOWANCE_FIELDS.filter(used);
     rows.push(h('tr', null, [h('th.label', { text: 'รายการค่าลดหย่อน' })]
-      .concat(cols.map((col, idx) => h('th', { text: idx === 0 ? 'ค่าลดหย่อน' : 'ค่าลดหย่อนใหม่' })))));
+      .concat(cols.map((col, idx) => h('th', { text: (!allCols || idx === 0) ? 'ค่าลดหย่อน' : 'ค่าลดหย่อนใหม่' })))));
 
-    E.ALLOWANCE_FIELDS.forEach((f) => {
+    shown.forEach((f) => {
       const inp = K.input('directors.' + i + '.allowances.' + f.key, { onchange: () => K.refreshOutputs() });
       inp.addEventListener('change', () => K.render());
       const label = h('td.label', null, [
@@ -72,47 +121,57 @@
         h('span.ref', { text: f.ref }),
       ]);
       const cells = [label, h('td', null, [inp])];
-      if (collapsed) {
-        cells.push(h('td.calc.num', { colspan: cols.length - 1, text: 'ใช้ค่าเดียวกันทุกคอลัมน์' }));
-      } else {
-        for (let x = 1; x < cols.length; x++) cells.push(h('td.calc.num', { text: K.money(E.n0(d.allowances[f.key])) }));
-      }
+      for (let x = 1; x < cols.length; x++) cells.push(h('td.calc.num', { text: K.money(E.n0((d.allowances || {})[f.key])) }));
       rows.push(h('tr', null, cells));
     });
+    if (allowView() !== 'all') {
+      rows.push(h('tr', null, [h('td', { class: 'label', colspan: cols.length + 1 }, [
+        h('button.btn', { text: 'แสดงค่าลดหย่อนทั้ง 19 รายการ', onclick: () => setPref('keyman.allowView', 'all') }),
+      ])]));
+    }
 
-    dataRow('รวมค่าลดหย่อน', 'D34', (col) => col.allowanceTotal, 'total');
-    dataRow('เงินได้หลังหักค่าลดหย่อน', 'D36', (col) => col.afterAllowance, 'total');
+    dataRow('รวมค่าลดหย่อน', 'D34', (col) => col.allowanceTotal, 'total', () => 'sum');
+    dataRow('เงินได้หลังหักค่าลดหย่อน', 'D36', (col) => col.afterAllowance, 'total', () => 'sum');
 
     rows.push(h('tr', null, [h('th.label', { text: 'ส่วนของเงินบริจาค' })].concat(cols.map(() => h('th', { text: '' })))));
     E.DONATION_FIELDS.forEach((f) => {
       const inp = K.input('directors.' + i + '.donations.' + f.key, { onchange: () => K.refreshOutputs() });
       inp.addEventListener('change', () => K.render());
       const cells = [K.labelCell(f.label, f.ref), h('td', null, [inp])];
-      if (collapsed) cells.push(h('td.calc.num', { colspan: cols.length - 1, text: 'ใช้ค่าเดียวกันทุกคอลัมน์' }));
-      else for (let x = 1; x < cols.length; x++) cells.push(h('td.calc.num', { text: K.money(E.n0((d.donations || {})[f.key])) }));
+      for (let x = 1; x < cols.length; x++) cells.push(h('td.calc.num', { text: K.money(E.n0((d.donations || {})[f.key])) }));
       rows.push(h('tr', null, cells));
     });
 
-    dataRow('เงินได้สุทธิสำหรับคำนวนภาษี', 'D40', (col) => col.netIncome, 'total');
-    dataRow('ภาษีที่เสีย', 'D42', (col) => col.tax, 'total');
+    dataRow('เงินได้สุทธิสำหรับคำนวนภาษี', 'D40', (col) => col.netIncome, 'total', () => 'sum');
+    dataRow('ภาษีที่เสีย', 'D42', (col) => col.tax, 'total', (idx) => (isFinalCol(idx) ? 'tax-final' : 'tax-base'));
     rows.push(h('tr', null, [K.labelCell('อัตราภาษีที่แท้จริง', 'E43')]
-      .concat(cols.map((col) => h('td.calc.num', { text: K.ratio(col.effectiveRate) })))));
+      .concat(cols.map((col, idx) => h('td', { class: 'calc num rate' }, K.ratio(col.effectiveRate))))));
 
-    main.appendChild(K.card('ภาษีทุกทอด — ' + (d.name || 'กรรมการท่านที่ ' + (i + 1)), 'ชีต ภาษีทุกทอดกรรมการ' + (i + 1), [
-      h('p.note', { text: '*กรอกเฉพาะช่องที่เป็นสีเหลือง — เงินเดือน/โบนัส (คอลัมน์ E), เบี้ยคีย์แมนของท่านนี้ (คอลัมน์ F) และค่าลดหย่อนทุกรายการ พิมพ์ได้ที่นี่เลย เป็นช่องเดียวกับแท็บ 1 และ 4' }),
-      K.table([head], rows),
-      h('div.btnrow', null, [
-        h('button.btn', {
-          text: collapsed ? 'กางค่าลดหย่อนทุกคอลัมน์ (แบบ Excel)' : 'ยุบค่าลดหย่อนให้เหลือคอลัมน์เดียว',
-          onclick: () => { localStorage.setItem('keyman.collapseAllowances', collapsed ? '0' : '1'); K.render(); },
-        }),
+    const convergeText = g.mode === 'once'
+      ? `คำนวณ 2 รอบแล้วหยุด · ผลต่างสองรอบสุดท้าย ${delta(g.lastDelta)} บาท · ป.96/2543 ข้อ 1(8) ออกให้ครั้งเดียว`
+      : `${g.converged ? '✓ ลู่เข้าที่ทอดที่ ' + g.tiers : '⛔ ยังไม่ลู่เข้าหลังครบ ' + E.MAX_ROUNDS + ' รอบ'} · ผลต่างสองทอดสุดท้าย ${delta(g.lastDelta)} บาท · ป.96/2543 ข้อ 1(7) ออกให้ตลอดไป`;
+
+    const tableNode = K.table([head], rows);
+    // บนจอแคบ คอลัมน์ที่สำคัญที่สุดคือทอดสุดท้าย จึงเลื่อนตารางไปสุดขวาให้ตั้งแต่แรก
+    // (คอลัมน์ชื่อรายการตรึงอยู่ซ้ายอยู่แล้ว เลื่อนกลับมาดูคอลัมน์ E/F ได้ตลอด)
+    if (!allCols && window.innerWidth < 620) {
+      requestAnimationFrame(() => { tableNode.scrollLeft = tableNode.scrollWidth; });
+    }
+    main.appendChild(K.card(allCols ? 'ตารางภาษีทุกทอด (กางทุกทอดแบบ Excel)' : 'ตารางสุดท้าย — ทอดที่ลู่เข้าแล้ว', 'ชีต ภาษีทุกทอดกรรมการ' + (i + 1), [
+      h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px' }, [
+        K.switch2([{ value: 'final', label: 'ตารางสุดท้าย' }, { value: 'all', label: 'กางทุกทอด' }], view(), (v) => setPref('keyman.grossView', v)),
+        allowView() === 'all'
+          ? h('button.btn', { text: 'ซ่อนค่าลดหย่อนที่ยังไม่ได้กรอก', onclick: () => setPref('keyman.allowView', 'used') })
+          : null,
       ]),
-      h('p.note.strong', {
-        text: g.mode === 'once'
-          ? `คำนวณ 2 รอบแล้วหยุด · ผลต่างสองรอบสุดท้าย ${delta(g.lastDelta)} บาท · ป.96/2543 ข้อ 1(8) ออกให้ครั้งเดียว`
-          : `${g.converged ? 'ลู่เข้าที่ทอดที่ ' + g.tiers : '⚠️ ยังไม่ลู่เข้าหลังครบ ' + E.MAX_ROUNDS + ' รอบ'} · ผลต่างสองทอดสุดท้าย ${delta(g.lastDelta)} บาท · ป.96/2543 ข้อ 1(7) ออกให้ตลอดไป`,
+      tableNode,
+      K.callout(g.converged ? 'ok' : 'block', convergeText),
+      h('p.hint', {
+        text: allCols
+          ? 'คอลัมน์ E คือฝั่ง Before (เงินเดือนอย่างเดียว) · คอลัมน์ F คือเงินเดือน+เบี้ยแต่ยังไม่มีภาษีออกให้ · ทอดที่ 1 ดึงภาษีมาจากคอลัมน์ F แล้ววนต่อจนลู่เข้า (ไม่กาง 20 ทอดตายตัวเหมือนไฟล์เดิม)'
+          : 'วางคอลัมน์แบบเดียวกับที่เปิดใช้จริงในไฟล์ Excel — E รายได้ · F รายได้+สวัสดิการ · แล้วข้ามไปทอดสุดท้ายที่ลู่เข้าแล้ว (ทอดกลางซ่อนไว้ กด "กางทุกทอด" เพื่อดู) ' +
+            'ตัวเลขคอลัมน์สุดท้ายคือชุดที่เอาไปบันทึกบัญชีและนำส่ง ภ.ง.ด.1 จริง',
       }),
-      h('p.hint', { text: 'กางเท่าที่ลู่เข้าจริง ไม่ได้กาง 20 ทอดตายตัวเหมือนไฟล์เดิม — คอลัมน์ E คือฝั่ง Before (เงินเดือนอย่างเดียว) ส่วนคอลัมน์ F คือเงินเดือน+เบี้ยแต่ยังไม่มีภาษีออกให้' }),
       K.legend(),
     ]));
 

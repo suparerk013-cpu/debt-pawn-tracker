@@ -205,7 +205,7 @@
       // ทอดที่ 0 = คอลัมน์ F ของ Excel (เงินเดือน+เบี้ย ยังไม่มีภาษีออกให้)
       row.tier = i;
       row.label = i === 0 ? 'รายได้ + สวัสดิการ' : `ออกให้ทอดที่ ${i}`;
-      row.ref = i === 0 ? 'F' : columnLetter(7 + i); // F, H, I, J, ... ตาม Excel
+      row.ref = i === 0 ? 'F' : columnLetter(6 + i); // F, H, I, J, ... ตาม Excel (ทอดที่ 1 = คอลัมน์ H)
       trace.push(row);
       if (mode === 'perpetual' && lastDelta < CONVERGE_EPSILON) break;
     }
@@ -583,6 +583,27 @@
     return null;
   }
 
+  // ── จัดสรรเบี้ยรายกรรมการ ────────────────────────────────────────────────
+  // Excel คิดเบี้ยเฉลี่ยต่อคนที่ C22 = C18 ÷ C21 แล้วชีตค่าตอบแทนกรรมการกับชีต
+  // ภาษีทุกทอดดึงค่านั้นไปใช้ตรง ๆ (E7 = งบกำไรขาดทุน!C22, F8 = งบกำไรขาดทุน!C22)
+  // โหมด 'auto' ทำแบบเดียวกัน — เฉลี่ยเท่ากันทุกคนและปัดเศษไปรวมที่คนสุดท้าย
+  // เพื่อให้ยอดจัดสรรรวมตรงกับเบี้ยรวมเป๊ะ ๆ (CHK-06)
+  // โหมด 'manual' ใช้เลขที่ผู้ใช้กรอกรายคนเอง (กรณีจัดสรรตามระดับตำแหน่ง)
+  function allocatePremium(kase) {
+    const policy = (kase && kase.policy) || {};
+    const directors = (kase && kase.directors) || [];
+    const mode = policy.allocationMode === 'manual' ? 'manual' : 'auto';
+    if (mode === 'manual' || !directors.length) {
+      return { mode, perDirector: directors.map((d) => n0(d.premiumAllocated)), average: null };
+    }
+    const total = n0(policy.premiumTotal);
+    const per = round2(total / directors.length);
+    const amounts = directors.map(() => per);
+    const drift = round2(total - per * directors.length);
+    if (drift !== 0) amounts[amounts.length - 1] = round2(amounts[amounts.length - 1] + drift);
+    return { mode, perDirector: amounts, average: total / directors.length };
+  }
+
   // ── คำนวณทั้งเคสในครั้งเดียว (ชั้นหน้าจอเรียกตัวนี้ตัวเดียว) ─────────────
   function computeCase(kase, ctx) {
     const year = (kase && kase.taxYear) || T.DEFAULT_YEAR;
@@ -684,6 +705,7 @@
     premiumCeiling,
     compareScenarios,
     fingerprint,
+    allocatePremium,
     runChecks,
     computeCase,
   };

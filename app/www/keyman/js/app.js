@@ -38,6 +38,8 @@
         premiumTotal: null, insurer: '', productName: '', premiumYears: null,
         beneficiary: '', taxMethod: 'perpetual', welfareWording: '', welfareText: '',
         lumpSum: null,
+        // 'auto' = เฉลี่ยเท่ากันทุกท่านตามสูตร C22 ของ Excel · 'manual' = กรอกรายคนเอง
+        allocationMode: 'auto',
       },
       docs: { welfareRule: false, boardResolution: false, policyReceipt: false, pnd1: false },
       financials: emptyFinancials(),
@@ -113,11 +115,24 @@
   };
 
   // ── การคำนวณ + บันทึก ──────────────────────────────────────────────────
+  // โหมด auto: เขียนเบี้ยเฉลี่ยต่อคนลงกรรมการทุกท่านก่อนคำนวณ เพื่อให้ทั้งแท็บ 4,
+  // แท็บ 7, ใบเสนอ และ CHK-06 เห็นตัวเลขชุดเดียวกันเสมอ (เหมือน Excel ที่ทุกชีตอ้าง C22)
+  K.applyAllocation = function () {
+    const k = K.state.kase;
+    if (!k) return null;
+    const a = E.allocatePremium(k);
+    if (a.mode === 'auto') k.directors.forEach((d, i) => { d.premiumAllocated = a.perDirector[i]; });
+    return a;
+  };
+
   K.recompute = function () {
     if (!K.state.kase) return null;
+    K.applyAllocation();
     K.state.computed = E.computeCase(K.state.kase, { duplicateOf: K.state.duplicateOf });
     return K.state.computed;
   };
+
+  K.isAutoAllocation = () => !K.state.kase || K.state.kase.policy.allocationMode !== 'manual';
 
   let saveTimer = null;
   K.scheduleSave = function () {
@@ -193,14 +208,20 @@
 
     // แถบแท็บ (ซ่อนเมื่ออยู่หน้ารายชื่อเคส)
     if (K.state.kase) {
-      K.tabs.filter((t) => t.id !== 'cases').forEach((t, i) => {
-        nav.appendChild(h('button', {
-          class: t.id === tab.id ? 'on' : '',
-          onclick: () => K.go(t.id),
-          text: (t.num ? t.num + '. ' : '') + t.label,
-        }));
+      let activeBtn = null;
+      K.tabs.filter((t) => t.id !== 'cases').forEach((t) => {
+        const btn = h('button', { class: t.id === tab.id ? 'on' : '', onclick: () => K.go(t.id) }, [
+          t.num ? h('span.num', { text: t.num }) : null,
+          h('span', { text: t.label }),
+        ]);
+        if (t.id === tab.id) activeBtn = btn;
+        nav.appendChild(btn);
       });
       nav.style.display = '';
+      // เลื่อนแถบแท็บให้เห็นแท็บที่กำลังเปิดอยู่เสมอ (แถบเลื่อนในกรอบตัวเอง ไม่ทำให้ทั้งหน้าเลื่อน)
+      if (activeBtn) requestAnimationFrame(() => {
+        nav.scrollLeft = Math.max(0, activeBtn.offsetLeft - (nav.clientWidth - activeBtn.clientWidth) / 2);
+      });
     } else {
       nav.style.display = 'none';
     }
@@ -239,17 +260,21 @@
     const openState = bar.dataset.open === '1';
 
     K.clear(bar);
+    const ICON = { block: '⛔', warn: '⚠️', info: 'ℹ️' };
     const head = h('div.head', { onclick: () => { bar.dataset.open = openState ? '0' : '1'; K.renderCheckbar(); } }, [
-      h('span', { class: 'pill ' + level, text: blocks.length ? `บล็อก ${blocks.length}` : warns.length ? `เตือน ${warns.length}` : 'ผ่านทุกข้อ' }),
+      h('span', { class: 'pill ' + level, text: blocks.length ? `⛔ บล็อก ${blocks.length}` : warns.length ? `⚠️ เตือน ${warns.length}` : '✓ ผ่านทุกข้อ' }),
       h('span.grow', { text: blocks.length ? blocks[0].title : warns.length ? warns[0].title : 'ออกใบเสนอได้ — ตรวจครบ ' + items.length + ' ข้อ' }),
-      h('span.badge', { text: openState ? 'ย่อ ▲' : 'กาง ▼' }),
+      h('span.caret', { text: openState ? 'ย่อ ▲' : 'กาง ▼' }),
     ]);
     bar.appendChild(head);
     if (openState) {
       bar.appendChild(h('ul', null, items.map((i) =>
         h('li', { class: i.level }, [
-          h('div', null, [h('span.code', { text: i.code }), h('span', { text: i.title })]),
-          i.detail ? h('div.detail', { text: i.detail }) : null,
+          h('span.ico', { text: ICON[i.level] || '' }),
+          h('div', null, [
+            h('div', null, [h('span.code', { text: i.code }), h('span', { text: i.title })]),
+            i.detail ? h('div.detail', { text: i.detail }) : null,
+          ]),
         ]))));
     }
   };

@@ -198,6 +198,32 @@
     ].concat(Array.isArray(children) ? children : [children]));
   };
 
+  // แถบตัวเลขสำคัญด้านบนการ์ด — items = [{label, value(fn หรือข้อความ), note, tone}]
+  K.stats = function (items) {
+    return h('div.stats', null, items.filter(Boolean).map((it) =>
+      h('div', { class: 'stat ' + (it.tone || '') }, [
+        h('span', { text: it.label }),
+        typeof it.value === 'function' ? K.out(it.value, { tag: 'b' }) : h('b', { text: String(it.value) }),
+        it.note ? (typeof it.note === 'function' ? K.out(it.note, { tag: 'small' }) : h('small', { text: it.note })) : null,
+      ])));
+  };
+
+  // ข้อความเตือน/ยืนยันแบบกล่องสี — ว่างเมื่อ fn คืนค่าว่าง (CSS ซ่อนให้เอง)
+  K.callout = function (tone, textOrFn) {
+    if (typeof textOrFn === 'function') {
+      const node = h('div', { class: 'callout ' + tone });
+      node.appendChild(K.out(textOrFn));
+      return node;
+    }
+    return h('div', { class: 'callout ' + tone, text: textOrFn });
+  };
+
+  // สวิตช์สองทาง — options = [{value, label}]
+  K.switch2 = function (options, current, onPick) {
+    return h('div.switch', null, options.map((o) =>
+      h('button', { class: String(o.value) === String(current) ? 'on' : '', text: o.label, onclick: () => onPick(o.value) })));
+  };
+
   K.legend = () => h('p.legend', null, [
     h('span', { html: '<i class="in"></i>ช่องกรอก (พื้นเหลือง — กรอกเฉพาะช่องนี้)' }),
     h('span', { html: '<i class="ca"></i>ช่องสูตร (คำนวณให้ แก้ไม่ได้)' }),

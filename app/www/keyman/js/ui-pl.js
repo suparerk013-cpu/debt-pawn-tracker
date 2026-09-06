@@ -42,15 +42,15 @@
     return K.h('td', null, [inp, K.h('span.ref', { text: 'C18' })]);
   }
 
-  // Excel คิดเบี้ยเฉลี่ยต่อคนที่ C22 = C18/C21 แล้วชีตภาษีทุกทอดดึงค่านั้นไปใช้
-  // ที่นี่ต้องกดยืนยันเอง เพราะการจัดสรรรายคนคือหลักฐานตามหนังสือตอบข้อหารือ (CHK-06)
-  function spreadPremium() {
-    const k = K.state.kase;
-    const total = E.n0(k.policy.premiumTotal);
-    if (!k.directors.length) return;
-    const per = total / k.directors.length;
-    k.directors.forEach((d) => { d.premiumAllocated = per; });
-    K.touch(); K.render();
+  // โหมดจัดสรรเบี้ย — 'auto' เดินตามสูตร C22 = C18 ÷ C21 ของ Excel แล้วส่งค่าไปให้
+  // แท็บ 4 (ค่าตอบแทนกรรมการ) และแท็บ 7 (ภาษีทุกทอด) ใช้ต่อทันที เหมือนที่ทุกชีตใน
+  // ไฟล์เดิมอ้าง C22 · 'manual' ไว้ใช้ตอนจัดสรรไม่เท่ากันตามระดับตำแหน่ง
+  function allocationSwitch() {
+    return K.switch2(
+      [{ value: 'auto', label: 'เฉลี่ยเท่ากันทุกท่าน' }, { value: 'manual', label: 'จัดสรรรายคนเอง' }],
+      K.isAutoAllocation() ? 'auto' : 'manual',
+      (v) => { K.state.kase.policy.allocationMode = v; K.touch(); K.render(); }
+    );
   }
 
   function render(main) {
@@ -126,6 +126,17 @@
     ];
 
     main.appendChild(K.card('เบี้ยประกันเทียบกับงบ', 'ชีต งบกำไรขาดทุน แถว 17–22', [
+      K.stats([
+        { label: 'ค่าเบี้ยประกันที่เสนอ', tone: 'accent', value: () => K.money(premium()) + ' บาท' },
+        { label: 'ค่าเบี้ยประกันเฉลี่ยคนละ (C22)', value: (c, kk) => K.money(kk.directors.length ? premium() / kk.directors.length : null) + ' บาท',
+          note: () => (K.isAutoAllocation() ? 'ส่งไปแท็บ 4 และ 7 ให้อัตโนมัติ' : 'โหมดจัดสรรรายคนเอง') },
+        { label: 'เพดาน 5% ของรายได้เฉลี่ย 3 ปี', value: (c) => (c ? K.money(c.ceiling.ceiling5pctAvgRevenue) + ' บาท' : '–'),
+          note: 'แนวปฏิบัติของตลาด ไม่ใช่กฎหมาย' },
+        { label: 'สัดส่วนเบี้ยต่อรายได้เฉลี่ย',
+          tone: (function () { return ''; })(),
+          value: (c) => (c && c.ceiling.avgRevenue ? (premium() / c.ceiling.avgRevenue * 100).toFixed(2) + '%' : '–'),
+          note: 'ช่วงที่ปลอดภัยกว่าคือ 2–3%' },
+      ]),
       K.table([h('tr', null, [
         h('th.label', { text: 'เปรียบเทียบ' }), h('th', { text: 'ค่าเบี้ยประกัน' }), h('th', { text: 'รายจ่ายรวม' }),
         h('th', { text: 'สัดส่วน' }), h('th', { text: 'ค่าใช้จ่ายในการขายและบริการ' }), h('th', { text: 'สัดส่วน' }),
@@ -154,13 +165,14 @@
           }),
         ]),
       ]),
-      h('div.btnrow', null, [
-        h('button.btn.primary', { text: 'จัดสรรเบี้ยเฉลี่ยให้กรรมการทุกท่าน', onclick: spreadPremium }),
+      h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 6px' }, [
+        h('span.hint', { text: 'โหมดจัดสรรเบี้ย:', style: 'margin:0' }),
+        allocationSwitch(),
       ]),
       h('p.hint', null, [
         'ช่อง "ค่าเบี้ยประกัน" (C18) พิมพ์ได้เลยที่นี่ — เป็นช่องเดียวกับ "เบี้ยประกันรวมทั้งปี" ในแท็บ 1 · ',
-        'พิมพ์เบี้ยรวมแล้วกดปุ่มด้านบนเพื่อกระจายให้กรรมการทุกท่านเท่า ๆ กัน (เท่ากับสูตร C22 = C18 ÷ C21 ของ Excel) ',
-        'หรือจะไปกรอกเบี้ยรายคนเองที่แท็บ 1 ก็ได้ · ยอดจัดสรรรวมตอนนี้ ',
+        'โหมดเฉลี่ยเท่ากันจะส่ง "ค่าเบี้ยประกันเฉลี่ยคนละ" (C22) ไปลงแท็บ 4 ค่าตอบแทนกรรมการ และแท็บ 7 ภาษีทุกทอด ให้เองทันที ',
+        'เหมือนไฟล์ Excel ที่ทุกชีตอ้างค่า C22 · ยอดจัดสรรรวมตอนนี้ ',
         K.out((c, kk) => K.money(kk.directors.reduce((s2, d) => s2 + E.n0(d.premiumAllocated), 0))),
         ' บาท',
       ]),
