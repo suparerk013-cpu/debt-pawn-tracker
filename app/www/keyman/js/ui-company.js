@@ -55,9 +55,9 @@
           value: (c) => (!c ? '–' : c.sme.pending ? 'ยังตัดสินไม่ได้' : c.sme.isSme ? 'เข้าเกณฑ์ SME' : 'ไม่เข้าเกณฑ์ SME'),
           note: (c) => (!c ? '' : c.sme.pending ? 'ข้อมูลยังไม่ครบ' : c.sme.isSme ? 'ยกเว้น 300,000 · 15% · 20%' : 'อัตรา 20% ตลอด') },
         { label: 'ทุนจดทะเบียนที่ชำระแล้ว', value: (c, kk) => K.money(kk.company.paidUpCapital) + ' บาท', note: 'เกณฑ์ SME ไม่เกิน 5,000,000' },
-        { label: 'รายได้รวมปีล่าสุด', value: (c) => (c && c.sme.revenueLatest !== null ? K.money(c.sme.revenueLatest) + ' บาท' : 'ยังไม่มีข้อมูล'),
-          note: 'เกณฑ์ SME ไม่เกิน 30,000,000' },
-        { label: 'ขนาดธุรกิจตาม DBD', value: (c, kk) => (kk.company.sizeLabel || '–'), note: 'คนละเกณฑ์กับ SME ทางภาษี' },
+        { label: 'ยอดขายสินค้าและบริการปีล่าสุด', value: (c) => (c && c.sme.revenueLatest !== null ? K.money(c.sme.revenueLatest) + ' บาท' : 'ยังไม่มีข้อมูล'),
+          note: (c) => 'เกณฑ์ SME ไม่เกิน 30,000,000' + (c && c.sme.revenueBasis === 'total' ? ' · ยังไม่ได้กรอกรายได้หลัก ใช้รายได้รวมแทน' : '') },
+        { label: 'ขนาดธุรกิจตาม DBD', value: (c, kk) => (kk.company.sizeLabel || '–'), note: 'ไม่ได้ใช้คำนวณภาษี — คนละเกณฑ์กับ SME' },
       ]),
       K.callout('warn', (c) => (c && c.sme.pending
         ? 'ยังตัดสินสถานะ SME ไม่ได้ — ' + c.sme.reason + ' (สถานะนี้มีผลกับอัตราภาษีนิติบุคคลทั้งหน้าสรุป)'
@@ -242,8 +242,11 @@
 
     // บอกผลตัดสิน SME ให้เห็นตั้งแต่ในหน้ายืนยัน จะได้รู้ทันทีว่าต้องไปเอางบมาเพิ่มไหม
     const cap = E.num(out.fields.paidUpCapital);
-    const rev = E.lastValue(k.financials.revenues);
-    const verdict = E.determineSme({ paidUpCapital: cap === null ? k.company.paidUpCapital : cap, revenueLatest: rev }, k.taxYear);
+    const smeRev = E.smeRevenue(k.financials);
+    const verdict = E.determineSme({
+      paidUpCapital: cap === null ? k.company.paidUpCapital : cap,
+      revenueLatest: smeRev.value, revenueBasis: smeRev.basis,
+    }, k.taxYear);
     K.dialog('ยืนยันก่อนเขียนทับข้อมูลบริษัท', [
       h('p.note', { text: 'ตรวจดูก่อนว่าค่าใหม่จะไปลงช่องไหน (ค่าเดิมขีดฆ่า / ค่าใหม่สีเขียว)' }),
       K.callout(verdict.pending ? 'warn' : verdict.isSme ? 'ok' : 'warn',

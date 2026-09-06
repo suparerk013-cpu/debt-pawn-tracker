@@ -110,10 +110,24 @@
   }
 
   // ── SME: ระบบตัดสินเอง ผู้ใช้เลือกเองไม่ได้ ────────────────────────────────
-  function determineSme({ paidUpCapital, revenueLatest }, year) {
+  // เกณฑ์ SME ทางภาษีวัดที่ "รายได้จากการขายสินค้าและการให้บริการ" ไม่ใช่รายได้รวม
+  // รายได้อื่น (ดอกเบี้ยรับ กำไรจากการขายทรัพย์สิน เงินปันผลรับ) ไม่นับในเกณฑ์นี้
+  // จึงใช้แถว "รายได้หลัก" ก่อน แล้วค่อยถอยไปใช้ "รายได้รวม" เมื่อยังไม่ได้กรอกรายได้หลัก
+  function smeRevenue(financials) {
+    const f = financials || {};
+    const sales = lastValue(f.mainRevenue);
+    if (sales !== null) return { value: sales, basis: 'sales' };
+    const total = lastValue(f.revenues);
+    if (total !== null) return { value: total, basis: 'total' };
+    return { value: null, basis: null };
+  }
+
+  function determineSme({ paidUpCapital, revenueLatest, revenueBasis }, year) {
     const t = T.tableFor(year);
     const cap = num(paidUpCapital);
     const rev = num(revenueLatest);
+    const basis = revenueBasis || null;
+    const revName = basis === 'total' ? 'รายได้รวม' : 'ยอดขายสินค้าและบริการ';
     const capitalOk = cap !== null && cap <= t.smePaidUpCapitalMax;
     const revenueOk = rev !== null && rev <= t.smeRevenueMax;
     const isSme = capitalOk && revenueOk;
@@ -122,9 +136,11 @@
     const reasons = [];
     if (cap === null) reasons.push('ยังไม่ได้กรอกทุนจดทะเบียนที่ชำระแล้ว');
     else if (!capitalOk) reasons.push(`ทุนชำระแล้ว ${fmt(cap)} บาท เกิน ${fmt(t.smePaidUpCapitalMax)} บาท`);
-    if (rev === null) reasons.push('ยังไม่มีตัวเลขรายได้รวมปีล่าสุด (นำเข้างบกำไรขาดทุนที่แท็บ 2 ก่อน)');
-    else if (!revenueOk) reasons.push(`รายได้รวมปีล่าสุด ${fmt(rev)} บาท เกิน ${fmt(t.smeRevenueMax)} บาท`);
-    if (isSme) reasons.push(`ทุนชำระแล้ว ${fmt(cap)} ≤ ${fmt(t.smePaidUpCapitalMax)} และรายได้ ${fmt(rev)} ≤ ${fmt(t.smeRevenueMax)} ครบทั้งสองข้อ`);
+    if (rev === null) reasons.push('ยังไม่มีตัวเลขยอดขายปีล่าสุด (นำเข้างบกำไรขาดทุนที่แท็บ 2 ก่อน)');
+    else if (!revenueOk) reasons.push(`${revName}ปีล่าสุด ${fmt(rev)} บาท เกิน ${fmt(t.smeRevenueMax)} บาท`);
+    if (isSme) reasons.push(`ทุนชำระแล้ว ${fmt(cap)} ≤ ${fmt(t.smePaidUpCapitalMax)} และ${revName} ${fmt(rev)} ≤ ${fmt(t.smeRevenueMax)} ครบทั้งสองข้อ`);
+    // ถอยไปใช้รายได้รวมเมื่อไร ต้องบอกให้รู้ เพราะรายได้รวมสูงกว่าฐานที่กฎหมายวัดจริง
+    if (basis === 'total') reasons.push('หมายเหตุ: ยังไม่ได้กรอก "รายได้หลัก" ระบบจึงใช้รายได้รวมแทน ซึ่งเข้มกว่าเกณฑ์จริง');
     return {
       isSme,
       pending,
@@ -132,6 +148,7 @@
       revenueOk,
       paidUpCapital: cap,
       revenueLatest: rev,
+      revenueBasis: basis,
       limits: { capital: t.smePaidUpCapitalMax, revenue: t.smeRevenueMax },
       reason: reasons.join(' · '),
     };
@@ -624,11 +641,11 @@
     const add = (code, level, title, detail) => out.push({ code, level, title, detail });
 
     const revenues = fin.revenues || [];
-    const revenueLatest = (() => {
-      for (let i = revenues.length - 1; i >= 0; i--) if (num(revenues[i]) !== null) return num(revenues[i]);
-      return null;
-    })();
-    const sme = determineSme({ paidUpCapital: kase && kase.company && kase.company.paidUpCapital, revenueLatest }, year);
+    const smeRev = smeRevenue(fin);
+    const sme = determineSme({
+      paidUpCapital: kase && kase.company && kase.company.paidUpCapital,
+      revenueLatest: smeRev.value, revenueBasis: smeRev.basis,
+    }, year);
     const netProfits = (fin.profitsBeforeTax || []).map((p, i) => {
       const pbt = num(p);
       const t = num((fin.taxPaid || [])[i]);
@@ -817,8 +834,11 @@
     const fin = (kase && kase.financials) || {};
     const policy = (kase && kase.policy) || {};
     const directors = (kase && kase.directors) || [];
-    const revenueLatest = lastValue(fin.revenues);
-    const sme = determineSme({ paidUpCapital: kase && kase.company && kase.company.paidUpCapital, revenueLatest }, year);
+    const smeRev = smeRevenue(fin);
+    const sme = determineSme({
+      paidUpCapital: kase && kase.company && kase.company.paidUpCapital,
+      revenueLatest: smeRev.value, revenueBasis: smeRev.basis,
+    }, year);
     const mode = policy.taxMethod === 'once' ? 'once' : 'perpetual';
 
     const perDirector = directors.map((d) => {
@@ -905,6 +925,7 @@
     citTax,
     citMarginalRate,
     determineSme,
+    smeRevenue,
     grossUpTax,
     sumAllowances,
     sumDonations,

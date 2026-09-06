@@ -69,6 +69,34 @@ near(sj.monthlyWithholding, sj.tax / 12, 0.0001, 'ยอดหัก ณ ที�
 
 // ── สถานะ SME ─────────────────────────────────────────────────────────────
 section('สถานะ SME (ระบบตัดสินเอง)');
+// เกณฑ์ SME วัดที่ "ยอดขายสินค้าและบริการ" ไม่ใช่รายได้รวม และไม่เกี่ยวกับขนาด S/M/L ของ DBD
+const smeCase = (mainRevenue, revenues, paidUpCapital, sizeLabel) => E.computeCase({
+  taxYear: Y,
+  company: { paidUpCapital, sizeLabel: sizeLabel || '' },
+  directors: [{ id: 'd0', salary: 600000, allowances: { personal: 60000 }, donations: {} }],
+  policy: { premiumTotal: 100000, taxMethod: 'perpetual', allocationMode: 'auto' },
+  financials: { years: ['', '', '2567'], mainRevenue: ['', '', mainRevenue], revenues: ['', '', revenues],
+    profitsBeforeTax: ['', '', 2000000] },
+  balance: {}, docs: {},
+}).sme;
+// ยอดขาย 28 ล้าน + รายได้อื่น 4 ล้าน → รายได้รวม 32 ล้าน แต่ยังเป็น SME เพราะยอดขายไม่เกิน 30 ล้าน
+const other = smeCase(28000000, 32000000, 5000000);
+eq(other.isSme, true, 'ยอดขาย 28 ล้าน (รายได้รวม 32 ล้าน) → ยังเป็น SME');
+eq(other.revenueBasis, 'sales', 'ใช้ฐานยอดขายเป็นตัวตัดสิน');
+near(other.revenueLatest, 28000000, 0.01, 'ตัวเลขที่เอามาเทียบคือยอดขาย ไม่ใช่รายได้รวม');
+// ยอดขายเกิน 30 ล้าน → หลุด SME แม้ทุนไม่เกิน
+eq(smeCase(30000000.01, 30000000.01, 5000000).isSme, false, 'ยอดขายเกิน 30 ล้านแม้บาทเดียว → หลุด SME');
+eq(smeCase(30000000, 30000000, 5000000).isSme, true, 'ยอดขาย 30 ล้านพอดี → ยังเป็น SME');
+// ทุนเกิน 5 ล้าน → หลุด SME แม้ยอดขายไม่เกิน
+eq(smeCase(1000000, 1000000, 5000000.01).isSme, false, 'ทุนเกิน 5 ล้านแม้บาทเดียว → หลุด SME');
+eq(smeCase(1000000, 1000000, 5000000).isSme, true, 'ทุน 5 ล้านพอดี → ยังเป็น SME');
+// ยังไม่ได้กรอกรายได้หลัก → ถอยไปใช้รายได้รวม แล้วบอกให้รู้
+const fallback = smeCase('', 32000000, 5000000);
+eq(fallback.revenueBasis, 'total', 'ไม่มีรายได้หลัก → ถอยไปใช้รายได้รวม');
+eq(/ใช้รายได้รวมแทน/.test(fallback.reason), true, 'บอกว่าใช้รายได้รวมแทน');
+// ขนาดธุรกิจ S/M/L ของ DBD ต้องไม่มีผลต่อผลตัดสินและต่ออัตราภาษี
+eq(smeCase(1000000, 1000000, 5000000, 'L').isSme, smeCase(1000000, 1000000, 5000000, 'S').isSme,
+  'ขนาด S/M/L ของ DBD ไม่มีผลต่อสถานะ SME');
 eq(E.determineSme({ paidUpCapital: 1000000, revenueLatest: 16049353.24 }, Y).isSme, true, 'ทุน 1 ล้าน รายได้ 16 ล้าน → เข้าเกณฑ์');
 const bigCapital = E.determineSme({ paidUpCapital: 70000000, revenueLatest: 25533511.14 }, Y);
 eq(bigCapital.isSme, false, 'ทุน 70 ล้าน → ไม่เข้าเกณฑ์');
