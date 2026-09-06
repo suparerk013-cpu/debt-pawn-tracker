@@ -3,6 +3,16 @@
   'use strict';
   const K = root.K, h = K.h, E = root.KeymanEngine, Imp = root.KeymanImport;
 
+  // ช่องชื่อกรรมการหนึ่งท่าน (B10, B11, B12, …) — แก้ที่นี่แล้วการ์ดอื่นเปลี่ยนตามทันที
+  function directorNameRow(d, i) {
+    const inp = K.input('directors.' + i + '.name', { kind: 'text', placeholder: 'ชื่อ-สกุล' });
+    inp.addEventListener('change', () => K.render());   // ให้หัวข้อการ์ดอื่นอัปเดตชื่อตาม
+    return h('label.field', null, [
+      h('span.lbl', null, [(i + 1) + '.', h('span.ref', { text: 'B' + (10 + i) })]),
+      inp,
+    ]);
+  }
+
   // หนึ่งแถวของชีต "ข้อมูลบริษัท" — ชื่อช่องและลำดับตรงกับ A1–A8 ของไฟล์ Excel
   function row(label, path, ref, opts) {
     const o = opts || {};
@@ -66,6 +76,20 @@
         row('ขนาดธุรกิจ', 'company.sizeLabel', 'B7'),
       ]),
       row('ที่ตั้งสำนักงานแห่งใหญ่', 'company.address', 'B8'),
+
+      // รายชื่อกรรมการ A10/B10+ ของชีตเดิม — กี่ท่านก็กางให้ครบเท่านั้น
+      // ชื่อที่แกะได้จากหน้า DBD ลงตรงนี้ทันที และเป็นช่องเดียวกับการ์ดจัดสรรเบี้ยด้านล่าง
+      h('p.note.strong', null, ['รายชื่อกรรมการ', h('span.ref', { text: 'A10' }),
+        h('span.badge', { text: k.directors.length + ' ท่าน' })]),
+      h('div.grid2', null, k.directors.map((d, i) => directorNameRow(d, i))),
+      h('div.btnrow', null, [
+        h('button.btn', {
+          text: '+ เพิ่มกรรมการ',
+          onclick: () => { k.directors.push(K.newDirector(k.directors.length + 1)); K.touch(); K.render(); },
+        }),
+      ]),
+      h('p.hint', { text: 'เงินเดือน โบนัส เบี้ยที่จัดสรร และเกณฑ์ตามระดับตำแหน่งของแต่ละท่าน กรอกที่การ์ด "รายชื่อกรรมการและการจัดสรรเบี้ยรายคน" ด้านล่าง' }),
+
       field('ประเด็นปรึกษา', K.textarea('company.consultIssues', { rows: 3, placeholder: '1. …' }), 'B14–B17'),
       h('p.note', null, ['เหตุผลของผลตัดสิน: ', K.out((c) => (c ? c.sme.reason : ''))]),
       K.legend(),
@@ -138,7 +162,7 @@
     const idx = 'directors.' + i;
     return h('div', { style: 'border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px' }, [
       h('div', { style: 'display:flex;gap:8px;align-items:center;margin-bottom:6px' }, [
-        h('strong', { text: 'กรรมการท่านที่ ' + (i + 1) }),
+        h('strong', { text: 'กรรมการท่านที่ ' + (i + 1) + (d.name ? ' — ' + d.name : '') }),
         h('span.ref', { text: 'ข้อมูลบริษัท!B' + (10 + i) }),
         h('span', { style: 'flex:1' }),
         h('button.btn.danger', {
@@ -151,7 +175,7 @@
         }),
       ]),
       h('div.grid2', null, [
-        field('ชื่อ-สกุล', K.input(idx + '.name', { kind: 'text' })),
+        // ชื่อ-สกุลกรอกที่บล็อก "รายชื่อกรรมการ" (B10+) ด้านบนที่เดียว จะได้ไม่มีช่องซ้ำสองที่
         field('ตำแหน่ง', K.input(idx + '.position', { kind: 'text' })),
         K.isAutoAllocation()
           ? field('เบี้ยที่จัดสรรให้ท่านนี้ (บาท)',
