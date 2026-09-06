@@ -600,3 +600,15 @@ tr.grpsum > td.num { font-weight: 700; font-variant-numeric: tabular-nums; }
 tr.grpsum.over > td, tbody tr.grpsum.over:nth-child(even) > td { background: var(--block-bg); color: var(--block); }
 tr.grpsum.over > td.label { background: var(--block-bg); border-left-color: var(--block); color: var(--block); }
 tr.grpsum .badge { margin-left: 6px; }
+
+/* บรรทัดบอกที่มาใต้ชื่อแถว (ตารางค่าใช้จ่ายต้องห้าม) */
+td.label small { display: block; font-size: 11px; color: var(--muted); line-height: 1.4; margin-top: 3px; white-space: normal; }
+/* รายการสถานะรายปี — บอกทีละปีว่าคิดได้/ไม่ได้เพราะอะไร */
+ul.whylist { list-style: none; margin: 12px 0 0; padding: 0; }
+ul.whylist li {
+  font-size: 12.5px; line-height: 1.5; padding: 8px 12px; margin: 6px 0;
+  border: 1px solid var(--line); border-left-width: 3px; border-radius: var(--r-sm); background: var(--surface-2);
+}
+ul.whylist li b { font-variant-numeric: tabular-nums; }
+ul.whylist li.ok { border-left-color: var(--ok); background: var(--ok-bg); color: var(--ok); }
+ul.whylist li.warn { border-left-color: var(--warn); background: var(--warn-bg); color: var(--warn); }

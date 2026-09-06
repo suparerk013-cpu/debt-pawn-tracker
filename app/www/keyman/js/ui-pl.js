@@ -72,7 +72,15 @@
         .concat([h('th', { text: 'ค่าเฉลี่ย 3 ปี' }), h('th', { text: 'สัดส่วน' })])),
     ];
 
-    const body = K.PL_ROWS.map((r) => {
+    // แบ่งสามหมวดตามลำดับแถวเดิมของชีต ไม่ได้สลับแถว
+    const PL_SECTIONS = { mainRevenue: 'รายได้', cogs: 'ต้นทุนและค่าใช้จ่าย', profitsBeforeTax: 'กำไรและภาษี' };
+    const body = [];
+    K.PL_ROWS.forEach((r) => {
+      if (PL_SECTIONS[r.key]) {
+        body.push(h('tr.section', null, [h('th.label', { text: PL_SECTIONS[r.key] })]
+          .concat(IDX.reduce((acc) => acc.concat([h('th'), h('th'), h('th')]), []))
+          .concat([h('th'), h('th')])));
+      }
       const cells = [K.labelCell(r.label, 'B' + r.row)];
       IDX.forEach((i) => {
         const colLetter = ['D', 'G', 'J'][i];
@@ -89,7 +97,7 @@
       if (r.ratio === 'dash') cells.push(K.dashCell('O' + r.row));
       else if (r.ratio === 'none') cells.push(h('td.calc', { text: '' }));
       else cells.push(K.outCell(() => K.ratio(ratioAvg(r)), { ref: 'O' + r.row }));
-      return h('tr', { class: r.bold ? 'total' : '' }, cells);
+      body.push(h('tr', { class: r.bold ? 'total' : '' }, cells));
     });
 
     main.appendChild(K.card('งบกำไรขาดทุน', 'ชีต งบกำไรขาดทุน แถว 4–15', [
@@ -241,46 +249,75 @@
     }
 
     // ── ค่าใช้จ่ายต้องห้าม (แถว 25–33) ──────────────────────────────────
-    const fRows = (label, pick, ref) => h('tr', null, [K.labelCell(label, ref)].concat(IDX.map((i) =>
-      K.outCell((c) => pick(c, i), { ref: ['D', 'E', 'F'][i] + (ref ? ref.replace(/^B/, '') : '') }))));
+    // ทุกแถวมีบรรทัดบอกที่มาใต้ชื่อ เพราะตัวเลขชุดนี้เป็นการ "ถอดกลับ" หลายชั้น
+    // ถ้าไม่เขียนไว้ คนอ่านจะไม่รู้ว่าเลขมาจากไหนและเถียงกับสรรพากรไม่ได้
+    const fy = (i) => (K.state.computed && K.state.computed.forbiddenByYear[i]) || null;
+    const F_ROWS = [
+      { label: 'กำไร(ขาดทุน) ก่อนภาษี', ref: 'B27',
+        why: 'ยกมาจากตารางงบกำไรขาดทุนด้านบน แถว 13 — ตัวเลขเดียวกับที่ยื่น ภ.ง.ด.50',
+        pick: (i) => K.money(val('profitsBeforeTax', i)) },
+      { label: 'ภาษีเงินได้ที่จ่ายจริง', ref: 'B28',
+        why: 'ยกมาจากตารางด้านบน แถว 14 — ภาษีที่บริษัทเสียจริงในปีนั้น',
+        pick: (i) => K.money(val('taxPaid', i)) },
+      { label: 'อัตราภาษีที่จ่าย', ref: 'B29',
+        why: 'ภาษีที่จ่ายจริง ÷ กำไรก่อนภาษี',
+        pick: (i) => { const p = val('profitsBeforeTax', i), t = val('taxPaid', i); return p && t !== null ? (t / p * 100).toFixed(2) + '%' : '–'; } },
+      { label: 'อัตราตามกฎหมายของกำไรก้อนท้าย',
+        why: 'ขั้นบันไดนิติบุคคลที่กำไรก้อนสุดท้ายตกอยู่ (SME: 0% / 15% / 20%) — ใช้เป็นตัวหารตอนถอดกลับ',
+        pick: (i) => { const f = fy(i); return f && f.marginalRate ? (f.marginalRate * 100).toFixed(0) + '%' : '–'; } },
+      { label: 'ฐานภาษี (ภาษีที่ควรจะเป็น)', ref: 'B30',
+        why: 'คำนวณจากกำไรก่อนภาษีตามอัตรานิติบุคคลของปีภาษีที่เลือกไว้บนหัวแอป',
+        pick: (i) => { const f = fy(i); return f ? K.money(f.expectedTax) : '–'; } },
+      { label: 'ส่วนเกินภาษี', ref: 'B31',
+        why: 'ภาษีที่จ่ายจริง − ภาษีที่ควรจะเป็น · ติดลบ = จ่ายน้อยกว่าฐาน จึงถอดกลับไม่ได้',
+        pick: (i) => { const f = fy(i); return f && f.taxPaid !== null ? K.money(f.excessTax) : '–'; } },
+      { label: 'คชจ.ต้องห้าม', ref: 'B32', strong: true,
+        why: 'ส่วนเกินภาษี ÷ อัตราตามกฎหมายของกำไรก้อนท้าย — ถอดกลับว่ามีรายจ่ายเท่าไรถูกบวกกลับเป็นกำไร',
+        pick: (i) => { const f = fy(i); return !f ? '–' : f.hidden ? 'ไม่แสดง' : K.money(f.amount); } },
+      { label: 'อัตราส่วนต่อคชจ.รวม', ref: 'B33',
+        why: 'คชจ.ต้องห้าม ÷ รายจ่ายรวมของปีนั้น (แถว 11)',
+        pick: (i) => { const f = fy(i), tot = val('totalExpense', i); return !f || f.hidden || !tot ? '–' : K.ratio(f.amount / tot); } },
+    ];
+
+    const fBody = F_ROWS.map((r) => h('tr', { class: r.strong ? 'total' : '' },
+      [h('td.label', null, [
+        h('span', { text: r.label }),
+        h('small', { text: r.why }),
+        r.ref ? h('span.ref', { text: r.ref }) : null,
+      ])].concat(IDX.map((i) => K.outCell(() => r.pick(i), { ref: r.ref ? ['D', 'E', 'F'][i] + r.ref.replace(/^B/, '') : null })))));
 
     main.appendChild(K.card('อัตราภาษีที่จ่ายสูงเกิน อาจมาจากค่าใช้จ่ายต้องห้าม (ที่ถูกบวกกลับ)', 'ชีต งบกำไรขาดทุน แถว 25–33 · CHK-04', [
+      h('p.note', { text: 'ถ้าบริษัทเสียภาษีมากกว่าที่ควรจะเป็นตามอัตราปกติ ส่วนเกินนั้นแปลว่ามีรายจ่ายบางก้อนที่สรรพากรไม่ให้ถือเป็นรายจ่าย จึงถูกบวกกลับเป็นกำไรแล้วเก็บภาษีเพิ่ม ตารางนี้ถอดกลับว่ารายจ่ายก้อนนั้นน่าจะประมาณเท่าไร' }),
       K.table([h('tr', null, [h('th.label', { text: 'รายการ' })].concat(IDX.map((i) =>
-        K.outCell((c, kk) => kk.financials.years[i] || '–', { th: true, ref: ['D26', 'E26', 'F26'][i] }))))], [
-        fRows('กำไร(ขาดทุน) ก่อนภาษี', (c, i) => K.money(val('profitsBeforeTax', i)), 'B27'),
-        fRows('ภาษีเงินได้', (c, i) => K.money(val('taxPaid', i)), 'B28'),
-        fRows('อัตราภาษีที่จ่าย', (c, i) => {
-          const p = val('profitsBeforeTax', i), t = val('taxPaid', i);
-          return p && t !== null ? (t / p * 100).toFixed(2) + '%' : '–';
-        }, 'B29'),
-        fRows('ฐานภาษี (ภาษีที่ควรจะเป็น)', (c, i) => (c ? K.money(c.forbiddenByYear[i] && c.forbiddenByYear[i].expectedTax) : '–'), 'B30'),
-        fRows('ส่วนเกินภาษี', (c, i) => {
-          const f = c && c.forbiddenByYear[i];
-          if (!f || f.taxPaid === null) return '–';
-          return K.money(f.excessTax);
-        }, 'B31'),
-        fRows('คชจ.ต้องห้าม', (c, i) => {
-          const f = c && c.forbiddenByYear[i];
-          if (!f) return '–';
-          return f.hidden ? 'ไม่แสดง' : K.money(f.amount);
-        }, 'B32'),
-        fRows('อัตราส่วนต่อคชจ.รวม', (c, i) => {
-          const f = c && c.forbiddenByYear[i];
-          const tot = val('totalExpense', i);
-          if (!f || f.hidden || !tot) return '–';
-          return K.ratio(f.amount / tot);
-        }, 'B33'),
-      ]),
-      h('p.note', null, [K.out((c) => {
-        if (!c) return '';
-        const notes = c.forbiddenByYear.filter((f) => f.hidden && f.note).map((f, i) => f.note);
-        const uniq = notes.filter((v, i) => notes.indexOf(v) === i);
-        return uniq.length ? 'หมายเหตุ: ' + uniq.join(' / ') : 'ทุกปีคำนวณค่าใช้จ่ายต้องห้ามได้ตามปกติ';
-      })]),
-      h('p.hint', {
-        text: 'รายจ่ายต้องห้าม หมายถึง รายจ่ายที่บันทึกเป็นค่าใช้จ่ายทางบัญชีแล้ว แต่ในทางภาษีไม่ให้ถือเป็นรายจ่ายในการคำนวณกำไรสุทธิ ' +
-          '(ม.65 ตรี) จึงถูกบวกกลับเป็นกำไรและทำให้อัตราภาษีที่จ่ายจริงสูงกว่าอัตราตามกฎหมาย',
+        K.outCell((c, kk) => kk.financials.years[i] || '–', { th: true, ref: ['D26', 'E26', 'F26'][i] }))))], fBody),
+
+      // สถานะรายปี — บอกทีละปีว่าคิดได้หรือไม่ได้ เพราะอะไร ดีกว่ายุบเป็นข้อความเดียว
+      K.out(() => {
+        const c = K.state.computed;
+        if (!c) return h('div');
+        const items = c.forbiddenByYear.map((f, i) => {
+          const y = K.state.kase.financials.years[i] || 'ปีที่ ' + (i + 1);
+          if (!f) return null;
+          if (!f.hidden) {
+            return h('li', { class: 'ok' }, [h('b', { text: y + ': ' }),
+              'ถอดกลับได้ ' + K.money(f.amount) + ' บาท — จ่ายภาษีเกินฐาน ' + K.money(f.excessTax) +
+              ' บาท หารด้วยอัตรา ' + (f.marginalRate * 100).toFixed(0) + '%']);
+          }
+          return h('li', { class: 'warn' }, [h('b', { text: y + ': ' }), f.note]);
+        }).filter(Boolean);
+        return items.length ? h('ul.whylist', null, items) : h('div');
       }),
+
+      h('details.fold', null, [
+        h('summary', null, [h('span', { text: 'ที่มาของตัวเลขชุดนี้ อ่านก่อนเอาไปคุยกับลูกค้า' })]),
+        h('div.foldbody', null, [
+          h('p.note', { text: '1) "รายจ่ายต้องห้าม" คือรายจ่ายที่ลงบัญชีเป็นค่าใช้จ่ายแล้ว แต่ทางภาษีไม่ให้ถือเป็นรายจ่ายในการคำนวณกำไรสุทธิ (ม.65 ตรี) จึงถูกบวกกลับเข้าไปเป็นกำไรและทำให้เสียภาษีมากกว่าที่ดูจากงบ' }),
+          h('p.note', { text: '2) ตารางนี้ไม่ได้เห็นรายการรายจ่ายจริง มันเห็นแค่กำไรก่อนภาษีกับภาษีที่จ่าย แล้วถอดกลับ: ภาษีที่จ่ายเกินฐานเท่าไร ÷ อัตราภาษีของกำไรก้อนท้าย = รายจ่ายที่ถูกบวกกลับประมาณเท่าไร' }),
+          h('p.note', { text: '3) จึงเป็นการ "ประมาณการ" ไม่ใช่ตัวเลขจากแบบ ภ.ง.ด.50 — ตัวเลขจริงต้องดูใบปรับปรุงกำไรสุทธิของผู้สอบบัญชี ใช้ตัวเลขนี้เป็นคำถามเปิดกับลูกค้า ไม่ใช่ข้อสรุป' }),
+          h('p.note', { text: '4) เกี่ยวกับคีย์แมนตรงไหน: ถ้าบริษัทมีรายจ่ายต้องห้ามอยู่แล้วเป็นประจำ แปลว่ามีรายจ่ายที่เอกสารไม่ครบหรืออธิบายไม่ได้ — เบี้ยคีย์แมนที่มีระเบียบสวัสดิการ มติที่ประชุม และ ภ.ง.ด.1 ครบ คือรายจ่ายที่อธิบายได้ ต่างจากก้อนที่ถูกบวกกลับ' }),
+          h('p.hint', { text: 'กรณีที่ระบบไม่แสดงตัวเลขให้: ยังกรอกไม่ครบ · ปีนั้นขาดทุน · กำไรอยู่ในช่วงยกเว้น 300,000 บาทแรกของ SME (ไม่มีอัตราให้หาร) · หรือจ่ายภาษีน้อยกว่าฐาน ซึ่งมักมาจากผลขาดทุนสะสมยกมา สิทธิ BOI รายได้ที่ได้รับยกเว้น หรือเครดิตภาษี' }),
+        ]),
+      ]),
       K.disclaimer(),
     ]));
   }
