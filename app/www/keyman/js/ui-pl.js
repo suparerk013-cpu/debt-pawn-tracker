@@ -9,30 +9,8 @@
   const val = (key, i) => E.num(K.state.kase.financials[key][i]);
   const avg3 = (key) => E.avg(K.state.kase.financials[key]);
 
-  function ratioOf(rowDef, i) {
-    if (rowDef.ratio === 'revenue') {
-      const base = val('revenues', i);
-      const v = val(rowDef.key, i);
-      return base && v !== null ? v / base : null;
-    }
-    if (rowDef.ratio === 'profit') {  // F14 = D14/D13 — หารด้วยกำไรก่อนภาษี ไม่ใช่รายได้
-      const base = val('profitsBeforeTax', i);
-      const v = val(rowDef.key, i);
-      return base && v !== null ? v / base : null;
-    }
-    return null;
-  }
-  function ratioAvg(rowDef) {
-    if (rowDef.ratio === 'revenue') {
-      const base = avg3('revenues'), v = avg3(rowDef.key);
-      return base && v !== null ? v / base : null;
-    }
-    if (rowDef.ratio === 'profit') {
-      const base = avg3('profitsBeforeTax'), v = avg3(rowDef.key);
-      return base && v !== null ? v / base : null;
-    }
-    return null;
-  }
+  const ratioOf = (r, i) => K.plRatio(r, i);
+  const ratioAvg = (r) => K.plRatioAvg(r);
 
   // ช่อง C18 ของ Excel เป็นช่องกรอกสีเหลือง (ค่าเบี้ยประกันที่จะเสนอ) ไม่ใช่ช่องสูตร
   // เป็นช่องเดียวกับ "เบี้ยประกันรวมทั้งปี" ในแท็บ 1 — พิมพ์ที่ไหนก็อัปเดตอีกที่ทันที

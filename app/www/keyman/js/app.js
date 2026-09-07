@@ -88,6 +88,23 @@
     { key: 'totalLiabEquity', label: 'หนี้สินรวมและส่วนของผู้ถือหุ้น', row: 16, bold: true },
   ];
 
+  // สัดส่วนของแต่ละแถวในงบกำไรขาดทุน — ตัวหารคนละตัวตามที่ชีตเดิมกำหนด
+  // (แถว "ภาษีเงินได้" หารด้วยกำไรก่อนภาษี ไม่ใช่รายได้รวม เพราะมันคืออัตราภาษีที่จ่ายจริง)
+  // อยู่ที่นี่เพื่อให้ทั้งแท็บ 2 และหน้าพิมพ์เรียกสูตรเดียวกัน
+  K.plRatio = function (rowDef, i) {
+    const fin = K.state.kase.financials;
+    const at = (key) => E.num(fin[key][i]);
+    if (rowDef.ratio === 'revenue') { const b = at('revenues'), v = at(rowDef.key); return b && v !== null ? v / b : null; }
+    if (rowDef.ratio === 'profit') { const b = at('profitsBeforeTax'), v = at(rowDef.key); return b && v !== null ? v / b : null; }
+    return null;
+  };
+  K.plRatioAvg = function (rowDef) {
+    const fin = K.state.kase.financials;
+    if (rowDef.ratio === 'revenue') { const b = E.avg(fin.revenues), v = E.avg(fin[rowDef.key]); return b && v !== null ? v / b : null; }
+    if (rowDef.ratio === 'profit') { const b = E.avg(fin.profitsBeforeTax), v = E.avg(fin[rowDef.key]); return b && v !== null ? v / b : null; }
+    return null;
+  };
+
   function emptyFinancials() {
     const f = { years: ['', '', ''], pct: {} };
     K.PL_ROWS.forEach((r) => { f[r.key] = ['', '', '']; f.pct[r.key] = ['', '', '']; });

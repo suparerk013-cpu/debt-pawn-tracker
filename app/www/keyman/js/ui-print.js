@@ -9,14 +9,31 @@
     { id: 'pnd1', label: 'แผ่นงานรายกรรมการสำหรับ ภ.ง.ด.1' },
     { id: 'welfare', label: 'ร่างระเบียบสวัสดิการ' },
     { id: 'resolution', label: 'ร่างมติที่ประชุม' },
+    { id: 'sheets', label: 'ชุดงบการเงิน 4 หน้า · A4 แนวนอน', landscape: true },
   ];
+
+  // ขนาดกระดาษต้องประกาศใน @page เท่านั้น ใส่ในคลาสไม่ได้ จึงสลับ <style> เอา
+  // (ทำแบบนี้ได้ผลทุกเบราว์เซอร์ ไม่ต้องพึ่ง named page ที่บางตัวยังไม่รองรับ)
+  function setPageOrientation(landscape) {
+    let el = document.getElementById('print-page-size');
+    if (!el) {
+      el = document.createElement('style');
+      el.id = 'print-page-size';
+      document.head.appendChild(el);
+    }
+    el.textContent = landscape
+      ? '@page { size: A4 landscape; margin: 10mm; }'
+      : '@page { size: A4 portrait; margin: 14mm; }';
+  }
 
   function render(main) {
     const c = K.state.computed;
     const k = K.state.kase;
     const cur = K.state.printDoc || 'quote';
+    const curDoc = DOCS.filter(function (d) { return d.id === cur; })[0] || DOCS[0];
+    setPageOrientation(!!curDoc.landscape);
 
-    main.appendChild(K.card('เอกสารสำหรับพิมพ์', 'เฟส 5', [
+    const controls = K.card('เอกสารสำหรับพิมพ์', 'เฟส 5', [
       h('div.btnrow', null, DOCS.map((d) => h('button', {
         class: 'btn ' + (d.id === cur ? 'primary' : ''),
         text: d.label,
@@ -26,8 +43,21 @@
       ])),
       !c.checks.canQuote ? h('p', { class: 'pill block', style: 'display:block;padding:6px 10px',
         text: 'มีข้อตรวจสอบระดับบล็อก ' + c.checks.blocking.length + ' ข้อ — ใบเสนอลูกค้าถูกล็อกไว้จนกว่าจะแก้ครบ' }) : null,
-    ]));
+      h('p.hint', { text: curDoc.landscape
+        ? 'เอกสารชุดนี้ตั้งเป็น A4 แนวนอน 4 หน้าให้แล้ว — ในหน้าต่างพิมพ์ให้เปิด "กราฟิกพื้นหลัง" ด้วย ตารางจะได้มีแถบสีหัวตาราง'
+        : 'เอกสารนี้ตั้งเป็น A4 แนวตั้ง' }),
+    ]);
+    // แถบเลือกเอกสารกับปุ่มพิมพ์ต้องไม่ติดไปบนกระดาษ ไม่งั้นได้หน้าเปล่าเพิ่มมาหนึ่งหน้า
+    controls.classList.add('noprint');
+    main.appendChild(controls);
 
+    if (cur === 'sheets') {
+      // พรีวิวบนจอ: กระดาษแนวนอนกว้างกว่าจอมือถือ ให้เลื่อนในกรอบของตัวเอง ไม่ใช่ทั้งหน้า
+      const paper = h('div.paper.landscape');
+      K.renderSheets(paper);
+      main.appendChild(h('section.card', null, [h('div.paperwrap', null, [paper])]));
+      return;
+    }
     const paper = h('div.paper');
     if (cur === 'quote') renderQuote(paper, k, c);
     else if (cur === 'pnd1') renderPnd1(paper, k, c);
