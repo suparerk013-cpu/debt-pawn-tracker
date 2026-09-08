@@ -1,6 +1,6 @@
 // Service worker — แคชทุกไฟล์ของแอปไว้ในเครื่อง เพื่อให้ใช้งานได้ครบตอนไม่มีเน็ต
 // ทุกอย่างเป็นไฟล์ในโปรเจคเอง (รวม SheetJS) จึงไม่ต้องพึ่ง network ตอนรันเลย
-const CACHE = 'keyman-v20';   // ขึ้นเวอร์ชันทุกครั้งที่แก้ไฟล์ในแอป เพื่อให้เครื่องที่ติดตั้งไว้แล้วโหลดของใหม่
+const CACHE = 'keyman-v21';   // ขึ้นเวอร์ชันทุกครั้งที่แก้ไฟล์ในแอป เพื่อให้เครื่องที่ติดตั้งไว้แล้วโหลดของใหม่
 const PRECACHE = [
   './',
   'index.html',
@@ -24,6 +24,7 @@ const PRECACHE = [
   'js/ui-gross.js',
   'js/ui-summary.js',
   'js/ui-sheets.js',
+  'js/ui-quote.js',
   'js/ui-print.js',
   'icons/icon-192.png',
   'icons/icon-512.png',

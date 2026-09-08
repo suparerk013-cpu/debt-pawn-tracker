@@ -660,3 +660,80 @@ ul.whylist li.warn { border-left-color: var(--warn); background: var(--warn-bg);
 .paper.landscape table.kv td.label, .paper.landscape table.kv th.label { width: 62%; }
 /* หัวปีที่คร่อมหลายคอลัมน์ ให้อยู่กลางกลุ่มของตัวเอง */
 .paper.landscape tr.head-band > th[colspan] { text-align: center; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ใบเสนอลูกค้า — A4 แนวตั้ง หน้าละ .q-page
+   ทุกแถบสีมีเส้นขอบกำกับ เพราะคนส่วนใหญ่พิมพ์โดยไม่เปิด "กราฟิกพื้นหลัง"
+   ═══════════════════════════════════════════════════════════════════════════ */
+.paper.quote { color: #111; }
+.q-page + .q-page { margin-top: 26px; padding-top: 22px; border-top: 1px dashed #bbb; }
+.q-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; border-bottom: 2px solid #16386e; padding-bottom: 9px; }
+.q-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.q-logo { max-height: 42px; max-width: 150px; object-fit: contain; }
+.q-title { font-size: 17px; font-weight: 800; color: #16386e; line-height: 1.3; }
+.q-sub { font-size: 12px; color: #444; margin-top: 2px; }
+.q-meta { text-align: right; font-size: 11.5px; color: #444; white-space: nowrap; line-height: 1.7; }
+.q-agent { font-size: 11.5px; color: #444; margin: 8px 0 12px; }
+.q-h { font-size: 13.5px; margin: 18px 0 8px; color: #16386e; border-left: 3px solid #16386e; padding-left: 9px; }
+
+.q-hero { border: 1.5px solid #16386e; border-radius: 10px; padding: 14px 16px; }
+.q-hero.ok { background: #eef7f1; border-color: #147a4d; }
+.q-hero .k { font-size: 12px; color: #444; }
+.q-hero .v { font-size: 34px; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; color: #16386e; font-variant-numeric: tabular-nums; }
+.q-hero.ok .v { color: #147a4d; }
+.q-hero .v .u { font-size: .42em; font-weight: 600; color: #555; margin-left: 6px; }
+.q-hero .s { font-size: 12px; color: #333; margin-top: 3px; }
+
+.q-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0 0; }
+.q-tile { border: 1px solid #bbb; border-radius: 8px; padding: 9px 11px; }
+.q-tile .k { display: block; font-size: 11px; color: #555; }
+.q-tile b { display: block; font-size: 16px; margin: 2px 0 3px; font-variant-numeric: tabular-nums; }
+.q-tile .s { display: block; font-size: 10.5px; color: #666; line-height: 1.4; }
+
+.q-cmp { border: 1px solid #ccc; border-radius: 8px; padding: 9px 12px; margin: 0 0 9px; }
+.q-cmp-t { display: flex; align-items: baseline; gap: 9px; margin-bottom: 7px; }
+.q-cmp-t b { font-size: 12.5px; }
+.q-cmp-t span { font-size: 11px; color: #666; }
+.q-cmp-row { display: grid; grid-template-columns: 118px 1fr 110px; align-items: center; gap: 10px; margin-bottom: 4px; }
+.q-cmp-row .n { font-size: 11.5px; color: #333; }
+.q-cmp-row .v { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+.q-track { height: 13px; border: 1px solid #ccc; border-radius: 0 3px 3px 0; }
+.q-fill { height: 100%; border-radius: 0 2px 2px 0; min-width: 2px; border-right: 2px solid #111; }
+.q-fill.a { background: #2a78d6; }
+.q-fill.b { background: #eb6834; }
+.q-cmp-d { display: flex; align-items: baseline; gap: 8px; font-size: 11.5px; color: #333; border-top: 1px dashed #ccc; margin-top: 6px; padding-top: 6px; }
+.q-cmp-d b { font-size: 13px; font-variant-numeric: tabular-nums; }
+.q-pct { border: 1px solid #999; border-radius: 999px; padding: 0 7px; font-size: 10.5px; }
+.q-say { margin-left: auto; font-weight: 700; }
+.q-basis { font-size: 11px; color: #555; border: 1px dashed #bbb; border-radius: 6px; padding: 7px 10px; margin-top: 10px; }
+
+.q-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.q-table th, .q-table td { border: 1px solid #bbb; padding: 4px 7px; text-align: right; }
+.q-table thead th { background: #eef1f6; font-weight: 700; }
+.q-table tr.q-total > th { background: #eef1f6; }
+
+.q-reasons { margin: 0; padding-left: 0; list-style: none; counter-reset: qr; }
+.q-reasons li { display: flex; gap: 9px; font-size: 11.5px; line-height: 1.55; padding: 5px 0; border-bottom: 1px dotted #ddd; }
+.q-reasons li:last-child { border-bottom: 0; }
+.q-reasons .mark { flex: 0 0 auto; width: 15px; font-weight: 700; }
+.q-reasons li.yes .mark { color: #147a4d; }
+.q-reasons li.no .mark { color: #8a5a00; }
+.q-docs { list-style: none; padding: 0; margin: 0; }
+.q-docs li { display: flex; gap: 9px; font-size: 11.5px; line-height: 1.5; padding: 4px 0; }
+.q-docs .box { flex: 0 0 auto; }
+.q-caveats { margin: 0; padding-left: 18px; font-size: 11px; color: #333; line-height: 1.6; }
+.q-note { font-size: 10.5px; color: #666; margin: 7px 0 0; line-height: 1.5; }
+.q-sign { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin: 30px 0 0; }
+.q-sign .line { border-bottom: 1px solid #333; height: 30px; }
+.q-sign span { font-size: 11px; color: #555; }
+.q-foot { font-size: 10px; color: #666; border-top: 1px solid #ddd; margin-top: 14px; padding-top: 8px; line-height: 1.55; }
+.q-logo-row { display: flex; align-items: center; gap: 12px; margin: 6px 0; }
+.q-logo-preview { max-height: 46px; max-width: 170px; border: 1px solid var(--line); border-radius: 8px; padding: 4px; background: #fff; }
+
+@media print {
+  .q-page { break-after: page; page-break-after: always; }
+  .q-page.last { break-after: auto; page-break-after: auto; }
+  .q-page + .q-page { margin-top: 0; padding-top: 0; border-top: 0; }
+  .q-cmp, .q-table, .q-hero, .q-tiles, .q-sign { break-inside: avoid; page-break-inside: avoid; }
+  .q-table tr { break-inside: avoid; page-break-inside: avoid; }
+}

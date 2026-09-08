@@ -14,6 +14,8 @@
 
   // ขนาดกระดาษต้องประกาศใน @page เท่านั้น ใส่ในคลาสไม่ได้ จึงสลับ <style> เอา
   // (ทำแบบนี้ได้ผลทุกเบราว์เซอร์ ไม่ต้องพึ่ง named page ที่บางตัวยังไม่รองรับ)
+  const setPref = (k, v) => { localStorage.setItem(k, v); K.render(); };
+
   function setPageOrientation(landscape) {
     let el = document.getElementById('print-page-size');
     if (!el) {
@@ -46,10 +48,24 @@
       h('p.hint', { text: curDoc.landscape
         ? 'เอกสารชุดนี้ตั้งเป็น A4 แนวนอน 4 หน้าให้แล้ว — ในหน้าต่างพิมพ์ให้เปิด "กราฟิกพื้นหลัง" ด้วย ตารางจะได้มีแถบสีหัวตาราง'
         : 'เอกสารนี้ตั้งเป็น A4 แนวตั้ง' }),
+      cur === 'quote' ? h('div', { style: 'display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px' }, [
+        h('span.hint', { text: 'ความยาว:', style: 'margin:0' }),
+        K.switch2([{ value: 'full', label: 'เต็ม 2 หน้า' }, { value: 'short', label: 'สั้น 1 หน้า' }],
+          K.quoteLength(), (v) => setPref('keyman.quoteLength', v)),
+        h('span.hint', { text: 'ที่มาของเบี้ย:', style: 'margin:0 0 0 8px' }),
+        K.switch2([{ value: '0', label: 'ไม่พิมพ์' }, { value: '1', label: 'พิมพ์ด้วย' }],
+          K.quoteShowBasis() ? '1' : '0', (v) => setPref('keyman.quoteBasis', v)),
+      ]) : null,
+      cur === 'quote' ? h('p.hint', { text: 'แนะนำให้ปิด "ที่มาของเบี้ย" ไว้ — ใบที่ระบุว่าเบี้ยคิดเป็นกี่ % ของบรรทัดไหนในงบ ตอบคำถามแทนคุณไปแล้วว่าเบี้ยมาจากสูตร ไม่ใช่มาจากเหตุผลทางธุรกิจ' }) : null,
     ]);
     // แถบเลือกเอกสารกับปุ่มพิมพ์ต้องไม่ติดไปบนกระดาษ ไม่งั้นได้หน้าเปล่าเพิ่มมาหนึ่งหน้า
     controls.classList.add('noprint');
     main.appendChild(controls);
+    if (cur === 'quote') {
+      const settings = K.quoteSettingsCard();
+      settings.classList.add('noprint');
+      main.appendChild(settings);
+    }
 
     if (cur === 'sheets') {
       // พรีวิวบนจอ: กระดาษแนวนอนกว้างกว่าจอมือถือ ให้เลื่อนในกรอบของตัวเอง ไม่ใช่ทั้งหน้า
@@ -59,7 +75,7 @@
       return;
     }
     const paper = h('div.paper');
-    if (cur === 'quote') renderQuote(paper, k, c);
+    if (cur === 'quote') K.renderQuote(paper, k, c);
     else if (cur === 'pnd1') renderPnd1(paper, k, c);
     else if (cur === 'welfare') renderWelfare(paper, k, c);
     else renderResolution(paper, k, c);
@@ -74,49 +90,6 @@
     return h('table', null, [h('tbody', null, rows.map((r) => h('tr', null, [
       h('td', { style: 'text-align:left', text: r[0] }), h('td', { text: r[1] }),
     ])))]);
-  }
-
-  function renderQuote(paper, k, c) {
-    if (!c.checks.canQuote) {
-      paper.appendChild(h('p', { text: 'ยังพิมพ์ใบเสนอไม่ได้ — แก้ข้อตรวจสอบระดับบล็อกให้ครบก่อน:' }));
-      paper.appendChild(h('ul', null, c.checks.blocking.map((b) => h('li', { text: b.code + ' — ' + b.title }))));
-      return;
-    }
-    paper.appendChild(h('h3', { text: 'ข้อเสนอโครงสร้างประกันคีย์แมน' }));
-    paper.appendChild(h('p', { text: 'บริษัท: ' + nameOf(k) + '  ·  เลขทะเบียน: ' + (k.company.regNo || '–') + '  ·  วันที่ ' + today() }));
-    paper.appendChild(tbl([
-      ['สถานะทางภาษี', c.sme.isSme ? 'เข้าเกณฑ์ SME (ยกเว้น 300,000 · 15% · 20%)' : 'ไม่เข้าเกณฑ์ SME (อัตรา 20%)'],
-      ['ค่าใช้จ่ายในการขายและบริการ ปีล่าสุด', money(E.lastValue(k.financials.sga))],
-      ['เบี้ยประกันคีย์แมนที่เสนอ', money(c.premiumTotal) + ' บาท/ปี'],
-      ['ฐานคิดเบี้ย — ค่าใช้จ่ายในการขายและบริการ', money(c.ceiling.base)],
-      ['สัดส่วนเบี้ยต่อฐานคิดเบี้ย', c.ceiling.base ? (c.premiumTotal / c.ceiling.base * 100).toFixed(2) + '%' : '–'],
-      ['ภาษีทุกทอดที่บริษัทออกให้', money(c.allTierTaxTotal)],
-      ['รวมบันทึกเป็นรายจ่ายของบริษัท', money(c.recordedExpenseTotal)],
-      ['ประหยัดภาษีนิติบุคคล', money(c.comparison.after.citSaving)],
-      ['ภาษีที่เสียสุทธิฝั่ง After', money(c.comparison.after.netTax)],
-      ['ภาษีที่เสียรวมฝั่ง Before (ปันผล)', money(c.comparison.before.totalTax)],
-      ['ผลต่างภาษี', money(c.comparison.taxDiff)],
-      ['เงินถึงมือเจ้าของ (After)', money(c.comparison.after.ownerCash)],
-      ['เงินถึงมือเจ้าของ (Before)', money(c.comparison.before.ownerCash)],
-      ['วิธีออกภาษีตาม ป.96/2543', E.wordingLabel(k.policy.taxMethod)],
-      ['ผู้รับผลประโยชน์', k.policy.beneficiary === 'company' ? 'บริษัท' : k.policy.beneficiary === 'heir' ? 'ทายาทของกรรมการ' : '–'],
-    ]));
-    paper.appendChild(h('h4', { text: 'การจัดสรรเบี้ยรายกรรมการ' }));
-    paper.appendChild(h('table', null, [
-      h('thead', null, [h('tr', null, ['กรรมการ', 'เกณฑ์ตามระดับตำแหน่ง', 'เบี้ยที่จัดสรร', 'ภาษีทุกทอด'].map((t, i) =>
-        h('th', { style: i < 2 ? 'text-align:left' : '', text: t })))]),
-      h('tbody', null, k.directors.map((d, i) => h('tr', null, [
-        h('td', { style: 'text-align:left', text: d.name || 'ท่านที่ ' + (i + 1) }),
-        h('td', { style: 'text-align:left', text: d.positionCriteria || '–' }),
-        h('td', { text: money(d.premiumAllocated) }),
-        h('td', { text: money(c.perDirector[i].gross.tax) }),
-      ]))),
-    ]));
-    paper.appendChild(h('h4', { text: 'ข้อควรระวัง' }));
-    paper.appendChild(h('ul', null, c.comparison.caveats.map((t) => h('li', { text: t }))));
-    paper.appendChild(h('p', { style: 'margin-top:14px;font-size:12px',
-      text: 'ตัวเลขทั้งหมดเป็นการประมาณเพื่อการนำเสนอ ไม่ใช่คำวินิจฉัยทางภาษี ควรให้ผู้สอบบัญชีหรือที่ปรึกษาภาษีของบริษัทตรวจสอบก่อนใช้จริง ' +
-        'ฐานอ้างอิง: หนังสือตอบข้อหารือ กค 0811/408 (2543), กค 0706/4227 (2547), กค 0706/7251 (2549), กค 0702/9358 (2552) และคำสั่งกรมสรรพากร ป.96/2543' }));
   }
 
   function renderPnd1(paper, k, c) {
