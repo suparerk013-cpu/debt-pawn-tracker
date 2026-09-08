@@ -250,17 +250,38 @@
         deltaRow(3, 'เงินเข้าเจ้าของ', A.ownerCash, B.ownerCash, cmp.cashDiff, B.ownerCash,
           cmp.cashDiff > 0 ? 'เงินเข้าเจ้าของมากขึ้น' : cmp.cashDiff < 0 ? 'เงินเข้าเจ้าของน้อยลง' : 'เท่ากัน'),
       ]),
+      h('div.fsheet-gap'),
+      K.table([h('tr', null, [
+        th('การจัดสรรเบี้ยรายกรรมการ', 'label'), th('ค่าตอบแทนทั้งปี'), th('เบี้ยที่จัดสรร'),
+        th('ภาษีที่บริษัทออกให้'), th('รวมเป็นเงินได้'), th('ภ.ง.ด.1 ต่อเดือน'),
+      ])], K.state.kase.directors.map((d, i) => {
+        const g = c.perDirector[i].gross;
+        const pay = E.n0(d.salary) + E.n0(d.bonus);
+        return h('tr', null, [
+          td((d.name || 'ท่านที่ ' + (i + 1)) + (d.positionCriteria ? ' · ' + d.positionCriteria : ''), 'label'),
+          td(M(pay), 'num'), td(M(d.premiumAllocated), 'num'), td(M(g.tax), 'num'),
+          td(M(pay + E.n0(d.premiumAllocated) + g.tax), 'num'), td(M(g.monthlyWithholding), 'num'),
+        ]);
+      }).concat([h('tr.total', null, [
+        td('รวม', 'label'), td(M(c.salaryTotal), 'num'), td(M(c.premiumTotal), 'num'),
+        td(M(c.allTierTaxTotal), 'num'),
+        td(M(c.salaryTotal + c.premiumTotal + c.allTierTaxTotal), 'num'), td(M(c.monthlyWithholdingTotal), 'num'),
+      ])])),
       h('p.fsheet-note', { text: 'เงินก้อนที่ใช้เทียบฝั่งปันผล ' + M(B.lumpSum) + ' บาท · ภาษีเงินปันผลคิด 10% ของเงินก้อนหลังหักภาษีนิติบุคคลแล้ว · ' +
-        'ตัวเลขเป็นภาพของปีเดียว ควรกางกระแสเงินสดตลอดอายุการชำระเบี้ยประกอบเสมอ' }),
+        'เบี้ยประกันและภาษีที่บริษัทออกให้ถือเป็นเงินได้ของกรรมการตาม ม.40(1) ต้องนำส่ง ภ.ง.ด.1 ทุกเดือนตลอดอายุการชำระเบี้ย' }),
     ]);
   }
 
   // เลือกพิมพ์เฉพาะบางชีตได้ — เก็บไว้ในเบราว์เซอร์ ไม่ผูกกับเคส
+  // density: ชีตที่มีแถวเยอะใช้ตัวเล็ก ชีตที่โล่งใช้ตัวใหญ่ขึ้น เพื่อให้เต็มหน้ากระดาษใกล้เคียงกัน
+  // ตัวเลขนี้ปรับจากการวัดความสูงจริง ถ้าเพิ่มแถวต้องวัดใหม่
   K.SHEETS = [
-    { id: 'pl', label: 'งบกำไรขาดทุน', build: (c, n, t) => sheetPl(c, n, t) },
-    { id: 'bs', label: 'งบดุล', build: (c, n, t) => sheetBs(n, t) },
-    { id: 'taccount', label: 'ตารางเพื่อแสดงงบ', build: (c, n, t) => sheetTaccount(c, n, t) },
-    { id: 'summary', label: 'สรุปผลต่าง', build: (c, n, t) => sheetSummary(c, n, t) },
+    { id: 'pl', label: 'งบกำไรขาดทุน', density: 'd1', build: (c, n, t) => sheetPl(c, n, t) },
+    { id: 'bs', label: 'งบดุล', density: 'd2', build: (c, n, t) => sheetBs(n, t) },
+    { id: 'taccount', label: 'ตารางเพื่อแสดงงบ', density: 'd3', build: (c, n, t) => sheetTaccount(c, n, t) },
+    // ชีตสรุปมีตารางรายกรรมการต่อท้าย ยิ่งกรรมการเยอะยิ่งสูง จึงลดขนาดตัวอักษรตามจำนวนคน
+    { id: 'summary', label: 'สรุปผลต่าง', build: (c, n, t) => sheetSummary(c, n, t),
+      density: () => (((K.state.kase.directors || []).length > 4) ? 'd1' : 'd2') },
   ];
   const ALL = K.SHEETS.map((x) => x.id).join(',');
   K.sheetPick = function () {
@@ -283,7 +304,14 @@
     const picked = K.sheetPick();
     picked.forEach((sh, i) => {
       const node = sh.build(c, i + 1, picked.length);
+      node.classList.add(typeof sh.density === 'function' ? sh.density() : (sh.density || 'd2'));
       if (i === picked.length - 1) node.classList.add('last');
+      // ตารางสั้นห้ามถูกตัดกลางหน้า แต่ตารางยาว (เช่น กรรมการหลายท่าน) ต้องยอมให้ตัดได้
+      // ไม่งั้นมันกระโดดไปทั้งก้อนแล้วเหลือหน้าว่างครึ่งหน้า — thead ของเบราว์เซอร์ซ้ำหัวให้เอง
+      node.querySelectorAll('.tablewrap').forEach((w) => {
+        const tb = w.querySelector('tbody');
+        if (tb && tb.rows.length > 8) w.classList.add('may-break');
+      });
       target.appendChild(node);
     });
   };

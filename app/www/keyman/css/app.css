@@ -648,9 +648,17 @@ ul.whylist li.warn { border-left-color: var(--warn); background: var(--warn-bg);
   .fsheet.last { break-after: auto; page-break-after: auto; }
   .fsheet + .fsheet { border-top: 0; padding-top: 0; }
   .fsheet .tablewrap, .fsheet table { break-inside: avoid; page-break-inside: avoid; }
+  .fsheet .tablewrap.may-break, .fsheet .tablewrap.may-break table { break-inside: auto; page-break-inside: auto; }
+  .fsheet .tablewrap.may-break thead { display: table-header-group; }
   .fsheet tr { break-inside: avoid; page-break-inside: avoid; }
-  .paper.landscape table { font-size: 9pt; }
-  .paper.landscape th, .paper.landscape td { padding: 1.8px 5px; line-height: 1.35; }
+  /* ความหนาแน่นต่อชีต — ปรับจากความสูงจริงให้แต่ละหน้าเต็มกระดาษใกล้เคียงกัน */
+  .fsheet.d1 table { font-size: 9pt; }
+  .fsheet.d1 th, .fsheet.d1 td { padding: 1.8px 5px; line-height: 1.35; }
+  .fsheet.d2 table { font-size: 10.5pt; }
+  .fsheet.d2 th, .fsheet.d2 td { padding: 3.8px 7px; line-height: 1.45; }
+  .fsheet.d3 table { font-size: 11pt; }
+  .fsheet.d3 th, .fsheet.d3 td { padding: 6px 9px; line-height: 1.5; }
+  .fsheet.d3 .fsheet-note, .fsheet.d2 .fsheet-note { font-size: 10pt; }
   .fsheet-head b { font-size: 13pt; }
   /* ถ้าผู้ใช้ไม่เปิด "กราฟิกพื้นหลัง" สีพื้นจะหาย จึงต้องอ่านออกได้ด้วยเส้นและน้ำหนักตัวอักษร */
   .paper.landscape tr.head-band > th { border: 1px solid #333; }
