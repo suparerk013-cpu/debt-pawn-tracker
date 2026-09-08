@@ -19,6 +19,7 @@
   const th = (text, cls) => h('th', { class: cls || '', text: text });
 
   // หัวชีตของทุกหน้า — บริษัท ปีภาษี ชื่อชีต และเลขหน้า
+  // เลขหน้าเป็นไดนามิก เพราะเลือกพิมพ์เฉพาะบางชีตได้
   function sheetHead(no, total, title, sub) {
     const k = K.state.kase;
     return h('div.fsheet-head', null, [
@@ -35,7 +36,7 @@
   }
 
   // ── ชีต 1 งบกำไรขาดทุน ────────────────────────────────────────────────
-  function sheetPl(c) {
+  function sheetPl(c, no, total) {
     const y = yearsOf(fin());
     const head = [
       h('tr.head-band', null, [th('หน่วย : บาท', 'label')]
@@ -79,8 +80,26 @@
       }))),
     ]);
 
+    // แถบตัวเลขสรุป — ให้คนที่ได้กระดาษใบนี้อ่านภาพรวมได้ก่อนลงไปในตาราง
+    const growth = (key) => {
+      const a = plv(key, 1), b = plv(key, 2);
+      return a === null || b === null || a === 0 ? null : (b - a) / Math.abs(a) * 100;
+    };
+    const arrow = (g) => (g === null ? '' : (g > 0 ? '▲ ' : g < 0 ? '▼ ' : '') + g.toFixed(1) + '% จากปีก่อน');
+    const kpi = (label, value, note) => h('div.fkpi', null, [
+      h('span.k', { text: label }), h('b', { text: value }), h('span.s', { text: note || '' }),
+    ]);
+    const pbt = plv('profitsBeforeTax', 2), tax = plv('taxPaid', 2);
+    const strip = h('div.fkpis', null, [
+      kpi('รายได้รวมปีล่าสุด', M(plv('revenues', 2)), arrow(growth('revenues'))),
+      kpi('กำไร(ขาดทุน) ก่อนภาษี', M(pbt), arrow(growth('profitsBeforeTax'))),
+      kpi('ภาษีเงินได้', M(tax), pbt && tax !== null ? 'คิดเป็น ' + (tax / pbt * 100).toFixed(2) + '% ของกำไรก่อนภาษี' : ''),
+      kpi('กำไร(ขาดทุน) สุทธิ', M(plv('netProfit', 2)), arrow(growth('netProfit'))),
+    ]);
+
     return h('div.fsheet', null, [
-      sheetHead(1, 4, 'งบกำไรขาดทุน', 'ชีต งบกำไรขาดทุน แถว 4–33'),
+      sheetHead(no, total, 'งบกำไรขาดทุน', 'ชีต งบกำไรขาดทุน แถว 4–33'),
+      strip,
       K.table(head, body),
       h('div.fsheet-gap'),
       fTable,
@@ -89,7 +108,7 @@
   }
 
   // ── ชีต 2 งบดุล ───────────────────────────────────────────────────────
-  function sheetBs() {
+  function sheetBs(no, total) {
     const y = yearsOf(bal());
     const a = E.balanceAnalysis(bal(), K.state.kase.company.paidUpCapital);
     const head = [
@@ -115,7 +134,7 @@
     const ratio = (v) => (v === null || v === undefined ? '–' : v.toFixed(2) + ' เท่า');
     const L = a.latest;
     return h('div.fsheet', null, [
-      sheetHead(2, 4, 'งบแสดงฐานะการเงิน', 'ชีต งบดุล แถว 4–21'),
+      sheetHead(no, total, 'งบแสดงฐานะการเงิน', 'ชีต งบดุล แถว 4–21'),
       K.table(head, body),
       h('div.fsheet-gap'),
       h('div.fsheet-cols', null, [
@@ -136,7 +155,7 @@
   }
 
   // ── ชีต 3 ตารางเพื่อแสดงงบ ────────────────────────────────────────────
-  function sheetTaccount(c) {
+  function sheetTaccount(c, no, total) {
     const last = (bag, key) => {
       const arr = (K.state.kase[bag] || {})[key] || [];
       for (let i = arr.length - 1; i >= 0; i--) if (E.num(arr[i]) !== null) return E.num(arr[i]);
@@ -150,7 +169,7 @@
       rows.map((r) => h('tr', { class: r[2] ? 'total' : '' }, [td(r[0], 'label'), td(r[1], 'num')])), { class: 'kv' });
 
     return h('div.fsheet', null, [
-      sheetHead(3, 4, 'ตารางเพื่อแสดงงบ (T-account)', 'ตัวเลขปีล่าสุดที่กรอกไว้'),
+      sheetHead(no, total, 'ตารางเพื่อแสดงงบ (T-account)', 'ตัวเลขปีล่าสุดที่กรอกไว้'),
       h('div.fsheet-cols', null, [
         tt('DR — รายจ่าย', [
           ['ต้นทุนการขาย', M(pl('cogs'))],
@@ -192,7 +211,7 @@
   }
 
   // ── ชีต 4 สรุปผลต่าง ──────────────────────────────────────────────────
-  function sheetSummary(c) {
+  function sheetSummary(c, no, total) {
     const cmp = c.comparison, A = cmp.after, B = cmp.before;
     const pctOf = (d, base) => (base ? Math.abs(d / base * 100).toFixed(1) + '%' : '–');
     const ledger = (title, rows, totalRow) => K.table([h('tr.head-band', null, [th(title, 'label'), th('จำนวนเงิน')])],
@@ -204,8 +223,8 @@
       td(M(Math.abs(diff)), 'num'), td(pctOf(diff, base), 'num'), td(say, 'label'),
     ]);
 
-    return h('div.fsheet.last', null, [
-      sheetHead(4, 4, 'สรุปผลต่างจาก Keyman', 'เทียบการทำคีย์แมนกับการจ่ายเงินปันผลก้อนเดียวกัน'),
+    return h('div.fsheet', null, [
+      sheetHead(no, total, 'สรุปผลต่างจาก Keyman', 'เทียบการทำคีย์แมนกับการจ่ายเงินปันผลก้อนเดียวกัน'),
       h('div.fsheet-cols', null, [
         ledger('ทำคีย์แมน', [
           ['เบี้ยประกัน', M(A.premium)],
@@ -236,9 +255,36 @@
     ]);
   }
 
+  // เลือกพิมพ์เฉพาะบางชีตได้ — เก็บไว้ในเบราว์เซอร์ ไม่ผูกกับเคส
+  K.SHEETS = [
+    { id: 'pl', label: 'งบกำไรขาดทุน', build: (c, n, t) => sheetPl(c, n, t) },
+    { id: 'bs', label: 'งบดุล', build: (c, n, t) => sheetBs(n, t) },
+    { id: 'taccount', label: 'ตารางเพื่อแสดงงบ', build: (c, n, t) => sheetTaccount(c, n, t) },
+    { id: 'summary', label: 'สรุปผลต่าง', build: (c, n, t) => sheetSummary(c, n, t) },
+  ];
+  const ALL = K.SHEETS.map((x) => x.id).join(',');
+  K.sheetPick = function () {
+    const raw = localStorage.getItem('keyman.sheetPick');
+    const ids = (raw === null ? ALL : raw).split(',').filter(Boolean);
+    const picked = K.SHEETS.filter((x) => ids.indexOf(x.id) >= 0);
+    return picked.length ? picked : K.SHEETS;   // ปิดหมดไม่ได้ ไม่งั้นกดพิมพ์แล้วได้กระดาษเปล่า
+  };
+  K.toggleSheet = function (id) {
+    const cur = K.sheetPick().map((x) => x.id);
+    const next = cur.indexOf(id) >= 0 ? cur.filter((x) => x !== id) : K.SHEETS.map((x) => x.id).filter((x) => cur.indexOf(x) >= 0 || x === id);
+    if (!next.length) return;   // เหลืออย่างน้อยหนึ่งชีตเสมอ
+    localStorage.setItem('keyman.sheetPick', next.join(','));
+    K.render();
+  };
+
   K.renderSheets = function (target) {
     const c = K.state.computed;
     if (!c) { target.appendChild(h('p', { text: 'ยังคำนวณไม่ได้' })); return; }
-    [sheetPl(c), sheetBs(), sheetTaccount(c), sheetSummary(c)].forEach((s) => target.appendChild(s));
+    const picked = K.sheetPick();
+    picked.forEach((sh, i) => {
+      const node = sh.build(c, i + 1, picked.length);
+      if (i === picked.length - 1) node.classList.add('last');
+      target.appendChild(node);
+    });
   };
 })(typeof self !== 'undefined' ? self : this);

@@ -48,6 +48,13 @@
       h('p.hint', { text: curDoc.landscape
         ? 'เอกสารชุดนี้ตั้งเป็น A4 แนวนอน 4 หน้าให้แล้ว — ในหน้าต่างพิมพ์ให้เปิด "กราฟิกพื้นหลัง" ด้วย ตารางจะได้มีแถบสีหัวตาราง'
         : 'เอกสารนี้ตั้งเป็น A4 แนวตั้ง' }),
+      curDoc.landscape ? h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px' },
+        [h('span.hint', { text: 'เลือกชีตที่จะพิมพ์:', style: 'margin:0' })].concat(K.SHEETS.map(function (sh) {
+          const on = K.sheetPick().some(function (x) { return x.id === sh.id; });
+          return h('button', { class: 'btn ' + (on ? 'primary' : ''), text: (on ? '☑ ' : '☐ ') + sh.label,
+            onclick: function () { K.toggleSheet(sh.id); } });
+        }))) : null,
+      curDoc.landscape ? h('p.hint', { text: 'เลือกได้ทีละชีตหรือหลายชีต เลขหน้าปรับตามที่เลือก · ต้องเหลืออย่างน้อยหนึ่งชีต' }) : null,
       cur === 'quote' ? h('div', { style: 'display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px' }, [
         h('span.hint', { text: 'ความยาว:', style: 'margin:0' }),
         K.switch2([{ value: 'full', label: 'เต็ม 2 หน้า' }, { value: 'short', label: 'สั้น 1 หน้า' }],
