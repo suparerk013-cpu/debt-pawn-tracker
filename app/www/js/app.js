@@ -945,8 +945,18 @@
   }
 
   // ---------------- Render ----------------
+  // Every render replaces the whole tree, which recreates the scroll containers at scrollTop 0 —
+  // so tapping ต่อดอก halfway down the list (which re-renders to show "กำลังบันทึก...") threw the
+  // page back to the top. Positions are carried across a re-render of the same screen; moving to
+  // a different screen still starts at the top, as navigation should.
+  const SCROLLERS = ['.content-inner', '.modal-sheet'];
+  let lastRenderedScreen = null;
   function render() {
+    const sameScreen = S.screen === lastRenderedScreen;
+    const saved = sameScreen ? SCROLLERS.map((sel) => { const el = app.querySelector(sel); return el ? el.scrollTop : 0; }) : null;
     app.innerHTML = S.screen === 'login' ? renderLogin() : renderApp();
+    lastRenderedScreen = S.screen;
+    if (saved) SCROLLERS.forEach((sel, i) => { const el = app.querySelector(sel); if (el && saved[i]) el.scrollTop = saved[i]; });
   }
 
   function toastHtml() { return S.toast ? `<div class="toast">${esc(S.toast)}</div>` : ''; }
