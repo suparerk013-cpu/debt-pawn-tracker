@@ -431,7 +431,7 @@ const Api = (() => {
     const todayStr = dateStr(now);
     const duePawns = pawns
       .filter((p) => p.category !== 'jewelry' && p.due_date <= monthEnd)
-      .map((p) => ({ type: 'pawn', ref_id: p.id, title: p.item_name, amount: p.interest || 0, due_date: p.due_date, category: p.category }));
+      .map((p) => ({ type: 'pawn', ref_id: p.id, title: p.item_name, ticket_code: p.ticket_code || '', amount: p.interest || 0, due_date: p.due_date, category: p.category }));
     // Jewelry: once accrued interest reaches month 4, it becomes a "due now" line item —
     // there's no calendar due_date to check against since renewal no longer shifts a date.
     jewelryPawns.forEach((p) => {
@@ -441,7 +441,7 @@ const Api = (() => {
       // due_date stays "today" so the row sorts as needing action now; final_due is the real
       // calendar deadline (pawn date + 5 months) the card shows the user.
       const finalDue = new Date(pawnDate + 'T00:00:00'); finalDue.setMonth(finalDue.getMonth() + 5);
-      duePawns.push({ type: 'pawn', ref_id: p.id, title: `${p.item_name} (ดอกเบี้ยสะสม)`, amount: p.interest * term.billed, due_date: todayStr, category: p.category, principal: p.amount, month_number: term.billed, months_elapsed: term.elapsed, term_overdue: term.overdue, pawn_date: pawnDate, final_due: dateStr(finalDue) });
+      duePawns.push({ type: 'pawn', ref_id: p.id, title: `${p.item_name} (ดอกเบี้ยสะสม)`, ticket_code: p.ticket_code || '', amount: p.interest * term.billed, due_date: todayStr, category: p.category, principal: p.amount, month_number: term.billed, months_elapsed: term.elapsed, term_overdue: term.overdue, pawn_date: pawnDate, final_due: dateStr(finalDue) });
     });
     const dueExpenses = expenses
       .filter((e) => !(e.payments && e.payments[currentMonth]))

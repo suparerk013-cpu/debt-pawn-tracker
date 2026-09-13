@@ -1145,6 +1145,7 @@
           <span class="near-kind" style="background:${kindBg};color:${kindFg}">${kindLabel}</span>
           <span class="installment-date">${esc(it.title)}</span>
         </div>
+        ${it.type === 'pawn' && it.ticket_code ? `<div style="font-size:12px;color:#5C6C68;margin-top:2px">เลขที่ตั๋ว ${esc(it.ticket_code)}</div>` : ''}
         <div class="installment-amount">
           ${it.type === 'pawn' && it.category === 'jewelry'
             ? `฿${formatMoney(it.amount)} ดอกสะสม · เงินต้น ฿${formatMoney(it.principal)} · งวดที่ ${it.month_number}/${JEWELRY_BILLED_MONTHS}${it.term_overdue ? ' <span style="color:#B23B3B;font-weight:600">(เลยกำหนดต่อดอก)</span>' : ''}
