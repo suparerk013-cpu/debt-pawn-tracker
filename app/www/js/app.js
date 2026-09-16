@@ -10,7 +10,7 @@
     paid:      { label: 'จ่ายแล้ว',        bg: '#E7F5EE', fg: '#1F7A52', dot: '#2E9E6D' },
     overdue:   { label: 'ค้างชำระ',        bg: '#FDEAEA', fg: '#B23B3B', dot: '#D64545' },
     due_soon:  { label: 'ใกล้ถึงกำหนด',    bg: '#FFF3DD', fg: '#92600A', dot: '#E8A93B' },
-    upcoming:  { label: 'ยังไม่ถึงกำหนด',  bg: '#EFEFEF', fg: '#6B6B6B', dot: '#A6ACAA' },
+    upcoming:  { label: 'ยังไม่ถึงกำหนด',  bg: '#EFEFEF', fg: '#6B6B6B', dot: '#A3A9B8' },
   };
 
   // Pawn ticket redemption/renewal periods a shop typically offers.
@@ -311,7 +311,7 @@
       <div>
         <div class="field-label">${label}</div>
         <button type="button" class="field-input date-field-btn" data-action="toggle-date-picker" data-field="${field}">
-          <span style="${value ? '' : 'color:#A6ACAA'}">${value ? formatDate(value) : 'เลือกวันที่'}</span>
+          <span style="${value ? '' : 'color:#A3A9B8'}">${value ? formatDate(value) : 'เลือกวันที่'}</span>
           ${svgCalendar()}
         </button>
         ${isOpen ? renderCalendarPopup(field) : ''}
@@ -768,10 +768,10 @@
       wb.creator = 'หนี้สิน & ตั๋วจำนำ';
       wb.created = new Date();
 
-      const TEAL = 'FF0E6B5C';
+      const BRAND = 'FF1428A0';
       const HEADER_FONT = { color: { argb: 'FFFFFFFF' }, bold: true, size: 12 };
-      const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL } };
-      const BORDER = { style: 'thin', color: { argb: 'FFE0E7E5' } };
+      const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND } };
+      const BORDER = { style: 'thin', color: { argb: 'FFDDE3EE' } };
       const CELL_BORDER = { top: BORDER, left: BORDER, bottom: BORDER, right: BORDER };
       function styleHeaderRow(row) {
         row.eachCell((cell) => {
@@ -792,7 +792,7 @@
       const sSum = wb.addWorksheet('สรุปภาพรวม');
       sSum.mergeCells('A1:B1');
       sSum.getCell('A1').value = `รายงานภาพรวม — ${new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}`;
-      sSum.getCell('A1').font = { bold: true, size: 14, color: { argb: TEAL } };
+      sSum.getCell('A1').font = { bold: true, size: 14, color: { argb: BRAND } };
       sSum.addRow([]);
       styleHeaderRow(sSum.addRow(['รายการ', 'ยอด (บาท)']));
       [
@@ -965,6 +965,7 @@
     return `
     <div class="lock-screen">
       <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:20px">
+        <div class="brand-mark" style="margin-bottom:8px">Debt · Pawn Tracker</div>
         <div class="lock-icon">${svgLock()}</div>
         <div class="lock-title">พิมพ์ชื่อผู้ใช้เพื่อเข้าแอป</div>
         <div class="lock-sub">not หรือ lek</div>
@@ -972,7 +973,7 @@
       </div>
       <div style="padding:24px;display:flex;flex-direction:column;gap:14px">
         <input class="field-input" data-bind="loginUsername" value="${esc(S.forms.loginUsername)}" placeholder="ชื่อผู้ใช้" autocapitalize="off" autocomplete="off"/>
-        <button class="submit-btn" data-action="submit-login" ${S.busy ? 'disabled' : ''}>เข้าแอป</button>
+        <button class="submit-btn" style="background:#fff;color:#1428A0;box-shadow:0 8px 20px rgba(0,0,0,0.2)" data-action="submit-login" ${S.busy ? 'disabled' : ''}>เข้าแอป</button>
       </div>
       ${toastHtml()}
     </div>`;
@@ -984,8 +985,8 @@
     const showFab = ['dashboard', 'debtList', 'pawnList', 'expenses'].includes(S.screen);
 
     return `
-      <div class="header">
-        ${showBack ? `<button class="icon-btn" data-action="back">${svgBack('#1B2422')}</button>` : ''}
+      <div class="header${S.screen === 'dashboard' ? ' brand' : ''}">
+        ${showBack ? `<button class="icon-btn" data-action="back">${svgBack('#141B34')}</button>` : ''}
         ${headerCenter()}
       </div>
       <div class="content-scroll">
@@ -1007,17 +1008,18 @@
       const viewingOther = S.currentUser && S.realUser && S.currentUser.id !== S.realUser.id;
       const userMenu = (isAdmin && S.userMenuOpen) ? `
         <div class="fab-menu" style="position:absolute;top:44px;right:0;z-index:20">
-          ${S.switchableUsers.map((u) => `<div class="fab-menu-item" data-action="switch-user" data-id="${u.id}" style="${u.id === S.currentUser.id ? 'font-weight:700;color:#0E6B5C' : ''}">${u.id === S.currentUser.id ? '✓ ' : ''}${esc(u.username)}${u.is_admin ? ' (แอดมิน)' : ''}</div>`).join('')}
+          ${S.switchableUsers.map((u) => `<div class="fab-menu-item" data-action="switch-user" data-id="${u.id}" style="${u.id === S.currentUser.id ? 'font-weight:700;color:#1428A0' : ''}">${u.id === S.currentUser.id ? '✓ ' : ''}${esc(u.username)}${u.is_admin ? ' (แอดมิน)' : ''}</div>`).join('')}
         </div>` : '';
       return `
         <div style="flex:1">
-          <div class="header-greeting">สวัสดี 👋 ${esc((S.currentUser || {}).username || '')}${viewingOther ? ' <span style="color:#92600A">(กำลังดูของคนอื่น)</span>' : ''}</div>
+          <div class="brand-mark">Debt · Pawn</div>
+          <div class="header-greeting">สวัสดี 👋 ${esc((S.currentUser || {}).username || '')}${viewingOther ? ' <span style="color:#FFD58A">(กำลังดูของคนอื่น)</span>' : ''}</div>
           <div class="header-title-lg">ภาพรวมของคุณ</div>
         </div>
         <div style="display:flex;align-items:center;gap:2px;position:relative">
-          ${isAdmin ? `<button class="icon-btn" data-action="toggle-user-menu">${svgSwap()}</button>` : ''}
-          <button class="icon-btn" style="position:relative" data-action="open-notifications">${svgBell()}${S.unreadCount ? `<span style="position:absolute;top:4px;right:4px;background:#D64545;color:#fff;border-radius:50%;min-width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;padding:0 3px">${S.unreadCount}</span>` : ''}</button>
-          <button class="icon-btn" data-action="logout">${svgLogout()}</button>
+          ${isAdmin ? `<button class="icon-btn" data-action="toggle-user-menu">${svgSwap('#fff')}</button>` : ''}
+          <button class="icon-btn" style="position:relative" data-action="open-notifications">${svgBell('#fff')}${S.unreadCount ? `<span style="position:absolute;top:4px;right:4px;background:#D64545;color:#fff;border:1.5px solid #1428A0;border-radius:50%;min-width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;padding:0 3px">${S.unreadCount}</span>` : ''}</button>
+          <button class="icon-btn" data-action="logout">${svgLogout('#fff')}</button>
           ${userMenu}
         </div>`;
     }
@@ -1035,7 +1037,7 @@
     };
     const cls = ['debtList', 'pawnList', 'settings', 'expenses', 'manage', 'history'].includes(S.screen) ? 'header-title-md' : 'header-title';
     const trailing = S.screen === 'debtDetail'
-      ? `<button class="icon-btn" data-action="open-debt-settings" data-id="${S.selectedDebtId}">${svgGear('#1B2422')}</button>`
+      ? `<button class="icon-btn" data-action="open-debt-settings" data-id="${S.selectedDebtId}">${svgGear('#141B34')}</button>`
       : (S.screen === 'notifications' && S.unreadCount ? `<button class="mark-paid-btn" style="padding:6px 10px;font-size:12px" data-action="mark-all-read">อ่านทั้งหมด</button>` : '');
     return `<div class="${cls}" style="flex:1">${esc(titleMap[S.screen] || '')}</div>${trailing}`;
   }
@@ -1074,16 +1076,25 @@
     // Jewelry and electronics get their own cards (replacing the single combined pawn card):
     // each shows principal on top with the interest owed underneath, since that's the number
     // actually due each cycle and the two categories accrue it on completely different rules.
+    const urgentCount = r.breakdown.filter((it) => daysUntil(it.due_date) <= 2).length;
+    const hero = `
+      <div class="dash-hero-wrap">
+        <div class="hero-card">
+          <div class="hero-label">ต้องชำระเดือนนี้ (รวมทุกหมวด)</div>
+          <div class="hero-amount">฿${formatMoney(r.total_due_this_month)}</div>
+          <div class="hero-meta">
+            <span class="hero-chip">${r.breakdown.length} รายการ</span>
+            ${urgentCount ? `<span class="hero-chip alert">⚠️ ด่วน ${urgentCount} รายการ</span>` : `<span class="hero-chip">✓ ไม่มีรายการด่วน</span>`}
+            <span class="hero-chip">หนี้คงเหลือ ฿${formatMoney(r.total_debt)}</span>
+          </div>
+        </div>
+      </div>`;
     const stats = `
       <div class="report-grid">
-        ${stat('ยอดหนี้สิน', r.total_debt, '#E3F3EF', '#0E6B5C')}
+        ${stat('ยอดหนี้สิน', r.total_debt, '#E8EEFB', '#1428A0')}
         ${stat('ค่าใช้จ่ายประจำต่อเดือน', r.total_recurring, '#FFF3DD', '#92600A')}
         ${stat('💍 ตั๋วทอง', r.total_pawn_jewelry, '#FBF0D2', '#8A6A12', `${r.count_pawn_jewelry} ใบ · ดอก ฿${formatMoney(r.interest_jewelry)}`, 'jewelry')}
-        ${stat('📱 ตั๋วอิเล็กทรอนิก', r.total_pawn_other, '#E1EBF7', '#2A5F97', `${r.count_pawn_other} ใบ · ดอก ฿${formatMoney(r.interest_other)}`, 'nonjewelry')}
-      </div>
-      <div class="report-stat" style="background:#FDEAEA;margin-bottom:16px">
-        <div class="report-stat-label" style="color:#B23B3B">ต้องชำระเดือนนี้ (รวมทุกหมวด)</div>
-        <div class="report-stat-amount" style="color:#B23B3B">฿${formatMoney(r.total_due_this_month)}</div>
+        ${stat('📱 ตั๋วอิเล็กทรอนิก', r.total_pawn_other, '#E0F3FA', '#0A6E96', `${r.count_pawn_other} ใบ · ดอก ฿${formatMoney(r.interest_other)}`, 'nonjewelry')}
       </div>`;
 
     // Overdue or due within 2 days is treated as needing action right now, split into its own
@@ -1094,6 +1105,7 @@
 
     return `
       <div class="screen-pad">
+        ${hero}
         ${stats}
         ${urgent.length ? `
           <div class="section-title" style="color:#B23B3B">⚠️ ครบกำหนดชำระ (ด่วน)</div>
@@ -1132,8 +1144,8 @@
 
   function renderDueRow(it) {
     const kindLabel = { installment: 'งวดผ่อน', pawn: 'ตั๋วจำนำ', expense: 'ค่าใช้จ่ายประจำ' }[it.type];
-    const kindBg = { installment: '#E3F3EF', pawn: '#EFE7F8', expense: '#FFF3DD' }[it.type];
-    const kindFg = { installment: '#0E6B5C', pawn: '#6B3FA0', expense: '#92600A' }[it.type];
+    const kindBg = { installment: '#E8EEFB', pawn: '#EFE7F8', expense: '#FFF3DD' }[it.type];
+    const kindFg = { installment: '#1428A0', pawn: '#6B3FA0', expense: '#92600A' }[it.type];
     const action = it.type === 'installment'
       ? `<button class="mark-paid-btn" data-action="mark-paid" data-id="${it.ref_id}" data-debt="${it.debt_id}" ${lockAttr()}>${btnLabel('paid:' + it.ref_id, 'บันทึกว่าจ่ายแล้ว')}</button>`
       : it.type === 'expense'
@@ -1155,7 +1167,7 @@
           <span class="near-kind" style="background:${kindBg};color:${kindFg}">${kindLabel}</span>
           <span class="installment-date">${esc(it.title)}</span>
         </div>
-        ${it.type === 'pawn' && it.ticket_code ? `<div style="font-size:12px;color:#5C6C68;margin-top:2px">เลขที่ตั๋ว ${esc(it.ticket_code)}</div>` : ''}
+        ${it.type === 'pawn' && it.ticket_code ? `<div style="font-size:12px;color:#5B6478;margin-top:2px">เลขที่ตั๋ว ${esc(it.ticket_code)}</div>` : ''}
         <div class="installment-amount">
           ${it.type === 'pawn' && it.category === 'jewelry'
             ? `฿${formatMoney(it.amount)} ดอกสะสม · เงินต้น ฿${formatMoney(it.principal)} · งวดที่ ${it.month_number}/${JEWELRY_BILLED_MONTHS}${it.term_overdue ? ' <span style="color:#B23B3B;font-weight:600">(เลยกำหนดต่อดอก)</span>' : ''}
@@ -1176,9 +1188,9 @@
   function renderManage() {
     const r = S.report || {};
     const cards = [
-      { screen: 'debtList', icon: svgList('#0E6B5C'), label: 'หนี้สิน', sub: `คงเหลือ ฿${formatMoney(r.total_debt || 0)}`, bg: '#E3F3EF' },
+      { screen: 'debtList', icon: svgList('#1428A0'), label: 'หนี้สิน', sub: `คงเหลือ ฿${formatMoney(r.total_debt || 0)}`, bg: '#E8EEFB' },
       { screen: 'pawnList', cat: 'jewelry', icon: svgTicket('#8A6A12'), label: '💍 ตั๋วจำนำ — ทอง', sub: `${r.count_pawn_jewelry || 0} ใบ · ฿${formatMoney(r.total_pawn_jewelry || 0)} · ดอก ฿${formatMoney(r.interest_jewelry || 0)}`, bg: '#FBF0D2' },
-      { screen: 'pawnList', cat: 'nonjewelry', icon: svgTicket('#2A5F97'), label: '📱 ตั๋วจำนำ — อิเล็กทรอนิก', sub: `${r.count_pawn_other || 0} ใบ · ฿${formatMoney(r.total_pawn_other || 0)} · ดอก ฿${formatMoney(r.interest_other || 0)}`, bg: '#E1EBF7' },
+      { screen: 'pawnList', cat: 'nonjewelry', icon: svgTicket('#0A6E96'), label: '📱 ตั๋วจำนำ — อิเล็กทรอนิก', sub: `${r.count_pawn_other || 0} ใบ · ฿${formatMoney(r.total_pawn_other || 0)} · ดอก ฿${formatMoney(r.interest_other || 0)}`, bg: '#E0F3FA' },
       { screen: 'expenses', icon: svgWallet('#92600A'), label: 'ค่าใช้จ่ายประจำ', sub: `฿${formatMoney(r.total_recurring || 0)}/เดือน`, bg: '#FFF3DD' },
     ];
     return `<div class="screen-pad">${cards.map((c) => `
@@ -1186,7 +1198,7 @@
         <div style="width:44px;height:44px;border-radius:12px;background:${c.bg};display:flex;align-items:center;justify-content:center;flex:none">${c.icon}</div>
         <div style="flex:1">
           <div class="settings-row-title">${c.label}</div>
-          <div style="font-size:13px;color:#5C6C68">${esc(c.sub)}</div>
+          <div style="font-size:13px;color:#5B6478">${esc(c.sub)}</div>
         </div>
         ${svgChevron()}
       </div>`).join('')}</div>`;
@@ -1210,8 +1222,8 @@
   function renderHistoryItem(it) {
     const typeMeta = {
       renew: { label: 'ต่อดอก', bg: '#EFE7F8', fg: '#6B3FA0' },
-      redeem: { label: 'ไถ่ถอน', bg: '#E3F3EF', fg: '#0E6B5C' },
-      installment: { label: 'ผ่อนหนี้', bg: '#E3F3EF', fg: '#0E6B5C' },
+      redeem: { label: 'ไถ่ถอน', bg: '#E8EEFB', fg: '#1428A0' },
+      installment: { label: 'ผ่อนหนี้', bg: '#E8EEFB', fg: '#1428A0' },
       expense: { label: 'ค่าใช้จ่าย', bg: '#FFF3DD', fg: '#92600A' },
     }[it.type];
     const clickable = ['installment', 'expense', 'renew', 'redeem'].includes(it.type);
@@ -1235,13 +1247,13 @@
     const summaryCard = `
       <div class="card" style="display:flex;flex-direction:column;gap:8px">
         <div class="section-title" style="margin:0">สรุปเดือนนี้ (${formatMonthLabel(s.month)})</div>
-        <div class="row-between"><span style="color:#5C6C68">ดอกเบี้ยต่อดอก</span><span style="font-weight:600">฿${formatMoney(s.interest_paid)}</span></div>
-        <div class="row-between"><span style="color:#5C6C68">งวดผ่อนหนี้</span><span style="font-weight:600">฿${formatMoney(s.installments_paid)}</span></div>
-        <div class="row-between"><span style="color:#5C6C68">ค่าใช้จ่ายประจำ</span><span style="font-weight:600">฿${formatMoney(s.expenses_paid)}</span></div>
-        <div class="row-between" style="border-top:1px solid #E7ECEA;padding-top:8px">
+        <div class="row-between"><span style="color:#5B6478">ดอกเบี้ยต่อดอก</span><span style="font-weight:600">฿${formatMoney(s.interest_paid)}</span></div>
+        <div class="row-between"><span style="color:#5B6478">งวดผ่อนหนี้</span><span style="font-weight:600">฿${formatMoney(s.installments_paid)}</span></div>
+        <div class="row-between"><span style="color:#5B6478">ค่าใช้จ่ายประจำ</span><span style="font-weight:600">฿${formatMoney(s.expenses_paid)}</span></div>
+        <div class="row-between" style="border-top:1px solid #E3E8F2;padding-top:8px">
           <span style="font-weight:700">รวมใช้จ่ายจริง</span><span style="font-weight:700;color:#B23B3B">฿${formatMoney(s.net_spend)}</span>
         </div>
-        ${s.redeemed_cash ? `<div style="font-size:12px;color:#A6ACAA">+ เงินต้นไถ่ถอนคืน ฿${formatMoney(s.redeemed_cash)} (ได้ของคืน ไม่นับเป็นค่าใช้จ่าย) · เงินสดจ่ายออกทั้งหมด ฿${formatMoney(s.total_cash_out)}</div>` : ''}
+        ${s.redeemed_cash ? `<div style="font-size:12px;color:#A3A9B8">+ เงินต้นไถ่ถอนคืน ฿${formatMoney(s.redeemed_cash)} (ได้ของคืน ไม่นับเป็นค่าใช้จ่าย) · เงินสดจ่ายออกทั้งหมด ฿${formatMoney(s.total_cash_out)}</div>` : ''}
       </div>`;
     const empty = !h.items.length ? `<div class="empty-card"><div class="empty-emoji">🕐</div><div class="empty-text">ยังไม่มีประวัติ</div></div>` : '';
     const rows = h.items.map(renderHistoryItem).join('');
@@ -1298,7 +1310,7 @@
       <div class="screen-pad">
         <div class="card" style="display:flex;flex-direction:column;gap:10px">
           <div class="row-between">
-            <div style="font-size:22px;font-weight:700;color:#1B2422">฿${formatMoney(d.remaining_amount)}</div>
+            <div style="font-size:22px;font-weight:700;color:#141B34">฿${formatMoney(d.remaining_amount)}</div>
             <div class="debt-total">จาก ฿${formatMoney(d.total_amount)}</div>
           </div>
           <div class="progress-track"><div class="progress-fill" style="width:${paidPercent}%"></div></div>
@@ -1426,7 +1438,7 @@
       effect = 'ยกเลิกการไถ่ถอน · ตั๋วจะกลับมาเป็นจำนำอยู่';
     }
     return `
-      <div style="margin-top:12px;padding-top:12px;border-top:1px solid #F0F3F2">
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid #EFF2F8">
         ${effect ? `<div class="field-label" style="margin:0 0 6px">${esc(effect)}</div>` : ''}
         <button class="pawn-btn" data-action="undo-history" data-id="${S.detailHistoryId}" ${lockAttr()}
           style="width:100%;background:#FDEAEA;color:#B23B3B">${btnLabel('undo:' + S.detailHistoryId, '↩️ คืนสินค้า (ย้อนรายการนี้)')}</button>
@@ -1443,10 +1455,10 @@
         <div class="modal-sheet" data-stop="1">
           <div class="row-between" style="align-items:flex-start">
             <div style="flex:1;min-width:0">
-              <div style="font-size:16px;font-weight:700;color:#1B2422">${esc((S.detailHistoryItem || {}).title || 'ตั๋วจำนำ')}</div>
+              <div style="font-size:16px;font-weight:700;color:#141B34">${esc((S.detailHistoryItem || {}).title || 'ตั๋วจำนำ')}</div>
               <div class="pawn-shop">กำลังโหลดรายละเอียด...</div>
             </div>
-            <button class="icon-btn" data-action="close-pawn-detail" style="width:30px;height:30px;font-size:20px;line-height:1;color:#5C6C68">×</button>
+            <button class="icon-btn" data-action="close-pawn-detail" style="width:30px;height:30px;font-size:20px;line-height:1;color:#5B6478">×</button>
           </div>
           ${renderUndoButton()}
         </div>
@@ -1458,9 +1470,9 @@
     const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
 
     const row = (label, value, color) =>
-      `<div class="row-between" style="padding:7px 0;border-bottom:1px solid #F0F3F2">
-        <span style="font-size:13px;color:#5C6C68">${label}</span>
-        <span style="font-size:13.5px;font-weight:600;color:${color || '#1B2422'};text-align:right">${value}</span>
+      `<div class="row-between" style="padding:7px 0;border-bottom:1px solid #EFF2F8">
+        <span style="font-size:13px;color:#5B6478">${label}</span>
+        <span style="font-size:13.5px;font-weight:600;color:${color || '#141B34'};text-align:right">${value}</span>
       </div>`;
 
     let detailRows, statusLine = '';
@@ -1504,11 +1516,11 @@
         <div class="modal-sheet cat-${p.category}" data-stop="1">
           <div class="row-between" style="align-items:flex-start;gap:10px">
             <div style="flex:1;min-width:0">
-              <span class="near-kind" style="background:#EFEFEF;color:#5C6C68">${meta.icon} ${meta.label}</span>
-              <div style="font-size:16px;font-weight:700;color:#1B2422;margin-top:6px">${esc(p.item_name)}</div>
+              <span class="near-kind" style="background:#EFEFEF;color:#5B6478">${meta.icon} ${meta.label}</span>
+              <div style="font-size:16px;font-weight:700;color:#141B34;margin-top:6px">${esc(p.item_name)}</div>
               <div class="pawn-shop">${esc(p.shop_name || 'ไม่ระบุร้าน')}${p.ticket_code ? ' · เลขที่ตั๋ว ' + esc(p.ticket_code) : ''}</div>
             </div>
-            <button class="icon-btn" data-action="close-pawn-detail" style="width:30px;height:30px;font-size:20px;line-height:1;color:#5C6C68">×</button>
+            <button class="icon-btn" data-action="close-pawn-detail" style="width:30px;height:30px;font-size:20px;line-height:1;color:#5B6478">×</button>
           </div>
           <div style="margin-top:12px">${detailRows}</div>
           ${statusLine ? `<div style="margin-top:10px">${statusLine}</div>` : ''}
@@ -1598,7 +1610,7 @@
           <div class="pawn-icon">${svgPawn()}</div>
           <div style="flex:1;min-width:0;cursor:pointer" data-action="open-pawn-detail" data-id="${p.id}">
             <div style="display:flex;align-items:center;gap:6px">
-              <span class="near-kind" style="background:#EFEFEF;color:#5C6C68">${categoryMeta.icon} ${categoryMeta.label}</span>
+              <span class="near-kind" style="background:#EFEFEF;color:#5B6478">${categoryMeta.icon} ${categoryMeta.label}</span>
             </div>
             <div class="pawn-item">${esc(p.item_name)}</div>
             <div class="pawn-shop">${shopLine}</div>
@@ -1606,7 +1618,7 @@
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
             <div class="near-badge" style="background:${badgeBg};color:${badgeFg}">${badgeLabel}</div>
-            <button class="icon-btn" data-action="open-pawn-settings" data-id="${p.id}" data-from="${from || ''}" style="width:28px;height:28px">${svgGear('#5C6C68')}</button>
+            <button class="icon-btn" data-action="open-pawn-settings" data-id="${p.id}" data-from="${from || ''}" style="width:28px;height:28px">${svgGear('#5B6478')}</button>
           </div>
         </div>
         ${bodyHtml}
@@ -1620,7 +1632,7 @@
     const isVariable = e.expense_type === 'variable';
     const typeLabel = isVariable ? 'ไม่คงที่ ต้องจ่ายทุกเดือน' : 'ยอดคงที่ทุกเดือน';
     const amountLine = isVariable
-      ? (e.last_amount != null ? `฿${formatMoney(e.last_amount)} <span style="font-size:12px;color:#8A9490">(ล่าสุด)</span>` : `<span style="font-size:13px;color:#8A9490">ยังไม่มีข้อมูล</span>`)
+      ? (e.last_amount != null ? `฿${formatMoney(e.last_amount)} <span style="font-size:12px;color:#8A93A6">(ล่าสุด)</span>` : `<span style="font-size:13px;color:#8A93A6">ยังไม่มีข้อมูล</span>`)
       : `฿${formatMoney(e.amount)}`;
     const payPrompt = S.expensePayFor === e.id ? `
         <div class="warn-options" style="width:100%">
@@ -1631,7 +1643,7 @@
       <div class="debt-card">
         <div class="row-between">
           <div class="debt-name">${esc(e.name)}</div>
-          <button class="icon-btn" data-action="open-expense-settings" data-id="${e.id}" data-from="${from || ''}" style="width:28px;height:28px">${svgGear('#5C6C68')}</button>
+          <button class="icon-btn" data-action="open-expense-settings" data-id="${e.id}" data-from="${from || ''}" style="width:28px;height:28px">${svgGear('#5B6478')}</button>
         </div>
         <div class="row-between">
           <div class="debt-remaining">${amountLine}</div>
@@ -1811,23 +1823,23 @@
           (หรือ ตั้งค่า Android → แอป → Chrome → การแจ้งเตือน)<br>
           แล้วกลับมากดปุ่มนี้อีกครั้ง</div>
         <button class="mark-paid-btn" style="align-self:flex-start;margin-top:8px" data-action="refresh-push">ตรวจสอบใหม่</button>
-        <div style="font-size:11px;color:#A6ACAA;margin-top:6px">สถานะเครื่องนี้: permission=${st.permission}</div>
+        <div style="font-size:11px;color:#A3A9B8;margin-top:6px">สถานะเครื่องนี้: permission=${st.permission}</div>
       </div>`;
     }
     const on = st.enabled;
     return `<div class="card" style="display:flex;flex-direction:column;gap:8px">
-      <div class="settings-row-title">แจ้งเตือนอัตโนมัติ ${on ? '<span style="color:#1F7A52">● เปิดอยู่</span>' : '<span style="color:#A6ACAA">○ ปิดอยู่</span>'}</div>
+      <div class="settings-row-title">แจ้งเตือนอัตโนมัติ ${on ? '<span style="color:#1F7A52">● เปิดอยู่</span>' : '<span style="color:#A3A9B8">○ ปิดอยู่</span>'}</div>
       <div class="settings-row-sub">${on
         ? 'เครื่องนี้จะได้รับแจ้งเตือนวันละ 2 ครั้ง (เช้า 8 โมง / เย็น 6 โมง) แม้ไม่ได้เปิดแอป เฉพาะตอนมีรายการครบกำหนด'
         : 'เปิดเพื่อให้ระบบส่งแจ้งเตือนเข้าเครื่องนี้เอง แม้ไม่ได้เปิดแอป — ต้องเปิดครั้งเดียวต่อเครื่อง'}</div>
       ${(S.pushLog && S.pushLog.length)
-        ? `<div style="font-size:11px;color:#A6ACAA">📥 เครื่องนี้ได้รับ ${S.pushLog.length} ครั้ง · ล่าสุด ${esc(new Date(S.pushLog[0].at).toLocaleString("th-TH"))} · ${S.pushLog[0].shown ? "แสดงผลสำเร็จ" : "แสดงไม่สำเร็จ: " + esc(S.pushLog[0].error || "ไม่ทราบสาเหตุ")}</div>`
-        : `<div style="font-size:11px;color:#A6ACAA">📥 เครื่องนี้ยังไม่เคยได้รับข้อความจากระบบเลย</div>`}
+        ? `<div style="font-size:11px;color:#A3A9B8">📥 เครื่องนี้ได้รับ ${S.pushLog.length} ครั้ง · ล่าสุด ${esc(new Date(S.pushLog[0].at).toLocaleString("th-TH"))} · ${S.pushLog[0].shown ? "แสดงผลสำเร็จ" : "แสดงไม่สำเร็จ: " + esc(S.pushLog[0].error || "ไม่ทราบสาเหตุ")}</div>`
+        : `<div style="font-size:11px;color:#A3A9B8">📥 เครื่องนี้ยังไม่เคยได้รับข้อความจากระบบเลย</div>`}
       ${S.pushError ? `<div class="field-label" style="margin:0;color:#B23B3B;word-break:break-word">❌ ${esc(S.pushError)}</div>` : ''}
       <button class="mark-paid-btn" style="align-self:flex-start" data-action="${on ? 'disable-push' : 'enable-push'}" ${lockAttr()}>
         ${btnLabel('push', on ? 'ปิดแจ้งเตือนอัตโนมัติ' : '🔔 เปิดแจ้งเตือนอัตโนมัติ')}
       </button>
-      <div style="font-size:11px;color:#A6ACAA">สถานะ: permission=${st.permission} · subscribed=${st.subscribed ? 'yes' : 'no'} · saved=${st.enabled ? 'yes' : 'no'}${st.detail ? ' · ' + esc(st.detail) : ''}</div>
+      <div style="font-size:11px;color:#A3A9B8">สถานะ: permission=${st.permission} · subscribed=${st.subscribed ? 'yes' : 'no'} · saved=${st.enabled ? 'yes' : 'no'}${st.detail ? ' · ' + esc(st.detail) : ''}</div>
     </div>`;
   }
 
@@ -1835,7 +1847,7 @@
     const opts = [1, 3, 5, 7, 14].map((n) => `<button class="warn-opt ${n === S.warnDays ? 'selected' : ''}" data-action="warn-days" data-n="${n}">${n} วัน</button>`).join('');
     return `
       <div class="screen-pad">
-        <button class="card" data-action="export-excel" style="width:100%;border:none;cursor:pointer;background:linear-gradient(135deg,#0E6B5C,#123F35);display:flex;align-items:center;gap:14px;text-align:left;font:inherit">
+        <button class="card" data-action="export-excel" style="width:100%;border:none;cursor:pointer;background:linear-gradient(135deg,#1428A0,#0A1650);display:flex;align-items:center;gap:14px;text-align:left;font:inherit">
           <div style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,0.16);display:flex;align-items:center;justify-content:center;flex:none">${svgDownload()}</div>
           <div style="flex:1;min-width:0">
             <div style="color:#fff;font-weight:700;font-size:15px">ดาวน์โหลดรายงาน Excel</div>
@@ -1870,13 +1882,13 @@
       const d = new Date(n.sent_at);
       const dateLabel = formatDate(n.sent_at.slice(0, 10)) + ' ' + d.toTimeString().slice(0, 5);
       return `
-        <div class="card" style="display:flex;flex-direction:column;gap:4px;${unread ? 'border-left:3px solid #0E6B5C' : 'opacity:0.7'}" data-action="${unread ? 'mark-notif-read' : ''}" data-id="${n.id}">
+        <div class="card" style="display:flex;flex-direction:column;gap:4px;${unread ? 'border-left:3px solid #1428A0' : 'opacity:0.7'}" data-action="${unread ? 'mark-notif-read' : ''}" data-id="${n.id}">
           <div class="row-between">
-            <div style="font-weight:600;color:#1B2422">${esc(n.title)}</div>
-            ${unread ? `<div style="width:8px;height:8px;border-radius:50%;background:#0E6B5C;flex:none"></div>` : ''}
+            <div style="font-weight:600;color:#141B34">${esc(n.title)}</div>
+            ${unread ? `<div style="width:8px;height:8px;border-radius:50%;background:#1428A0;flex:none"></div>` : ''}
           </div>
-          <div style="font-size:14px;color:#5C6C68">${esc(n.body)}</div>
-          <div style="font-size:12px;color:#A6ACAA">${dateLabel}</div>
+          <div style="font-size:14px;color:#5B6478">${esc(n.body)}</div>
+          <div style="font-size:12px;color:#A3A9B8">${dateLabel}</div>
         </div>`;
     }).join('');
     return `<div class="screen-pad">${empty}${items}</div>`;
@@ -1902,17 +1914,17 @@
     ];
     return `<div class="bottom-nav">${items.map((it) => {
       const active = it.match.includes(S.screen);
-      const color = active ? '#0E6B5C' : '#A6ACAA';
-      return `<button class="nav-item" data-action="nav" data-screen="${it.key}">${it.icon(color)}<span class="nav-label" style="color:${color}">${it.label}</span></button>`;
+      const color = active ? '#1428A0' : '#A3A9B8';
+      return `<button class="nav-item${active ? ' active' : ''}" data-action="nav" data-screen="${it.key}"><span class="nav-pill">${it.icon(color)}</span><span class="nav-label" style="color:${color}">${it.label}</span></button>`;
     }).join('')}</div>`;
   }
 
   // ---------------- Icons ----------------
   function svgLock() { return `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M7 7V5a5 5 0 0110 0v2"/></svg>`; }
   function svgBack(c) { return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M15 18l-6-6 6-6"/></svg>`; }
-  function svgChevron() { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A6ACAA" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>`; }
-  function svgChevronDir(dir) { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1B2422" stroke-width="2"><path d="${dir === 'left' ? 'M15 18l-6-6 6-6' : 'M9 18l6-6-6-6'}"/></svg>`; }
-  function svgCalendar() { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5C6C68" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke-linecap="round"/></svg>`; }
+  function svgChevron() { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A3A9B8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>`; }
+  function svgChevronDir(dir) { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#141B34" stroke-width="2"><path d="${dir === 'left' ? 'M15 18l-6-6 6-6' : 'M9 18l6-6-6-6'}"/></svg>`; }
+  function svgCalendar() { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B6478" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke-linecap="round"/></svg>`; }
   function svgPlus() { return `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`; }
   function svgPawn() { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B8862F" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M8 12h8"/></svg>`; }
   function svgHome(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h14v-9"/></svg>`; }
@@ -1922,9 +1934,9 @@
   function svgHistory(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 12a9 9 0 109-9" stroke-linecap="round"/><path d="M3 4v5h5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 7v5l4 2" stroke-linecap="round" stroke-linejoin="round"/></svg>`; }
   function svgGear(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.6 7.6 0 000-2l1.9-1.5-2-3.4-2.3.6a7.7 7.7 0 00-1.7-1l-.3-2.4h-4l-.3 2.4a7.7 7.7 0 00-1.7 1l-2.3-.6-2 3.4L4.6 11a7.6 7.6 0 000 2l-1.9 1.5 2 3.4 2.3-.6a7.7 7.7 0 001.7 1l.3 2.4h4l.3-2.4a7.7 7.7 0 001.7-1l2.3.6 2-3.4z"/></svg>`; }
   function svgDownload() { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 19h16" stroke-linecap="round"/></svg>`; }
-  function svgBell(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c || '#1B2422'}" stroke-width="1.8"><path d="M6 9a6 6 0 0112 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9z"/><path d="M9.5 17a2.5 2.5 0 005 0"/></svg>`; }
-  function svgLogout(c) { return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c || '#1B2422'}" stroke-width="1.8"><path d="M15 17l5-5-5-5M20 12H9"/><path d="M9 19H6a2 2 0 01-2-2V7a2 2 0 012-2h3"/></svg>`; }
-  function svgSwap(c) { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${c || '#0E6B5C'}" stroke-width="2"><path d="M7 4l-4 4 4 4M3 8h13M17 20l4-4-4-4M21 16H8"/></svg>`; }
+  function svgBell(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c || '#141B34'}" stroke-width="1.8"><path d="M6 9a6 6 0 0112 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9z"/><path d="M9.5 17a2.5 2.5 0 005 0"/></svg>`; }
+  function svgLogout(c) { return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c || '#141B34'}" stroke-width="1.8"><path d="M15 17l5-5-5-5M20 12H9"/><path d="M9 19H6a2 2 0 01-2-2V7a2 2 0 012-2h3"/></svg>`; }
+  function svgSwap(c) { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${c || '#1428A0'}" stroke-width="2"><path d="M7 4l-4 4 4 4M3 8h13M17 20l4-4-4-4M21 16H8"/></svg>`; }
 
   // ---------------- Event delegation ----------------
   app.addEventListener('click', (e) => {
