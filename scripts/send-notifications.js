@@ -10,11 +10,10 @@
 // Run locally with --dry-run to see what it would send without sending anything.
 
 const https = require('https');
-const admin = require('firebase-admin');
 const Rules = require('../app/www/js/rules.js');
+const { admin, APP_USERS, initAdmin, bangkokToday, loadUserData } = require('./firestore-data.js');
 
 const DRY_RUN = process.argv.includes('--dry-run');
-const APP_USERS = ['not', 'lek'];
 
 // Telegram delivery. Web push on Android turned out to be at the mercy of the phone's
 // power management — messages arrived only once the device happened to wake — so the same
@@ -44,41 +43,6 @@ function sendTelegram(chatId, text) {
     req.end(body);
   });
 }
-function initAdmin() {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT is not set');
-  let cred;
-  try {
-    cred = JSON.parse(raw);
-  } catch (e) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT is not valid JSON: ' + e.message);
-  }
-  admin.initializeApp({ credential: admin.credential.cert(cred), projectId: cred.project_id });
-  return admin.firestore();
-}
-
-// Thailand is UTC+7 and the workflow runs in UTC, so "today" has to be computed in Bangkok
-// time or an 08:00 Thai run would still be reading yesterday's date.
-function bangkokToday() {
-  const now = new Date(Date.now() + 7 * 60 * 60 * 1000);
-  return now.toISOString().slice(0, 10);
-}
-
-async function loadUserData(db, userId) {
-  const [debtSnap, pawnSnap, expenseSnap, userDoc] = await Promise.all([
-    db.collection('debts').where('user_id', '==', userId).where('status', '==', 'active').get(),
-    db.collection('pawns').where('user_id', '==', userId).where('status', '==', 'active').get(),
-    db.collection('expenses').where('user_id', '==', userId).get(),
-    db.collection('users').doc(userId).get(),
-  ]);
-  return {
-    debts: debtSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
-    pawns: pawnSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
-    expenses: expenseSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
-    warnDays: (userDoc.exists && userDoc.data().warn_days) || 3,
-  };
-}
-
 async function main() {
   const db = initAdmin();
   const todayStr = bangkokToday();
@@ -105,7 +69,7 @@ async function main() {
 
   for (const userId of APP_USERS) {
     const data = await loadUserData(db, userId);
-    const items = Rules.buildNotifications({ ...data, todayStr });
+    const items = Rules.buildNotifications({ debts: data.debts, pawns: data.pawns, expenses: data.expenses, warnDays: data.warnDays, todayStr });
     const payload = Rules.buildPushPayload(items);
     const tokens = tokensByUser[userId] || [];
 

@@ -527,7 +527,19 @@ const Api = (() => {
   // ---------------- Settings ----------------
   async function getSettings() {
     const doc = await db().collection('users').doc(uid()).get();
-    return { warn_days: (doc.data() || {}).warn_days || 3 };
+    const d = doc.data() || {};
+    return { warn_days: d.warn_days || 3, calendar_token: d.calendar_token || null };
+  }
+  // The token is the secret file name of this user's .ics feed. Creating it here only reserves
+  // the link — the file itself appears after the next calendar workflow run deploys it.
+  async function ensureCalendarToken() {
+    const ref = db().collection('users').doc(uid());
+    const existing = ((await ref.get()).data() || {}).calendar_token;
+    if (existing) return existing;
+    const bytes = crypto.getRandomValues(new Uint8Array(18));
+    const token = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    await ref.set({ calendar_token: token }, { merge: true });
+    return token;
   }
   async function updateSettings(payload) {
     const patch = {};
@@ -686,7 +698,7 @@ const Api = (() => {
     getPawns, getPawnById, createPawn, updatePawn, deletePawn, redeemPawn, renewPawn, renewJewelry,
     getReport, getHistory, undoHistory,
     getExpenses, createExpense, updateExpense, markExpensePaid, deleteExpense,
-    getSettings, updateSettings,
+    getSettings, updateSettings, ensureCalendarToken,
     getNotifications, markNotificationRead, markAllNotificationsRead,
     pushSupported, getPushStatus, enablePush, disablePush, readPushLog, reportDeviceState,
   };

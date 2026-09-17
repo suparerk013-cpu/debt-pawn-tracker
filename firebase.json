@@ -4,7 +4,11 @@
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [{ "source": "**", "destination": "/index.html" }],
     "headers": [
-      { "source": "**", "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }] }
+      { "source": "**", "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }] },
+      { "source": "/cal/**", "headers": [
+        { "key": "Content-Type", "value": "text/calendar; charset=utf-8" },
+        { "key": "X-Robots-Tag", "value": "noindex" }
+      ] }
     ]
   },
   "firestore": {

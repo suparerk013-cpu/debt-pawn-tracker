@@ -7,3 +7,6 @@ Thumbs.db
 
 # Node deps (only installed transiently to test scripts/ locally; CI installs its own)
 node_modules/
+
+# Generated calendar feeds — the file names are secret links, never commit them
+app/www/cal/

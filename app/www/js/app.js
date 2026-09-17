@@ -59,6 +59,7 @@
     fabMenuOpen: false,
     userMenuOpen: false,
     warnDays: 5,
+    calendarToken: null,       // secret name of this user's Google Calendar .ics feed
     toast: null,
     selectedDebtId: null,
     editingDebtId: null,
@@ -162,6 +163,7 @@
       S.pawns = pawns;
       S.expenses = expenses;
       S.warnDays = settings.warn_days;
+      S.calendarToken = settings.calendar_token;
       // Report is recomputed from the data just fetched above instead of its own parallel
       // fetch — getReport() would otherwise re-query debts/pawns/expenses from scratch.
       S.report = await Api.getReport(debts, pawns, expenses);
@@ -740,6 +742,29 @@
   async function setWarnDays(n) {
     setState({ warnDays: n });
     try { await Api.updateSettings({ warn_days: n }); } catch (e) { /* keep optimistic value */ }
+  }
+
+  // ---------------- Google Calendar feed ----------------
+  function calendarFeedUrl() {
+    return S.calendarToken ? `${location.origin}/cal/${S.calendarToken}.ics` : '';
+  }
+  function createCalendarLink() {
+    return runAction('calendar', async () => {
+      try {
+        const token = await Api.ensureCalendarToken();
+        S.calendarToken = token;
+        showToast('สร้างลิงก์แล้ว — ปฏิทินจะพร้อมภายใน 3 ชั่วโมง');
+      } catch (e) { showToast('สร้างลิงก์ไม่สำเร็จ: ' + (e.message || '')); }
+    });
+  }
+  async function copyCalendarLink() {
+    const url = calendarFeedUrl();
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast('คัดลอกลิงก์ปฏิทินแล้ว');
+    } catch (e) {
+      window.prompt('คัดลอกลิงก์นี้', url);
+    }
   }
 
   // ---------------- Excel export ----------------
@@ -1843,6 +1868,30 @@
     </div>`;
   }
 
+  // Google's "add by URL" only exists on the desktop web, so on a phone the page opens in the
+  // browser; the copy button covers pasting the link in by hand.
+  function renderCalendarCard() {
+    const url = calendarFeedUrl();
+    if (!url) {
+      return `<div class="card" style="display:flex;flex-direction:column;gap:8px">
+        <div class="settings-row-title">📅 เชื่อมกับ Google Calendar</div>
+        <div class="settings-row-sub">ให้วันครบกำหนดทุกรายการ (งวดผ่อน · ตั๋วจำนำ · ค่าใช้จ่ายประจำ) ขึ้นในปฏิทิน Google และอัปเดตเองทุกไม่กี่ชั่วโมง</div>
+        <button class="mark-paid-btn" style="align-self:flex-start" data-action="create-calendar-link" ${lockAttr()}>${btnLabel('calendar', 'สร้างลิงก์ปฏิทิน')}</button>
+      </div>`;
+    }
+    const gcal = 'https://calendar.google.com/calendar/r?cid=' + encodeURIComponent(url.replace(/^https?:/, 'webcal:'));
+    return `<div class="card" style="display:flex;flex-direction:column;gap:8px">
+      <div class="settings-row-title">📅 เชื่อมกับ Google Calendar</div>
+      <div class="settings-row-sub">กด "เพิ่มลง Google Calendar" แล้วกดเพิ่ม (ทำครั้งเดียว) — ปฏิทินจะอัปเดตเองเมื่อจ่าย/ต่อดอก/ไถ่ถอน โดย Google ดึงข้อมูลใหม่ทุกไม่กี่ชั่วโมง</div>
+      <div style="font-size:12px;color:#5B6478;background:#EDF1F8;border-radius:10px;padding:8px 10px;word-break:break-all">${esc(url)}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a class="mark-paid-btn" href="${esc(gcal)}" target="_blank" rel="noopener">➕ เพิ่มลง Google Calendar</a>
+        <button class="mark-paid-btn" data-action="copy-calendar-link">📋 คัดลอกลิงก์</button>
+      </div>
+      <div style="font-size:11px;color:#A3A9B8">บนมือถือ ถ้าเปิดแล้วไม่มีปุ่มเพิ่ม: คัดลอกลิงก์ → เปิด calendar.google.com ในโหมดเดสก์ท็อป → ปฏิทินอื่นๆ ＋ → จาก URL → วางลิงก์ · อย่าแชร์ลิงก์นี้ให้คนอื่น</div>
+    </div>`;
+  }
+
   function renderSettings() {
     const opts = [1, 3, 5, 7, 14].map((n) => `<button class="warn-opt ${n === S.warnDays ? 'selected' : ''}" data-action="warn-days" data-n="${n}">${n} วัน</button>`).join('');
     return `
@@ -1859,6 +1908,7 @@
           <div class="warn-options">${opts}</div>
         </div>
         ${renderPushCard()}
+        ${renderCalendarCard()}
         <div class="card" style="display:flex;flex-direction:column;gap:8px">
           <div class="settings-row-title">ทดสอบการแจ้งเตือน</div>
           <div class="settings-row-sub">กดเพื่อเช็คว่าเครื่องนี้แสดงการแจ้งเตือนได้จริง (เป็นการทดสอบในเครื่อง ไม่เกี่ยวกับการส่งอัตโนมัติด้านบน)</div>
@@ -1996,6 +2046,8 @@
       case 'delete-expense': deleteExpense(el.dataset.id); break;
       case 'warn-days': setWarnDays(Number(el.dataset.n)); break;
       case 'export-excel': exportReportToExcel(); break;
+      case 'create-calendar-link': createCalendarLink(); break;
+      case 'copy-calendar-link': copyCalendarLink(); break;
       case 'toggle-date-picker': openDatePicker(el.dataset.field); break;
       case 'shift-date-month': shiftDatePickerMonth(Number(el.dataset.delta)); break;
       case 'pick-date': pickDate(el.dataset.field, el.dataset.date); break;

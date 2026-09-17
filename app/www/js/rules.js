@@ -161,9 +161,123 @@
     return [head, ""].concat(lines).join(NL);
   }
 
+  // Google Calendar subscription feed. Every date the app tracks becomes an all-day event;
+  // the UID is derived from the record and its date, so when a pawn is renewed or an
+  // installment is paid the old event disappears on the next refresh instead of piling up.
+  const EXPENSE_MONTHS_AHEAD = 3;
+  function buildCalendarEvents({ debts = [], pawns = [], expenses = [], todayStr }) {
+    const today = todayStr || dateStr(new Date());
+    const events = [];
+
+    debts.forEach((d) => (d.installments || []).forEach((i) => {
+      if (i.paid || !i.due_date) return;
+      events.push({
+        uid: `installment-${i.id}`, date: i.due_date,
+        summary: `💳 ผ่อน ${d.name} ${baht(i.amount)}`,
+        description: `งวดผ่อนหนี้ "${d.name}" ยอด ${baht(i.amount)} · คงเหลือ ${baht(d.remaining_amount)}`,
+      });
+    }));
+
+    pawns.forEach((p) => {
+      const shop = p.shop_name ? ` · ร้าน ${p.shop_name}` : '';
+      const ticket = p.ticket_code ? ` · เลขที่ตั๋ว ${p.ticket_code}` : '';
+      if (p.category === 'jewelry') {
+        const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
+        if (!pawnDate) return;
+        const renewBy = addMonths(pawnDate, JEWELRY_BILLED_MONTHS);
+        const finalDue = addMonths(pawnDate, JEWELRY_BILLED_MONTHS + 1);
+        events.push({
+          uid: `pawn-${p.id}-renew-${renewBy}`, date: renewBy,
+          summary: `💍 ครบ 4 เดือน ต่อดอก/ไถ่ถอน ${p.item_name}`,
+          description: `ตั๋วทอง เงินต้น ${baht(p.amount)} · ดอกสะสม ${baht((p.interest || 0) * JEWELRY_BILLED_MONTHS)} · ต้องจัดการก่อน ${finalDue}${shop}${ticket}`,
+        });
+        events.push({
+          uid: `pawn-${p.id}-final-${finalDue}`, date: finalDue,
+          summary: `⚠️ วันสุดท้ายไถ่ถอน ${p.item_name}`,
+          description: `ครบกำหนดสุดท้าย (เดือนที่ 5) — ถ้าไม่ไถ่ถอน/ต่อดอกจะขาดจำนำ · เงินต้น ${baht(p.amount)}${shop}${ticket}`,
+        });
+        return;
+      }
+      if (!p.due_date) return;
+      events.push({
+        uid: `pawn-${p.id}-due-${p.due_date}`, date: p.due_date,
+        summary: `🎫 ต่อดอก ${p.item_name} ${baht(p.interest || 0)}`,
+        description: `ตั๋วจำนำครบกำหนด · เงินต้น ${baht(p.amount)} · ดอก ${baht(p.interest || 0)}${shop}${ticket}`,
+      });
+    });
+
+    // Expenses repeat forever, so the feed carries a rolling window: this month (unless
+    // already paid) plus the next few, rather than an open-ended recurrence rule that would
+    // outlive a deleted expense in a calendar that refreshes lazily.
+    const [y, m] = today.slice(0, 7).split('-').map(Number);
+    expenses.forEach((e) => {
+      const day = String(e.due_day || 1).padStart(2, '0');
+      for (let k = 0; k < EXPENSE_MONTHS_AHEAD; k++) {
+        const d = new Date(y, m - 1 + k, 1);
+        const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (e.payments && e.payments[month]) continue;
+        const amount = e.expense_type === 'fixed' ? ' ' + baht(e.amount || 0) : '';
+        events.push({
+          uid: `expense-${e.id}-${month}`, date: `${month}-${day}`,
+          summary: `🧾 ${e.name}${amount}`,
+          description: e.expense_type === 'fixed' ? `ค่าใช้จ่ายประจำ ยอดคงที่ ${baht(e.amount || 0)}` : 'ค่าใช้จ่ายประจำ (ยอดไม่คงที่)',
+        });
+      }
+    });
+
+    return events.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  }
+
+  // RFC 5545: escape text, CRLF line endings, and fold lines at 75 octets — Thai characters
+  // are 3 bytes in UTF-8, so folding has to count bytes, not string length.
+  function icsEscape(s) {
+    return String(s ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  }
+  function icsFold(line) {
+    const enc = new TextEncoder();
+    const parts = [];
+    let cur = '', bytes = 0;
+    for (const ch of line) {
+      const b = enc.encode(ch).length;
+      // Continuation lines start with a space, which counts toward their 75 octets.
+      if (bytes + b > (parts.length ? 74 : 75)) { parts.push(cur); cur = ''; bytes = 0; }
+      cur += ch; bytes += b;
+    }
+    parts.push(cur);
+    return parts.join('\r\n ');
+  }
+  function buildICS(events, { calName = 'หนี้สิน & ตั๋วจำนำ', stamp } = {}) {
+    const dtstamp = (stamp || new Date().toISOString()).replace(/[-:]/g, '').replace(/\.\d+/, '');
+    const compact = (iso) => iso.replace(/-/g, '');
+    const nextDay = (iso) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + 1); return dateStr(d); };
+    const lines = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//debt-pawn-tracker//TH', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+      'X-WR-CALNAME:' + icsEscape(calName), 'X-WR-TIMEZONE:Asia/Bangkok',
+      'REFRESH-INTERVAL;VALUE=DURATION:PT3H', 'X-PUBLISHED-TTL:PT3H',
+    ];
+    events.forEach((ev) => {
+      lines.push(
+        'BEGIN:VEVENT',
+        `UID:${ev.uid}@debt-pawn-tracker`,
+        'DTSTAMP:' + dtstamp,
+        'DTSTART;VALUE=DATE:' + compact(ev.date),
+        'DTEND;VALUE=DATE:' + compact(nextDay(ev.date)),
+        'SUMMARY:' + icsEscape(ev.summary),
+        'DESCRIPTION:' + icsEscape(ev.description),
+        'TRANSP:TRANSPARENT',
+        // 09:00 the day before — an all-day event starts at midnight, so that is -15h.
+        'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEscape(ev.summary), 'TRIGGER:-PT15H', 'END:VALARM',
+        'END:VEVENT'
+      );
+    });
+    lines.push('END:VCALENDAR');
+    return lines.map(icsFold).join('\r\n') + '\r\n';
+  }
+
   return {
     dateStr, addMonths, monthsBetween, daysBetween,
     JEWELRY_BILLED_MONTHS, jewelryTerm,
     buildNotifications, buildPushPayload, buildTelegramMessage,
+    buildCalendarEvents, buildICS,
   };
 });
