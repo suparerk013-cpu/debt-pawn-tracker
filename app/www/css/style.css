@@ -207,46 +207,62 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 .section-title::before { content: ''; width: 4px; height: 16px; border-radius: 2px; background: #1428A0; flex: none; }
 
 /* ---------- Dashboard payment calendar ---------- */
-/* Month grid that answers one question per day: how much has to be paid. Days with nothing
-   owed stay flat and unclickable so the days that cost money are the only thing that pops. */
-.pay-cal { padding: 14px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
-.pay-cal-head { display: flex; align-items: center; gap: 4px; }
-.pay-cal-head-mid { flex: 1; text-align: center; min-width: 0; }
-.pay-cal-title { font-size: 15px; font-weight: 700; color: #141B34; }
-.pay-cal-sub { font-size: 12px; color: #5B6478; margin-top: 2px; }
-.pay-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+/* Month grid that answers one question per day: how much has to be paid. The blue band on
+   top carries the month's running total (same gradient family as the hero card), and the
+   white grid sheet sits slightly over it so the card reads as two stacked surfaces. Days
+   with nothing owed stay flat and unclickable, so the days that cost money are what pops. */
+.pay-cal { padding: 0; border: none; overflow: hidden; border-radius: 22px; box-shadow: 0 12px 26px rgba(20,40,160,0.14), 0 2px 6px rgba(20,40,160,0.08); }
+.pay-cal-head { position: relative; overflow: hidden; display: flex; align-items: center; gap: 8px; padding: 16px 14px 22px; color: #fff; background: linear-gradient(135deg, #1E3BC4 0%, #1428A0 55%, #0A1650 100%); }
+.pay-cal-head::after { content: ''; position: absolute; right: -55px; top: -75px; width: 190px; height: 190px; border-radius: 50%; background: radial-gradient(circle, rgba(0,163,224,0.5), rgba(0,163,224,0) 70%); pointer-events: none; }
+.pay-cal-nav { width: 34px; height: 34px; border-radius: 50%; flex: none; position: relative; z-index: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.28); background: rgba(255,255,255,0.14); }
+.pay-cal-nav:hover { background: rgba(255,255,255,0.28); }
+.pay-cal-head-mid { flex: 1; min-width: 0; text-align: center; position: relative; z-index: 1; }
+.pay-cal-title { font-size: 14px; font-weight: 600; letter-spacing: .2px; color: rgba(255,255,255,0.82); }
+.pay-cal-total { font-size: 26px; font-weight: 700; letter-spacing: .2px; margin-top: 1px; }
+.pay-cal-chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.pay-cal-chip { font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,0.16); color: #fff; white-space: nowrap; }
+.pay-cal-chip.danger { background: #fff; color: #B23B3B; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+/* Pulled up over the band, so the grid sheet overlaps it instead of butting against it. */
+.pay-cal-body { position: relative; margin-top: -12px; padding: 14px 12px 14px; background: #fff; border-radius: 20px 20px 22px 22px; display: flex; flex-direction: column; gap: 10px; }
+
+.pay-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
 .pay-cell {
-  min-height: 52px; border-radius: 12px; padding: 5px 2px 4px; border: 1.5px solid transparent;
-  background: #F5F7FC; color: #A3A9B8; font-family: inherit;
-  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  min-height: 56px; border-radius: 14px; padding: 6px 2px 5px; border: 1.5px solid transparent;
+  background: #F4F6FC; color: #AEB4C4; font-family: inherit;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  transition: transform .12s ease, box-shadow .12s ease;
 }
 .pay-cell.empty { background: transparent; }
 .pay-cell-day { font-size: 11.5px; font-weight: 600; line-height: 1.2; }
-.pay-cell-amt { font-size: 11.5px; font-weight: 700; color: #141B34; letter-spacing: -0.2px; line-height: 1.25; }
-.pay-cell-dots { display: flex; gap: 2px; margin-top: auto; }
-.pay-cell-dots i { width: 4px; height: 4px; border-radius: 50%; display: block; }
-.pay-cell.has-due { background: #E8EEFB; color: #1428A0; cursor: pointer; }
-.pay-cell.has-due:hover { background: #D8E2F8; }
-.pay-cell.has-due .pay-cell-amt { color: #1428A0; }
-.pay-cell.overdue { background: #FDECEC; color: #B23B3B; }
-.pay-cell.overdue:hover { background: #F9DDDD; }
-.pay-cell.overdue .pay-cell-amt { color: #B23B3B; }
-.pay-cell.today { border-color: #1428A0; }
-.pay-cell.today .pay-cell-day { color: #1428A0; font-weight: 700; }
-.pay-cell.selected { background: #1428A0; border-color: #1428A0; }
+.pay-cell-amt { font-size: 12px; font-weight: 700; letter-spacing: -0.2px; line-height: 1.25; color: inherit; }
+.pay-cell-dots { display: flex; gap: 3px; margin-top: auto; min-height: 5px; }
+.pay-cell-dots i { width: 5px; height: 5px; border-radius: 50%; display: block; box-shadow: 0 1px 2px rgba(0,0,0,0.18); }
+.pay-cell.has-due { cursor: pointer; color: #12309B; background: linear-gradient(160deg, #E6EDFF 0%, #D2E0FB 100%); box-shadow: 0 3px 9px rgba(20,40,160,0.16); }
+.pay-cell.has-due .pay-cell-day { opacity: 0.8; }
+.pay-cell.has-due:hover { transform: translateY(-1px); box-shadow: 0 7px 15px rgba(20,40,160,0.22); }
+.pay-cell.overdue { color: #A32F2F; background: linear-gradient(160deg, #FFE7E7 0%, #FFD2D2 100%); box-shadow: 0 3px 9px rgba(178,59,59,0.2); }
+.pay-cell.overdue:hover { box-shadow: 0 7px 15px rgba(178,59,59,0.26); }
+.pay-cell.today { border-color: #00A3E0; box-shadow: 0 0 0 3px rgba(0,163,224,0.18); }
+.pay-cell.today .pay-cell-day { color: #0A6E96; font-weight: 700; }
+.pay-cell.selected { color: #fff; transform: translateY(-1px); border-color: #1428A0; background: linear-gradient(150deg, #2A4BE0 0%, #1428A0 100%); box-shadow: 0 9px 18px rgba(20,40,160,0.4); }
 .pay-cell.selected .pay-cell-day, .pay-cell.selected .pay-cell-amt { color: #fff; }
+.pay-cell.selected .pay-cell-dots i { box-shadow: 0 0 0 1.5px rgba(255,255,255,0.6); }
+
 .pay-cal-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.pay-cal-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 10.5px; color: #5B6478; }
-.pay-cal-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.pay-cal-legend { display: flex; flex-wrap: wrap; gap: 6px; }
+.pay-cal-legend span { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 600; padding: 4px 9px; border-radius: 999px; }
 .pay-cal-legend i { width: 6px; height: 6px; border-radius: 50%; display: block; }
-.pay-cal-today-btn { font-size: 11.5px; font-weight: 600; color: #1428A0; background: #E8EEFB; border: none; border-radius: 999px; padding: 5px 11px; cursor: pointer; white-space: nowrap; }
-.pay-cal-today-btn:hover { background: #D8E2F8; }
-.pay-cal-hint { font-size: 12px; color: #A3A9B8; text-align: center; border-top: 1px dashed #E3E8F2; padding-top: 10px; }
-.pay-cal-detail { border-top: 1px dashed #E3E8F2; padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.pay-cal-today-btn { font-size: 11.5px; font-weight: 600; color: #fff; background: linear-gradient(135deg, #1E3BC4, #1428A0); border: none; border-radius: 999px; padding: 6px 13px; cursor: pointer; white-space: nowrap; box-shadow: 0 4px 10px rgba(20,40,160,0.28); }
+.pay-cal-today-btn:hover { background: linear-gradient(135deg, #2A4BE0, #0F1F7A); }
+.pay-cal-hint { font-size: 12px; color: #A3A9B8; text-align: center; border-top: 1px dashed #E3E8F2; padding-top: 12px; }
+
+.pay-cal-detail { border-top: 1px dashed #E3E8F2; padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .pay-cal-detail-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600; color: #5B6478; }
-.pay-cal-detail-sum { font-size: 15px; font-weight: 700; color: #141B34; white-space: nowrap; }
-.pay-row { display: flex; align-items: center; gap: 10px; background: #F7F9FD; border: 1px solid #ECF0F8; border-radius: 12px; padding: 10px; }
-.pay-row-bar { width: 3px; align-self: stretch; border-radius: 2px; flex: none; }
+.pay-cal-detail-sum { font-size: 17px; font-weight: 700; color: #1428A0; white-space: nowrap; }
+/* Each row is tinted with its own category hue (set inline) over the same card shape used
+   elsewhere, so a day's mix of gold/blue/amber is readable without a legend. */
+.pay-row { display: flex; align-items: center; gap: 11px; border: 1px solid #ECF0F8; border-radius: 14px; padding: 11px 12px; box-shadow: 0 3px 10px rgba(20,40,160,0.07); }
+.pay-row-bar { width: 4px; align-self: stretch; border-radius: 3px; flex: none; }
 .pay-row-title { font-size: 14px; font-weight: 600; color: #141B34; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pay-row-note { font-size: 11.5px; color: #5B6478; margin-top: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.pay-row-amt { font-size: 15px; font-weight: 700; color: #141B34; white-space: nowrap; }
+.pay-row-amt { font-size: 15.5px; font-weight: 700; color: #141B34; white-space: nowrap; }

@@ -1175,12 +1175,18 @@
   }
 
   // Same colour coding as the rest of the app: blue = หนี้, gold = ตั๋วทอง, sky = อิเล็กทรอนิก,
-  // amber = ค่าใช้จ่ายประจำ.
+  // amber = ค่าใช้จ่ายประจำ. `grad` is the cell/pill sheen built from that same hue.
+  const PAY_LEGEND = [
+    { label: 'งวดผ่อน', short: 'งวดผ่อน', color: '#1428A0', bg: '#E8EEFB', cell: ['#E6EDFF', '#D2E0FB'], text: '#12309B' },
+    { label: 'ตั๋วทอง', short: 'ตั๋วทอง', color: '#B8862F', bg: '#FBF0D2', cell: ['#FCF2D8', '#F4E1AC'], text: '#8A6A12' },
+    { label: 'ตั๋วอิเล็กทรอนิก', short: 'อิเล็กทรอนิก', color: '#0A8BC2', bg: '#E0F3FA', cell: ['#E2F4FB', '#C6E7F6'], text: '#0A6E96' },
+    { label: 'ค่าใช้จ่ายประจำ', short: 'ค่าใช้จ่าย', color: '#B8791A', bg: '#FFF3DD', cell: ['#FFF4DF', '#FBE4BA'], text: '#92600A' },
+  ];
   function payKindMeta(it) {
-    if (it.kind === 'installment') return { label: 'งวดผ่อน', color: '#1428A0', bg: '#E8EEFB' };
-    if (it.kind === 'expense') return { label: 'ค่าใช้จ่ายประจำ', color: '#92600A', bg: '#FFF3DD' };
-    if (it.category === 'jewelry') return { label: 'ตั๋วทอง', color: '#C1961F', bg: '#FBF0D2' };
-    return { label: 'ตั๋วอิเล็กทรอนิก', color: '#0A8BC2', bg: '#E0F3FA' };
+    if (it.kind === 'installment') return PAY_LEGEND[0];
+    if (it.kind === 'expense') return PAY_LEGEND[3];
+    if (it.category === 'jewelry') return PAY_LEGEND[1];
+    return PAY_LEGEND[2];
   }
 
   function formatDateLong(iso) {
@@ -1196,7 +1202,7 @@
       ? `data-action="open-debt" data-id="${it.debt_id}" data-from="dashboard"`
       : '';
     return `
-      <div class="pay-row" ${open} style="${open ? 'cursor:pointer' : ''}">
+      <div class="pay-row" ${open} style="background:linear-gradient(115deg, ${meta.bg} 0%, #fff 62%);border-color:${meta.bg}${open ? ';cursor:pointer' : ''}">
         <span class="pay-row-bar" style="background:${meta.color}"></span>
         <div style="flex:1;min-width:0">
           <div class="pay-row-title">${esc(it.title)}</div>
@@ -1227,19 +1233,27 @@
       const date = `${month}-${String(d).padStart(2, '0')}`;
       const items = byDay[date] || [];
       const sum = items.reduce((a, it) => a + (it.amount || 0), 0);
+      const overdue = !!items.length && date < todayStr;
+      const selected = date === S.calSelected;
       const cls = ['pay-cell'];
       if (items.length) cls.push('has-due');
-      if (items.length && date < todayStr) cls.push('overdue');
+      if (overdue) cls.push('overdue');
       if (date === todayStr) cls.push('today');
-      if (date === S.calSelected) cls.push('selected');
+      if (selected) cls.push('selected');
+      // A day owing only one kind of thing is tinted in that kind's own colour — a gold day
+      // reads as "ตั๋วทอง" before the number is even read. Mixed days stay blue, and red
+      // (overdue) or the selected day's solid blue always win over the category tint.
+      const kinds = new Set(items.map((it) => payKindMeta(it).label));
+      const tone = kinds.size === 1 && !overdue && !selected ? payKindMeta(items[0]) : null;
+      const style = tone ? ` style="background:linear-gradient(160deg,${tone.cell[0]} 0%,${tone.cell[1]} 100%);color:${tone.text}"` : '';
       // A day with nothing owed is not a button: there is nothing to open, and making the
       // whole month tappable would hide which days actually carry money.
       const tag = items.length ? 'button' : 'span';
       const attrs = items.length ? ` type="button" data-action="pay-cal-day" data-date="${date}"` : '';
       const dots = items.slice(0, 3).map((it) => `<i style="background:${payKindMeta(it).color}"></i>`).join('');
-      cells += `<${tag} class="${cls.join(' ')}"${attrs}>
+      cells += `<${tag} class="${cls.join(' ')}"${attrs}${style}>
           <span class="pay-cell-day">${d}</span>
-          ${items.length ? `<span class="pay-cell-amt">${compactMoney(sum)}</span><span class="pay-cell-dots">${dots}</span>` : ''}
+          ${items.length ? `<span class="pay-cell-amt">${compactMoney(sum)}</span><span class="pay-cell-dots">${dots}</span>` : '<span class="pay-cell-dots"></span>'}
         </${tag}>`;
     }
 
@@ -1255,29 +1269,37 @@
       </div>` : cal.items.length ? `<div class="pay-cal-hint">แตะวันที่มียอด เพื่อดูว่าวันนั้นต้องจ่ายอะไรบ้าง</div>` : '';
 
     const isThisMonth = month === todayStr.slice(0, 7);
+    const overdueCount = cal.items.filter((it) => it.date < todayStr).length;
+    // The month band carries the running total, so the summary reads as one blue surface
+    // with the grid hanging under it rather than as a line of grey text.
     return `
       <div class="section-title">ปฏิทินยอดที่ต้องจ่าย</div>
       <div class="card pay-cal">
         <div class="pay-cal-head">
-          <button type="button" class="icon-btn" data-action="pay-cal-shift" data-delta="-1">${svgChevronDir('left')}</button>
+          <button type="button" class="pay-cal-nav" data-action="pay-cal-shift" data-delta="-1">${svgChevronDir('left', '#fff')}</button>
           <div class="pay-cal-head-mid">
             <div class="pay-cal-title">${THAI_MONTHS_FULL[m - 1]} ${y + 543}</div>
-            <div class="pay-cal-sub">${cal.items.length ? `รวมต้องจ่าย ฿${formatMoney(cal.total)} · ${cal.items.length} รายการ` : 'เดือนนี้ไม่มียอดต้องจ่าย'}</div>
+            ${cal.items.length ? `
+              <div class="pay-cal-total">฿${formatMoney(cal.total)}</div>
+              <div class="pay-cal-chips">
+                <span class="pay-cal-chip">${cal.items.length} รายการ</span>
+                ${overdueCount ? `<span class="pay-cal-chip danger">เลยกำหนด ${overdueCount}</span>` : ''}
+              </div>`
+            : `<div class="pay-cal-chips"><span class="pay-cal-chip">เดือนนี้ไม่มียอดต้องจ่าย</span></div>`}
           </div>
-          <button type="button" class="icon-btn" data-action="pay-cal-shift" data-delta="1">${svgChevronDir('right')}</button>
+          <button type="button" class="pay-cal-nav" data-action="pay-cal-shift" data-delta="1">${svgChevronDir('right', '#fff')}</button>
         </div>
-        <div class="cal-weekdays">${THAI_WEEKDAYS.map((w) => `<div>${w}</div>`).join('')}</div>
-        <div class="pay-cal-grid">${cells}</div>
-        <div class="pay-cal-foot">
-          <div class="pay-cal-legend">
-            <span><i style="background:#1428A0"></i>งวดผ่อน</span>
-            <span><i style="background:#C1961F"></i>ตั๋วทอง</span>
-            <span><i style="background:#0A8BC2"></i>ตั๋วอิเล็กทรอนิก</span>
-            <span><i style="background:#92600A"></i>ค่าใช้จ่ายประจำ</span>
+        <div class="pay-cal-body">
+          <div class="cal-weekdays">${THAI_WEEKDAYS.map((w) => `<div>${w}</div>`).join('')}</div>
+          <div class="pay-cal-grid">${cells}</div>
+          <div class="pay-cal-foot">
+            <div class="pay-cal-legend">
+              ${PAY_LEGEND.map((k) => `<span style="background:${k.bg};color:${k.color}"><i style="background:${k.color}"></i>${k.short}</span>`).join('')}
+            </div>
+            ${isThisMonth ? '' : `<button type="button" class="pay-cal-today-btn" data-action="pay-cal-today">กลับเดือนนี้</button>`}
           </div>
-          ${isThisMonth ? '' : `<button type="button" class="pay-cal-today-btn" data-action="pay-cal-today">กลับเดือนนี้</button>`}
+          ${detail}
         </div>
-        ${detail}
       </div>`;
   }
 
@@ -2112,7 +2134,7 @@
   function svgLock() { return `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M7 7V5a5 5 0 0110 0v2"/></svg>`; }
   function svgBack(c) { return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M15 18l-6-6 6-6"/></svg>`; }
   function svgChevron() { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A3A9B8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>`; }
-  function svgChevronDir(dir) { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#141B34" stroke-width="2"><path d="${dir === 'left' ? 'M15 18l-6-6 6-6' : 'M9 18l6-6-6-6'}"/></svg>`; }
+  function svgChevronDir(dir, color) { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color || '#141B34'}" stroke-width="2"><path d="${dir === 'left' ? 'M15 18l-6-6 6-6' : 'M9 18l6-6-6-6'}"/></svg>`; }
   function svgCalendar() { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B6478" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke-linecap="round"/></svg>`; }
   function svgPlus() { return `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`; }
   function svgPawn() { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B8862F" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M8 12h8"/></svg>`; }
