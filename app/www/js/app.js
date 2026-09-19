@@ -1386,23 +1386,57 @@
       </div>`;
   }
 
+  // Manage is the app's table of contents, so each row leads with the number the user came
+  // to check (balance owed / principal pawned / monthly spend) and carries its category's
+  // tone — the same four families the dashboard tiles and the calendar cells use.
   function renderManage() {
     const r = S.report || {};
+    const pawnCount = (r.count_pawn_jewelry || 0) + (r.count_pawn_other || 0);
+    const interestTotal = (r.interest_jewelry || 0) + (r.interest_other || 0);
+    const burden = (r.total_debt || 0) + (r.total_pawn_jewelry || 0) + (r.total_pawn_other || 0);
     const cards = [
-      { screen: 'debtList', icon: svgList('#1428A0'), label: 'หนี้สิน', sub: `คงเหลือ ฿${formatMoney(r.total_debt || 0)}`, bg: '#E8EEFB' },
-      { screen: 'pawnList', cat: 'jewelry', icon: svgTicket('#8A6A12'), label: '💍 ตั๋วจำนำ — ทอง', sub: `${r.count_pawn_jewelry || 0} ใบ · ฿${formatMoney(r.total_pawn_jewelry || 0)} · ดอก ฿${formatMoney(r.interest_jewelry || 0)}`, bg: '#FBF0D2' },
-      { screen: 'pawnList', cat: 'nonjewelry', icon: svgTicket('#0A6E96'), label: '📱 ตั๋วจำนำ — อิเล็กทรอนิก', sub: `${r.count_pawn_other || 0} ใบ · ฿${formatMoney(r.total_pawn_other || 0)} · ดอก ฿${formatMoney(r.interest_other || 0)}`, bg: '#E0F3FA' },
-      { screen: 'expenses', icon: svgWallet('#92600A'), label: 'ค่าใช้จ่ายประจำ', sub: `฿${formatMoney(r.total_recurring || 0)}/เดือน`, bg: '#FFF3DD' },
+      {
+        screen: 'debtList', icon: '📋', tone: STAT_TONES.debt,
+        label: 'หนี้สิน', amount: r.total_debt || 0, chips: ['ยอดคงเหลือทั้งหมด'],
+      },
+      {
+        screen: 'pawnList', cat: 'jewelry', icon: '💍', tone: STAT_TONES.jewelry,
+        label: 'ตั๋วจำนำ — ทอง', amount: r.total_pawn_jewelry || 0,
+        chips: [`${r.count_pawn_jewelry || 0} ใบ`, `ดอก ฿${formatMoney(r.interest_jewelry || 0)}`],
+      },
+      {
+        screen: 'pawnList', cat: 'nonjewelry', icon: '📱', tone: STAT_TONES.electronics,
+        label: 'ตั๋วจำนำ — อิเล็กทรอนิก', amount: r.total_pawn_other || 0,
+        chips: [`${r.count_pawn_other || 0} ใบ`, `ดอก ฿${formatMoney(r.interest_other || 0)}`],
+      },
+      {
+        screen: 'expenses', icon: '🧾', tone: STAT_TONES.expense,
+        label: 'ค่าใช้จ่ายประจำ', amount: r.total_recurring || 0, chips: ['ต่อเดือน'],
+      },
     ];
-    return `<div class="screen-pad">${cards.map((c) => `
-      <div class="card" style="display:flex;align-items:center;gap:14px;cursor:pointer" ${c.cat ? `data-action="goto-pawn-cat" data-cat="${c.cat}"` : `data-action="nav-manage" data-screen="${c.screen}"`}>
-        <div style="width:44px;height:44px;border-radius:12px;background:${c.bg};display:flex;align-items:center;justify-content:center;flex:none">${c.icon}</div>
-        <div style="flex:1">
-          <div class="settings-row-title">${c.label}</div>
-          <div style="font-size:13px;color:#5B6478">${esc(c.sub)}</div>
+    return `
+      <div class="screen-pad">
+        <div class="hero-card">
+          <div class="hero-label">ภาระรวมทั้งหมด (หนี้ + เงินต้นตั๋วจำนำ)</div>
+          <div class="hero-amount">฿${formatMoney(burden)}</div>
+          <div class="hero-meta">
+            <span class="hero-chip">ตั๋วจำนำ ${pawnCount} ใบ</span>
+            <span class="hero-chip">ดอกเบี้ยตั๋วรวม ฿${formatMoney(interestTotal)}</span>
+            <span class="hero-chip">ค่าใช้จ่ายประจำ ฿${formatMoney(r.total_recurring || 0)}/เดือน</span>
+          </div>
         </div>
-        ${svgChevron()}
-      </div>`).join('')}</div>`;
+        <div class="section-title">เลือกหมวดที่ต้องการจัดการ</div>
+        ${cards.map((c) => `
+          <div class="manage-card" style="background:${c.tone.grad};box-shadow:0 6px 16px ${c.tone.shadow}" ${c.cat ? `data-action="goto-pawn-cat" data-cat="${c.cat}"` : `data-action="nav-manage" data-screen="${c.screen}"`}>
+            <div class="manage-icon">${c.icon}</div>
+            <div class="manage-body">
+              <div class="manage-label" style="color:${c.tone.fg}">${c.label}</div>
+              <div class="manage-amount" style="color:${c.tone.fg}">฿${formatMoney(c.amount)}</div>
+              <div class="manage-chips">${c.chips.map((t) => `<span style="color:${c.tone.fg}">${esc(t)}</span>`).join('')}</div>
+            </div>
+            <div class="manage-go" style="color:${c.tone.fg}">${svgChevronDir('right', c.tone.fg)}</div>
+          </div>`).join('')}
+      </div>`;
   }
 
   function formatMonthLabel(monthStr) {
@@ -2148,15 +2182,13 @@
   // ---------------- Icons ----------------
   function svgLock() { return `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M7 7V5a5 5 0 0110 0v2"/></svg>`; }
   function svgBack(c) { return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M15 18l-6-6 6-6"/></svg>`; }
+  function svgList(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg>`; }
   function svgChevron() { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A3A9B8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>`; }
   function svgChevronDir(dir, color) { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color || '#141B34'}" stroke-width="2"><path d="${dir === 'left' ? 'M15 18l-6-6 6-6' : 'M9 18l6-6-6-6'}"/></svg>`; }
   function svgCalendar() { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B6478" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke-linecap="round"/></svg>`; }
   function svgPlus() { return `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`; }
   function svgPawn() { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B8862F" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M8 12h8"/></svg>`; }
   function svgHome(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h14v-9"/></svg>`; }
-  function svgList(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg>`; }
-  function svgTicket(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 12l6-8h9a3 3 0 013 3v3l-8 9a2 2 0 01-3 0l-7-6z"/><circle cx="15" cy="9" r="1.4"/></svg>`; }
-  function svgWallet(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 7a2 2 0 012-2h13a1 1 0 011 1v2"/><path d="M3 7v11a2 2 0 002 2h14a1 1 0 001-1v-4"/><rect x="14" y="11" width="7" height="5" rx="1"/><circle cx="17" cy="13.5" r="0.8" fill="${c}"/></svg>`; }
   function svgHistory(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 12a9 9 0 109-9" stroke-linecap="round"/><path d="M3 4v5h5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 7v5l4 2" stroke-linecap="round" stroke-linejoin="round"/></svg>`; }
   function svgGear(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.6 7.6 0 000-2l1.9-1.5-2-3.4-2.3.6a7.7 7.7 0 00-1.7-1l-.3-2.4h-4l-.3 2.4a7.7 7.7 0 00-1.7 1l-2.3-.6-2 3.4L4.6 11a7.6 7.6 0 000 2l-1.9 1.5 2 3.4 2.3-.6a7.7 7.7 0 001.7 1l.3 2.4h4l.3-2.4a7.7 7.7 0 001.7-1l2.3.6 2-3.4z"/></svg>`; }
   function svgDownload() { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 19h16" stroke-linecap="round"/></svg>`; }
