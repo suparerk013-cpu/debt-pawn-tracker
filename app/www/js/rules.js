@@ -45,6 +45,15 @@
   }
 
   const baht = (n) => '฿' + Math.round(n || 0).toLocaleString('th-TH');
+  // Dates inside notification and reminder text are read by a person, not a parser, so they
+  // are written the Thai way (27 ก.ย. 69) rather than as the stored ISO string.
+  const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  function thaiDate(iso) {
+    if (!iso) return '-';
+    const d = new Date(iso + 'T00:00:00');
+    if (isNaN(d)) return String(iso);
+    return `${d.getDate()} ${THAI_MONTHS_SHORT[d.getMonth()]} ${String(d.getFullYear() + 543).slice(-2)}`;
+  }
 
   // Builds the "needs attention" digest from already-loaded data. Pure: no I/O, no clock
   // reads beyond the todayStr passed in, so the sender and the app can both call it.
@@ -60,7 +69,7 @@
       items.push({
         id: 'installment-' + i.id, ref_type: 'installment', ref_id: i.id,
         title: days < 0 ? 'ค้างชำระ' : 'ใกล้ถึงกำหนดชำระ',
-        body: `${d.name} — ${baht(i.amount)} ครบกำหนด ${i.due_date}`,
+        body: `${d.name} — ${baht(i.amount)} ครบกำหนด ${thaiDate(i.due_date)}`,
         sent_at: today + 'T00:00:00',
       });
     }));
@@ -73,7 +82,7 @@
           items.push({
             id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id,
             title: '⚠️ ตั๋วจำนำใกล้ขาดแล้ว!',
-            body: `${p.item_name} — ครบกำหนดไถ่ถอนสุดท้ายวันนี้ (${finalDueStr})`,
+            body: `${p.item_name} — ครบกำหนดไถ่ถอนสุดท้ายวันนี้ (${thaiDate(finalDueStr)})`,
             sent_at: today + 'T00:00:00', persistent: true,
           });
           return;
@@ -83,7 +92,7 @@
           items.push({
             id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id,
             title: term.overdue ? '⚠️ เลยกำหนดต่อดอกแล้ว' : '⚠️ ครบ 4 เดือนแล้ว',
-            body: `${p.item_name} — ดอกเบี้ยสะสม ${baht(p.interest * term.billed)} ต้องต่อดอกหรือไถ่ถอนก่อน ${finalDueStr}`,
+            body: `${p.item_name} — ดอกเบี้ยสะสม ${baht(p.interest * term.billed)} ต้องต่อดอกหรือไถ่ถอนก่อน ${thaiDate(finalDueStr)}`,
             sent_at: today + 'T00:00:00', persistent: true,
           });
         }
@@ -100,7 +109,7 @@
             title: days < 0 ? '⚠️ ตั๋วจำนำเลยกำหนดแล้ว ต่อดอกด่วน!'
               : days === 0 ? '⚠️ ตั๋วจำนำครบกำหนดวันนี้ ต่อดอกด่วน!'
               : '⚠️ ตั๋วจำนำใกล้ครบกำหนด เตรียมต่อดอก',
-            body: `${p.item_name} — ดอก ${baht(p.interest || 0)} ครบกำหนด ${p.due_date} (ยังไม่ได้ต่อดอก)`,
+            body: `${p.item_name} — ดอก ${baht(p.interest || 0)} ครบกำหนด ${thaiDate(p.due_date)} (ยังไม่ได้ต่อดอก)`,
             sent_at: today + 'T00:00:00', persistent: true,
           });
         }
@@ -111,7 +120,7 @@
         items.push({
           id: 'pawn-' + p.id, ref_type: 'pawn', ref_id: p.id,
           title: days < 0 ? 'ตั๋วจำนำเลยกำหนด' : 'ตั๋วจำนำใกล้ครบกำหนด',
-          body: `${p.item_name} — ${baht(p.amount)} ครบกำหนด ${p.due_date}`,
+          body: `${p.item_name} — ${baht(p.amount)} ครบกำหนด ${thaiDate(p.due_date)}`,
           sent_at: today + 'T00:00:00',
         });
       }
@@ -127,7 +136,7 @@
       items.push({
         id: 'expense-' + e.id, ref_type: 'expense', ref_id: e.id,
         title: days < 0 ? 'ค่าใช้จ่ายประจำค้างชำระ' : 'ค่าใช้จ่ายประจำใกล้ถึงกำหนด',
-        body: `${e.name} — ${amountPart}ครบกำหนด ${dueDate}`,
+        body: `${e.name} — ${amountPart}ครบกำหนด ${thaiDate(dueDate)}`,
         sent_at: today + 'T00:00:00',
       });
     });

@@ -2438,24 +2438,65 @@
       </div>`;
   }
 
+  // The bell's list, grouped by urgency: anything the rules flagged with ⚠️ (a ticket about
+  // to be forfeited, an overdue renewal) sits above everything else, and a row that has been
+  // read goes flat and grey instead of disappearing.
+  function notifIcon(n) {
+    if (n.ref_type === 'installment') return '📋';
+    if (n.ref_type === 'expense') return '🧾';
+    return n.title.startsWith('⚠️') ? '⚠️' : '🎫';
+  }
+
+  function renderNotifRow(n) {
+    const unread = !n.read_at;
+    const urgent = n.title.startsWith('⚠️');
+    const d = new Date(n.sent_at);
+    const dateLabel = formatDate(n.sent_at.slice(0, 10)) + ' ' + d.toTimeString().slice(0, 5);
+    const cls = ['notif-row', unread ? 'unread' : 'read', urgent ? 'urgent' : ''].filter(Boolean).join(' ');
+    return `
+      <div class="${cls}" ${unread ? `data-action="mark-notif-read" data-id="${n.id}"` : ''}>
+        <div class="item-icon notif-icon">${notifIcon(n)}</div>
+        <div class="notif-body">
+          <div class="notif-title">${esc(n.title.replace(/^⚠️\s*/, ''))}</div>
+          <div class="notif-text">${esc(n.body)}</div>
+          <div class="notif-time">${dateLabel}${n.persistent ? ' · เตือนซ้ำจนกว่าจะจัดการ' : ''}</div>
+        </div>
+        ${unread ? '<span class="notif-dot"></span>' : ''}
+      </div>`;
+  }
+
   function renderNotifications() {
-    const empty = !S.notifications.length ? `
-      <div class="empty-card"><div class="empty-emoji">🔔</div><div class="empty-text">ยังไม่มีการแจ้งเตือน</div></div>` : '';
-    const items = S.notifications.map((n) => {
-      const unread = !n.read_at;
-      const d = new Date(n.sent_at);
-      const dateLabel = formatDate(n.sent_at.slice(0, 10)) + ' ' + d.toTimeString().slice(0, 5);
-      return `
-        <div class="card" style="display:flex;flex-direction:column;gap:4px;${unread ? 'border-left:3px solid #1428A0' : 'opacity:0.7'}" data-action="${unread ? 'mark-notif-read' : ''}" data-id="${n.id}">
-          <div class="row-between">
-            <div style="font-weight:600;color:#141B34">${esc(n.title)}</div>
-            ${unread ? `<div style="width:8px;height:8px;border-radius:50%;background:#1428A0;flex:none"></div>` : ''}
-          </div>
-          <div style="font-size:14px;color:#5B6478">${esc(n.body)}</div>
-          <div style="font-size:12px;color:#A3A9B8">${dateLabel}</div>
-        </div>`;
-    }).join('');
-    return `<div class="screen-pad">${empty}${items}</div>`;
+    const list = S.notifications;
+    if (!list.length) {
+      return `<div class="screen-pad">
+        <div class="empty-card"><div class="empty-emoji">✅</div><div class="empty-text">ไม่มีรายการที่ต้องจัดการตอนนี้<br><span style="font-size:12.5px;color:#A3A9B8">กระดิ่งจะเตือนเมื่อใกล้ถึงกำหนดตามจำนวนวันที่ตั้งไว้ (${S.warnDays} วัน)</span></div></div>
+      </div>`;
+    }
+    const urgent = list.filter((n) => n.title.startsWith('⚠️'));
+    const normal = list.filter((n) => !n.title.startsWith('⚠️'));
+    const unreadCount = list.filter((n) => !n.read_at).length;
+
+    const hero = `
+      <div class="hero-card">
+        <div class="hero-label">รายการที่ต้องจัดการ</div>
+        <div class="hero-amount">${list.length} รายการ</div>
+        <div class="hero-meta">
+          ${urgent.length ? `<span class="hero-chip alert">⚠️ ด่วน ${urgent.length} รายการ</span>` : '<span class="hero-chip">✓ ไม่มีรายการด่วน</span>'}
+          <span class="hero-chip">${unreadCount ? `ยังไม่อ่าน ${unreadCount} รายการ` : 'อ่านครบแล้ว'}</span>
+          <span class="hero-chip">เตือนล่วงหน้า ${S.warnDays} วัน</span>
+        </div>
+      </div>`;
+
+    return `<div class="screen-pad">
+      ${hero}
+      ${urgent.length ? `
+        <div class="section-title danger">ด่วน — ต้องจัดการก่อน (${urgent.length})</div>
+        <div class="notif-list">${urgent.map(renderNotifRow).join('')}</div>` : ''}
+      ${normal.length ? `
+        <div class="section-title">ใกล้ถึงกำหนด (${normal.length})</div>
+        <div class="notif-list">${normal.map(renderNotifRow).join('')}</div>` : ''}
+      ${unreadCount ? `<div class="notif-hint">แตะรายการเพื่อทำเครื่องหมายว่าอ่านแล้ว — รายการด่วนจะกลับมาเตือนใหม่ทุกครั้งที่เปิดแอปจนกว่าจะจัดการเสร็จ</div>` : ''}
+    </div>`;
   }
 
   function renderFab() {
