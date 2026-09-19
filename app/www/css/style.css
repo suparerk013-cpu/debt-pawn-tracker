@@ -205,3 +205,48 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 .hero-chip.alert { background: #fff; color: #B23B3B; }
 .section-title { display: flex; align-items: center; gap: 8px; }
 .section-title::before { content: ''; width: 4px; height: 16px; border-radius: 2px; background: #1428A0; flex: none; }
+
+/* ---------- Dashboard payment calendar ---------- */
+/* Month grid that answers one question per day: how much has to be paid. Days with nothing
+   owed stay flat and unclickable so the days that cost money are the only thing that pops. */
+.pay-cal { padding: 14px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+.pay-cal-head { display: flex; align-items: center; gap: 4px; }
+.pay-cal-head-mid { flex: 1; text-align: center; min-width: 0; }
+.pay-cal-title { font-size: 15px; font-weight: 700; color: #141B34; }
+.pay-cal-sub { font-size: 12px; color: #5B6478; margin-top: 2px; }
+.pay-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.pay-cell {
+  min-height: 52px; border-radius: 12px; padding: 5px 2px 4px; border: 1.5px solid transparent;
+  background: #F5F7FC; color: #A3A9B8; font-family: inherit;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+}
+.pay-cell.empty { background: transparent; }
+.pay-cell-day { font-size: 11.5px; font-weight: 600; line-height: 1.2; }
+.pay-cell-amt { font-size: 11.5px; font-weight: 700; color: #141B34; letter-spacing: -0.2px; line-height: 1.25; }
+.pay-cell-dots { display: flex; gap: 2px; margin-top: auto; }
+.pay-cell-dots i { width: 4px; height: 4px; border-radius: 50%; display: block; }
+.pay-cell.has-due { background: #E8EEFB; color: #1428A0; cursor: pointer; }
+.pay-cell.has-due:hover { background: #D8E2F8; }
+.pay-cell.has-due .pay-cell-amt { color: #1428A0; }
+.pay-cell.overdue { background: #FDECEC; color: #B23B3B; }
+.pay-cell.overdue:hover { background: #F9DDDD; }
+.pay-cell.overdue .pay-cell-amt { color: #B23B3B; }
+.pay-cell.today { border-color: #1428A0; }
+.pay-cell.today .pay-cell-day { color: #1428A0; font-weight: 700; }
+.pay-cell.selected { background: #1428A0; border-color: #1428A0; }
+.pay-cell.selected .pay-cell-day, .pay-cell.selected .pay-cell-amt { color: #fff; }
+.pay-cal-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.pay-cal-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 10.5px; color: #5B6478; }
+.pay-cal-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.pay-cal-legend i { width: 6px; height: 6px; border-radius: 50%; display: block; }
+.pay-cal-today-btn { font-size: 11.5px; font-weight: 600; color: #1428A0; background: #E8EEFB; border: none; border-radius: 999px; padding: 5px 11px; cursor: pointer; white-space: nowrap; }
+.pay-cal-today-btn:hover { background: #D8E2F8; }
+.pay-cal-hint { font-size: 12px; color: #A3A9B8; text-align: center; border-top: 1px dashed #E3E8F2; padding-top: 10px; }
+.pay-cal-detail { border-top: 1px dashed #E3E8F2; padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.pay-cal-detail-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600; color: #5B6478; }
+.pay-cal-detail-sum { font-size: 15px; font-weight: 700; color: #141B34; white-space: nowrap; }
+.pay-row { display: flex; align-items: center; gap: 10px; background: #F7F9FD; border: 1px solid #ECF0F8; border-radius: 12px; padding: 10px; }
+.pay-row-bar { width: 3px; align-self: stretch; border-radius: 2px; flex: none; }
+.pay-row-title { font-size: 14px; font-weight: 600; color: #141B34; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pay-row-note { font-size: 11.5px; color: #5B6478; margin-top: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pay-row-amt { font-size: 15px; font-weight: 700; color: #141B34; white-space: nowrap; }

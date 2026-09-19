@@ -78,6 +78,8 @@
     expensePayFor: null,
     datePickerFor: null,       // which form field's calendar popup is open, if any
     datePickerView: { y: 0, m: 0 }, // {y,m} (Gregorian, m 0-indexed) the open popup's month grid is showing
+    calMonth: null,            // 'YYYY-MM' the dashboard payment calendar is showing (null = this month)
+    calSelected: null,         // 'YYYY-MM-DD' whose items are expanded under that calendar
     debts: [],
     pawns: [],
     expenses: [],
@@ -1131,6 +1133,7 @@
     return `
       <div class="screen-pad">
         ${hero}
+        ${renderPayCalendar()}
         ${stats}
         ${urgent.length ? `
           <div class="section-title" style="color:#B23B3B">⚠️ ครบกำหนดชำระ (ด่วน)</div>
@@ -1139,6 +1142,142 @@
         <div class="section-title">รายการที่ต้องชำระเดือนนี้</div>
         ${normal.length ? renderDueGroups(normal) : (urgent.length ? '' : `
           <div class="empty-card"><div class="empty-emoji">✅</div><div class="empty-text">ชำระครบทุกรายการของเดือนนี้แล้ว</div></div>`)}
+      </div>`;
+  }
+
+  // ---------------- Dashboard payment calendar ----------------
+  // A month grid whose only content per day is the money leaving the pocket that day — the
+  // existing report below it still carries the per-item detail. Dates come from Rules so the
+  // grid, the push notifications and the Google Calendar feed can never disagree about what
+  // is due when. Tapping a day expands the items making up that day's total.
+  const THAI_WEEKDAYS_FULL = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+
+  function calMonthStr() { return S.calMonth || todayISO().slice(0, 7); }
+  function shiftCalMonth(delta) {
+    const [y, m] = calMonthStr().split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    // The selected day belongs to the month that was open, so it is cleared on every move
+    // rather than left pointing at a day the new grid doesn't show.
+    setState({ calMonth: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, calSelected: null });
+  }
+  function calGoToday() { setState({ calMonth: todayISO().slice(0, 7), calSelected: todayISO() }); }
+  function selectCalDay(date) { setState({ calSelected: S.calSelected === date ? null : date }); }
+
+  // Amounts have to fit seven-across on a phone, so thousands collapse to 1.2K / 45.5K / 450K
+  // and millions to 1.2M. Under a thousand is always exact — those are the sums that tend to
+  // be read as "is that 900 or 9,000?" when abbreviated.
+  function compactMoney(n) {
+    const v = Math.round(n || 0);
+    if (v >= 1000000) return String((v / 1000000).toFixed(1)).replace(/\.0$/, '') + 'M';
+    if (v >= 100000) return Math.round(v / 1000) + 'K';
+    if (v >= 1000) return String((v / 1000).toFixed(1)).replace(/\.0$/, '') + 'K';
+    return String(v);
+  }
+
+  // Same colour coding as the rest of the app: blue = หนี้, gold = ตั๋วทอง, sky = อิเล็กทรอนิก,
+  // amber = ค่าใช้จ่ายประจำ.
+  function payKindMeta(it) {
+    if (it.kind === 'installment') return { label: 'งวดผ่อน', color: '#1428A0', bg: '#E8EEFB' };
+    if (it.kind === 'expense') return { label: 'ค่าใช้จ่ายประจำ', color: '#92600A', bg: '#FFF3DD' };
+    if (it.category === 'jewelry') return { label: 'ตั๋วทอง', color: '#C1961F', bg: '#FBF0D2' };
+    return { label: 'ตั๋วอิเล็กทรอนิก', color: '#0A8BC2', bg: '#E0F3FA' };
+  }
+
+  function formatDateLong(iso) {
+    const d = new Date(iso + 'T00:00:00');
+    return `วัน${THAI_WEEKDAYS_FULL[d.getDay()]}ที่ ${d.getDate()} ${THAI_MONTHS_FULL[d.getMonth()]} ${d.getFullYear() + 543}`;
+  }
+
+  function renderPayCalRow(it) {
+    const meta = payKindMeta(it);
+    const open = it.kind === 'pawn'
+      ? `data-action="open-pawn-detail" data-id="${it.ref_id}"`
+      : it.kind === 'installment' && it.debt_id
+      ? `data-action="open-debt" data-id="${it.debt_id}" data-from="dashboard"`
+      : '';
+    return `
+      <div class="pay-row" ${open} style="${open ? 'cursor:pointer' : ''}">
+        <span class="pay-row-bar" style="background:${meta.color}"></span>
+        <div style="flex:1;min-width:0">
+          <div class="pay-row-title">${esc(it.title)}</div>
+          <div class="pay-row-note"><span class="near-kind" style="background:${meta.bg};color:${meta.color}">${meta.label}</span> ${esc(it.note)}</div>
+        </div>
+        <div class="pay-row-amt">${it.estimated ? '~' : ''}฿${formatMoney(it.amount)}</div>
+      </div>`;
+  }
+
+  function renderPayCalendar() {
+    // An old cached rules.js (offline, before the service worker refreshes) drops the
+    // calendar instead of taking the whole dashboard down with a missing-function error.
+    if (typeof Rules === 'undefined' || !Rules.buildPaymentCalendar) return '';
+    const month = calMonthStr();
+    const [y, m] = month.split('-').map(Number);
+    const todayStr = todayISO();
+    const cal = Rules.buildPaymentCalendar({
+      debts: S.debts, pawns: S.pawns, expenses: S.expenses, month, todayStr,
+    });
+    const byDay = {};
+    cal.items.forEach((it) => { (byDay[it.date] = byDay[it.date] || []).push(it); });
+
+    const startWeekday = new Date(y, m - 1, 1).getDay();
+    const lastDay = new Date(y, m, 0).getDate();
+    let cells = '';
+    for (let i = 0; i < startWeekday; i++) cells += `<span class="pay-cell empty"></span>`;
+    for (let d = 1; d <= lastDay; d++) {
+      const date = `${month}-${String(d).padStart(2, '0')}`;
+      const items = byDay[date] || [];
+      const sum = items.reduce((a, it) => a + (it.amount || 0), 0);
+      const cls = ['pay-cell'];
+      if (items.length) cls.push('has-due');
+      if (items.length && date < todayStr) cls.push('overdue');
+      if (date === todayStr) cls.push('today');
+      if (date === S.calSelected) cls.push('selected');
+      // A day with nothing owed is not a button: there is nothing to open, and making the
+      // whole month tappable would hide which days actually carry money.
+      const tag = items.length ? 'button' : 'span';
+      const attrs = items.length ? ` type="button" data-action="pay-cal-day" data-date="${date}"` : '';
+      const dots = items.slice(0, 3).map((it) => `<i style="background:${payKindMeta(it).color}"></i>`).join('');
+      cells += `<${tag} class="${cls.join(' ')}"${attrs}>
+          <span class="pay-cell-day">${d}</span>
+          ${items.length ? `<span class="pay-cell-amt">${compactMoney(sum)}</span><span class="pay-cell-dots">${dots}</span>` : ''}
+        </${tag}>`;
+    }
+
+    const selItems = S.calSelected ? (byDay[S.calSelected] || []) : [];
+    const selSum = selItems.reduce((a, it) => a + (it.amount || 0), 0);
+    const detail = selItems.length ? `
+      <div class="pay-cal-detail">
+        <div class="pay-cal-detail-head">
+          <span>${formatDateLong(S.calSelected)}</span>
+          <span class="pay-cal-detail-sum">฿${formatMoney(selSum)}</span>
+        </div>
+        ${selItems.map(renderPayCalRow).join('')}
+      </div>` : cal.items.length ? `<div class="pay-cal-hint">แตะวันที่มียอด เพื่อดูว่าวันนั้นต้องจ่ายอะไรบ้าง</div>` : '';
+
+    const isThisMonth = month === todayStr.slice(0, 7);
+    return `
+      <div class="section-title">ปฏิทินยอดที่ต้องจ่าย</div>
+      <div class="card pay-cal">
+        <div class="pay-cal-head">
+          <button type="button" class="icon-btn" data-action="pay-cal-shift" data-delta="-1">${svgChevronDir('left')}</button>
+          <div class="pay-cal-head-mid">
+            <div class="pay-cal-title">${THAI_MONTHS_FULL[m - 1]} ${y + 543}</div>
+            <div class="pay-cal-sub">${cal.items.length ? `รวมต้องจ่าย ฿${formatMoney(cal.total)} · ${cal.items.length} รายการ` : 'เดือนนี้ไม่มียอดต้องจ่าย'}</div>
+          </div>
+          <button type="button" class="icon-btn" data-action="pay-cal-shift" data-delta="1">${svgChevronDir('right')}</button>
+        </div>
+        <div class="cal-weekdays">${THAI_WEEKDAYS.map((w) => `<div>${w}</div>`).join('')}</div>
+        <div class="pay-cal-grid">${cells}</div>
+        <div class="pay-cal-foot">
+          <div class="pay-cal-legend">
+            <span><i style="background:#1428A0"></i>งวดผ่อน</span>
+            <span><i style="background:#C1961F"></i>ตั๋วทอง</span>
+            <span><i style="background:#0A8BC2"></i>ตั๋วอิเล็กทรอนิก</span>
+            <span><i style="background:#92600A"></i>ค่าใช้จ่ายประจำ</span>
+          </div>
+          ${isThisMonth ? '' : `<button type="button" class="pay-cal-today-btn" data-action="pay-cal-today">กลับเดือนนี้</button>`}
+        </div>
+        ${detail}
       </div>`;
   }
 
@@ -2048,6 +2187,9 @@
       case 'export-excel': exportReportToExcel(); break;
       case 'create-calendar-link': createCalendarLink(); break;
       case 'copy-calendar-link': copyCalendarLink(); break;
+      case 'pay-cal-shift': shiftCalMonth(Number(el.dataset.delta)); break;
+      case 'pay-cal-today': calGoToday(); break;
+      case 'pay-cal-day': selectCalDay(el.dataset.date); break;
       case 'toggle-date-picker': openDatePicker(el.dataset.field); break;
       case 'shift-date-month': shiftDatePickerMonth(Number(el.dataset.delta)); break;
       case 'pick-date': pickDate(el.dataset.field, el.dataset.date); break;

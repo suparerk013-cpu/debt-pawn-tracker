@@ -228,6 +228,80 @@
     return events.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   }
 
+  // ---- Per-day payment calendar -------------------------------------------------
+  // The same due dates the feed and the notifications use, but answering a different
+  // question: "how much money has to leave my pocket on this day?". Built one calendar
+  // month at a time because that is exactly what the dashboard grid shows, and kept as
+  // individual entries (not pre-summed per day) so tapping a day can list what makes it up.
+  function daysInMonth(month) {
+    const [y, m] = String(month).split('-').map(Number);
+    return new Date(y, m, 0).getDate();
+  }
+  function latestPaymentAmount(e) {
+    const months = Object.keys(e.payments || {}).sort();
+    if (!months.length) return 0;
+    return (e.payments[months[months.length - 1]] || {}).amount || 0;
+  }
+  function buildPaymentCalendar({ debts = [], pawns = [], expenses = [], month, todayStr }) {
+    const today = todayStr || dateStr(new Date());
+    const m = month || today.slice(0, 7);
+    const inMonth = (iso) => typeof iso === 'string' && iso.slice(0, 7) === m;
+    const items = [];
+
+    debts.forEach((d) => (d.installments || []).forEach((i) => {
+      if (i.paid || !inMonth(i.due_date)) return;
+      items.push({
+        date: i.due_date, amount: i.amount || 0, kind: 'installment',
+        title: d.name, note: 'งวดผ่อน', ref_id: i.id, debt_id: d.id,
+      });
+    }));
+
+    pawns.forEach((p) => {
+      const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
+      // Jewelry has no moving due_date: interest is settled when the 4 billed months are up,
+      // and the principal is what it costs to get the item back on the 5th-month deadline.
+      if (p.category === 'jewelry') {
+        if (!pawnDate) return;
+        const renewBy = addMonths(pawnDate, JEWELRY_BILLED_MONTHS);
+        const finalDue = addMonths(pawnDate, JEWELRY_BILLED_MONTHS + 1);
+        if (inMonth(renewBy)) items.push({
+          date: renewBy, amount: (p.interest || 0) * JEWELRY_BILLED_MONTHS, kind: 'pawn',
+          category: 'jewelry', title: p.item_name, note: 'ต่อดอกตั๋วทอง (ครบ 4 เดือน)', ref_id: p.id,
+        });
+        if (inMonth(finalDue)) items.push({
+          date: finalDue, amount: p.amount || 0, kind: 'pawn', category: 'jewelry',
+          title: p.item_name, note: 'วันสุดท้ายไถ่ถอน (เงินต้น)', ref_id: p.id, final: true,
+        });
+        return;
+      }
+      if (!inMonth(p.due_date)) return;
+      items.push({
+        date: p.due_date, amount: p.interest || 0, kind: 'pawn', category: p.category || 'other',
+        title: p.item_name, note: 'ต่อดอกตั๋วจำนำ', ref_id: p.id,
+      });
+    });
+
+    // Recurring expenses have no stored due_date — they land on due_day of whichever month is
+    // being viewed (clamped, so day 31 still shows in February), and drop out once that month
+    // is marked paid. A variable expense has no amount yet, so last month's stands in as an
+    // estimate rather than showing the day as free.
+    expenses.forEach((e) => {
+      if (e.payments && e.payments[m]) return;
+      const day = Math.min(Math.max(1, e.due_day || 1), daysInMonth(m));
+      const fixed = e.expense_type !== 'variable';
+      items.push({
+        date: `${m}-${String(day).padStart(2, '0')}`,
+        amount: fixed ? (e.amount || 0) : latestPaymentAmount(e),
+        kind: 'expense', title: e.name,
+        note: fixed ? 'ค่าใช้จ่ายประจำ' : 'ค่าใช้จ่ายประจำ (ยอดโดยประมาณ)',
+        estimated: !fixed, ref_id: e.id,
+      });
+    });
+
+    items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    return { month: m, items, total: items.reduce((a, it) => a + (it.amount || 0), 0) };
+  }
+
   // RFC 5545: escape text, CRLF line endings, and fold lines at 75 octets — Thai characters
   // are 3 bytes in UTF-8, so folding has to count bytes, not string length.
   function icsEscape(s) {
@@ -278,6 +352,6 @@
     dateStr, addMonths, monthsBetween, daysBetween,
     JEWELRY_BILLED_MONTHS, jewelryTerm,
     buildNotifications, buildPushPayload, buildTelegramMessage,
-    buildCalendarEvents, buildICS,
+    buildCalendarEvents, buildICS, buildPaymentCalendar,
   };
 });
