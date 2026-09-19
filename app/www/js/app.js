@@ -1594,16 +1594,37 @@
   }
   function renderPawnList() {
     const list = filteredPawns();
+    const jewelryCount = S.pawns.filter((p) => p.category === 'jewelry').length;
+    const FILTERS = [
+      { cat: '', label: 'ทั้งหมด', count: S.pawns.length, tone: STAT_TONES.debt },
+      { cat: 'jewelry', label: '💍 ทอง', count: jewelryCount, tone: STAT_TONES.jewelry },
+      { cat: 'nonjewelry', label: '📱 อิเล็กทรอนิก', count: S.pawns.length - jewelryCount, tone: STAT_TONES.electronics },
+    ];
     const filterChips = `
-      <div class="warn-options" style="margin-bottom:12px">
-        <button class="warn-opt ${!S.pawnFilter ? 'selected' : ''}" data-action="set-pawn-filter" data-cat="">ทั้งหมด (${S.pawns.length})</button>
-        <button class="warn-opt ${S.pawnFilter === 'jewelry' ? 'selected' : ''}" data-action="set-pawn-filter" data-cat="jewelry">💍 ทอง (${S.pawns.filter((p) => p.category === 'jewelry').length})</button>
-        <button class="warn-opt ${S.pawnFilter === 'nonjewelry' ? 'selected' : ''}" data-action="set-pawn-filter" data-cat="nonjewelry">📱 อิเล็กทรอนิก (${S.pawns.filter((p) => p.category !== 'jewelry').length})</button>
+      <div class="pawn-filters">
+        ${FILTERS.map((f) => {
+          const on = (S.pawnFilter || '') === f.cat;
+          return `<button class="pawn-filter${on ? ' selected' : ''}" style="${on ? `background:${f.tone.grad};color:${f.tone.fg};box-shadow:0 4px 12px ${f.tone.shadow}` : ''}" data-action="set-pawn-filter" data-cat="${f.cat}">${f.label}<i>${f.count}</i></button>`;
+        }).join('')}
       </div>`;
+
+    // Interest owed right now, by the same rule each category settles on: jewelry has
+    // accrued one rate per billed month, everything else owes one flat renewal fee.
+    const totals = list.reduce((a, p) => ({
+      amount: a.amount + (p.amount || 0),
+      interest: a.interest + (p.category === 'jewelry' ? (p.interest || 0) * jewelryTermOf(p).billed : (p.interest || 0)),
+    }), { amount: 0, interest: 0 });
+    const summary = list.length ? `
+      <div class="card list-summary">
+        <div><span>ตั๋วในรายการ</span><b>${list.length} ใบ</b></div>
+        <div><span>เงินต้นรวม</span><b>฿${formatMoney(totals.amount)}</b></div>
+        <div><span>ดอกที่ต้องจ่าย</span><b class="accent">฿${formatMoney(totals.interest)}</b></div>
+      </div>` : '';
+
     const empty = !list.length ? `
       <div class="empty-card"><div class="empty-emoji">🎫</div><div class="empty-text">${S.pawns.length ? 'ไม่มีตั๋วในหมวดนี้' : 'ยังไม่มีตั๋วจำนำ กดปุ่ม + เพื่อเพิ่ม'}</div></div>` : '';
     const cards = list.map((p) => renderPawnCard(p)).join('');
-    return `<div class="screen-pad">${filterChips}${empty}${cards}</div>`;
+    return `<div class="screen-pad">${filterChips}${summary}${empty}${cards}</div>`;
   }
 
   // Whole calendar months between two 'YYYY-MM-DD' dates (0 until the day-of-month is reached again).
@@ -1774,12 +1795,18 @@
       </div>`;
   }
 
+  // A ticket card leads with the three numbers that decide what to do with it — principal,
+  // interest owed, deadline — as white panels on the category's tint, with jewelry also
+  // showing how far through its four billed months it is.
+  function pawnStat(label, value, accentColor) {
+    return `<div class="pawn-stat"><span>${label}</span><b${accentColor ? ` style="color:${accentColor}"` : ''}>${value}</b></div>`;
+  }
+
   function renderPawnCard(p, from) {
     const categoryMeta = PAWN_CATEGORIES.find((c) => c.key === p.category) || PAWN_CATEGORIES[3];
     const isJewelry = p.category === 'jewelry';
     const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
     const shopLine = esc(p.shop_name || 'ไม่ระบุร้าน') + (p.ticket_code ? ' · เลขที่ตั๋ว ' + esc(p.ticket_code) : '');
-    const pawnDateLine = `<div class="pawn-shop">จำนำเมื่อ ${formatDate(pawnDate)}</div>`;
 
     let badgeLabel, badgeBg, badgeFg, bodyHtml, actionsHtml;
 
@@ -1793,6 +1820,7 @@
       const term = jewelryTermOf(p);
       const atFourMonths = term.billed >= JEWELRY_BILLED_MONTHS;
       const accrued = (p.interest || 0) * term.billed;
+      const urgent = pastFinal || term.overdue;
 
       if (pastFinal) {
         badgeLabel = '⚠️ ใกล้ขาดจำนำ'; badgeBg = '#D64545'; badgeFg = '#fff';
@@ -1801,19 +1829,35 @@
       } else if (atFourMonths) {
         badgeLabel = '⚠️ ครบ 4 งวดแล้ว'; badgeBg = '#FFF3DD'; badgeFg = '#92600A';
       } else {
-        badgeLabel = `งวดที่ ${term.billed} / ${JEWELRY_BILLED_MONTHS}`; badgeBg = '#EFEFEF'; badgeFg = '#6B6B6B';
+        badgeLabel = `งวดที่ ${term.billed} / ${JEWELRY_BILLED_MONTHS}`; badgeBg = '#FFFFFF'; badgeFg = '#8A6A12';
       }
 
-      const urgentColor = pastFinal || term.overdue ? ';color:#B23B3B' : atFourMonths ? ';color:#92600A' : '';
+      const noteColor = urgent ? '#B23B3B' : atFourMonths ? '#92600A' : '';
+      const segColor = urgent ? '#D64545' : '#C1961F';
+      // One segment per billed month, plus a fifth for the forfeit deadline — the shape of
+      // the ticket's life in one line, rather than a sentence the user has to parse.
+      const segments = [1, 2, 3, 4, 5].map((i) => {
+        const filled = i <= term.billed || (i === 5 && pastFinal);
+        const isFinal = i === 5;
+        return `<span class="term-seg${filled ? ' filled' : ''}${isFinal ? ' final' : ''}" style="${filled ? `background:${isFinal ? '#D64545' : segColor}` : ''}"></span>`;
+      }).join('');
+
       bodyHtml = `
-        <div class="pawn-footer">
-          <div class="pawn-amount">฿${formatMoney(p.amount)}</div>
-          <div class="pawn-due">ครบกำหนดสุดท้าย ${formatDate(finalDueDate)}</div>
+        <div class="pawn-stats">
+          ${pawnStat('เงินต้น', '฿' + formatMoney(p.amount))}
+          ${pawnStat('ดอกสะสม', '฿' + formatMoney(accrued), noteColor || undefined)}
+          ${pawnStat('ไถ่ถอนก่อน', formatDate(finalDueDate), urgent ? '#B23B3B' : undefined)}
         </div>
-        ${p.interest ? `<div class="field-label" style="margin-bottom:0${urgentColor}">ดอกเบี้ย ฿${formatMoney(p.interest)}/งวด × ${term.billed} งวด = สะสม ฿${formatMoney(accrued)}</div>` : ''}
-        ${pastFinal ? `<div class="field-label" style="color:#B23B3B;margin-bottom:0">เลยกำหนดสุดท้ายแล้ว กรุณาไถ่ถอนโดยเร็ว มิฉะนั้นจะเสียสิทธิ์</div>`
-          : term.overdue ? `<div class="field-label" style="color:#B23B3B;margin-bottom:0">เลยกำหนดต่อดอกมา ${term.elapsed - JEWELRY_BILLED_MONTHS} เดือน (ดอกหยุดนับที่ ${JEWELRY_BILLED_MONTHS} งวด) ต้องต่อดอกหรือไถ่ก่อน ${formatDate(finalDueDate)}</div>`
-          : atFourMonths ? `<div class="field-label" style="color:#92600A;margin-bottom:0">ครบ ${JEWELRY_BILLED_MONTHS} งวดแล้ว ต้องต่อดอกหรือไถ่ก่อน ${formatDate(finalDueDate)}</div>` : ''}`;
+        <div class="term-wrap">
+          <div class="term-head">
+            <span>${p.interest ? `ดอก ฿${formatMoney(p.interest)}/งวด × ${term.billed} งวด` : 'ไม่ได้ระบุดอกเบี้ย'}</span>
+            <span>งวดที่ ${term.billed}/${JEWELRY_BILLED_MONTHS}${pastFinal ? ' · เลยเดือนที่ 5' : ''}</span>
+          </div>
+          <div class="term-track">${segments}</div>
+        </div>
+        ${pastFinal ? `<div class="pawn-note danger">เลยกำหนดสุดท้ายแล้ว กรุณาไถ่ถอนโดยเร็ว มิฉะนั้นจะเสียสิทธิ์</div>`
+          : term.overdue ? `<div class="pawn-note danger">เลยกำหนดต่อดอกมา ${term.elapsed - JEWELRY_BILLED_MONTHS} เดือน (ดอกหยุดนับที่ ${JEWELRY_BILLED_MONTHS} งวด) ต้องต่อดอกหรือไถ่ก่อน ${formatDate(finalDueDate)}</div>`
+          : atFourMonths ? `<div class="pawn-note warn">ครบ ${JEWELRY_BILLED_MONTHS} งวดแล้ว ต้องต่อดอกหรือไถ่ก่อน ${formatDate(finalDueDate)}</div>` : ''}`;
       actionsHtml = `<div class="pawn-actions">
           <button class="pawn-btn redeem" data-action="redeem-open" data-id="${p.id}" ${lockAttr()}>${btnLabel('redeem:' + p.id, 'ไถ่ถอน')}</button>
           <button class="pawn-btn renew" data-action="jewelry-renew" data-id="${p.id}" ${lockAttr()}>${btnLabel('renew:' + p.id, 'ต่อดอก')}</button>
@@ -1824,11 +1868,13 @@
       const status = days < 0 ? 'overdue' : (days <= S.warnDays ? 'due_soon' : 'upcoming');
       const meta = STATUS_META[status];
       badgeLabel = daysLabel(days, status); badgeBg = meta.bg; badgeFg = meta.fg;
+      const dueColor = status === 'overdue' ? '#B23B3B' : status === 'due_soon' ? '#92600A' : undefined;
 
       bodyHtml = `
-        <div class="pawn-footer">
-          <div class="pawn-amount">฿${formatMoney(p.amount)}${p.interest ? ` <span style="font-size:12px;color:#92600A;font-weight:400">(ดอก ฿${formatMoney(p.interest)})</span>` : ''}</div>
-          <div class="pawn-due">ครบกำหนด ${formatDate(p.due_date)}</div>
+        <div class="pawn-stats">
+          ${pawnStat('เงินต้น', '฿' + formatMoney(p.amount))}
+          ${pawnStat('ค่าต่อดอก', p.interest ? '฿' + formatMoney(p.interest) : '—')}
+          ${pawnStat('ครบกำหนด', formatDate(p.due_date), dueColor)}
         </div>`;
       actionsHtml = `
         <div class="pawn-actions">
@@ -1841,23 +1887,20 @@
 
     return `
       <div class="pawn-card cat-${p.category}">
-        <div style="display:flex;gap:12px;align-items:center">
-          <div class="pawn-icon">${svgPawn()}</div>
-          <div style="flex:1;min-width:0;cursor:pointer" data-action="open-pawn-detail" data-id="${p.id}">
-            <div style="display:flex;align-items:center;gap:6px">
-              <span class="near-kind" style="background:#EFEFEF;color:#5B6478">${categoryMeta.icon} ${categoryMeta.label}</span>
-            </div>
+        <div class="pawn-head">
+          <div class="pawn-icon">${categoryMeta.icon}</div>
+          <div class="pawn-headtext" data-action="open-pawn-detail" data-id="${p.id}">
             <div class="pawn-item">${esc(p.item_name)}</div>
             <div class="pawn-shop">${shopLine}</div>
-            ${pawnDateLine}
+            <div class="pawn-shop">จำนำเมื่อ ${formatDate(pawnDate)}</div>
           </div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          <div class="pawn-head-right">
             <div class="near-badge" style="background:${badgeBg};color:${badgeFg}">${badgeLabel}</div>
             <button class="icon-btn" data-action="open-pawn-settings" data-id="${p.id}" data-from="${from || ''}" style="width:28px;height:28px">${svgGear('#5B6478')}</button>
           </div>
         </div>
         ${bodyHtml}
-        ${p.renew_url ? `<a href="${esc(p.renew_url)}" target="_blank" rel="noopener" class="pawn-btn renew" style="text-align:center;text-decoration:none;display:block">🔗 ต่อดอกออนไลน์ (จาก QR ตั๋ว)</a>` : ''}
+        ${p.renew_url ? `<a href="${esc(p.renew_url)}" target="_blank" rel="noopener" class="pawn-link">🔗 ต่อดอกออนไลน์ (จาก QR ตั๋ว)</a>` : ''}
         ${actionsHtml}
       </div>`;
   }
