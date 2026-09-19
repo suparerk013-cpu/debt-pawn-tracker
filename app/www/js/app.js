@@ -2306,41 +2306,63 @@
 
   // Push registration lives on its own card because its state is device-specific: the token
   // belongs to this phone, not the account, so each device has to be switched on once.
+  // Every settings block is the same shape: an icon, a title, one line of explanation, an
+  // optional status pill, then whatever controls that block owns.
+  function setCard(opts) {
+    const { icon, title, sub, pill, body, tone } = opts;
+    return `
+      <div class="set-card${tone ? ' ' + tone : ''}">
+        <div class="set-head">
+          <div class="item-icon">${icon}</div>
+          <div class="set-headtext">
+            <div class="set-title">${title}</div>
+            ${sub ? `<div class="set-sub">${sub}</div>` : ''}
+          </div>
+          ${pill || ''}
+        </div>
+        ${body || ''}
+      </div>`;
+  }
+  const setNote = (text) => `<div class="set-note">${text}</div>`;
+
   function renderPushCard() {
     const st = S.pushStatus;
-    if (!st) return `<div class="card"><div class="settings-row-title">แจ้งเตือนอัตโนมัติ</div><div class="settings-row-sub">กำลังตรวจสอบ...</div></div>`;
+    if (!st) return setCard({ icon: '🔔', title: 'แจ้งเตือนอัตโนมัติ', sub: 'กำลังตรวจสอบ...' });
     if (!st.supported) {
-      return `<div class="card">
-        <div class="settings-row-title">แจ้งเตือนอัตโนมัติ</div>
-        <div class="settings-row-sub">เครื่อง/เบราว์เซอร์นี้ไม่รองรับ — ลองเปิดผ่าน Chrome บน Android แล้วติดตั้งเป็นแอป</div>
-      </div>`;
+      return setCard({
+        icon: '🔔', title: 'แจ้งเตือนอัตโนมัติ',
+        sub: 'เครื่อง/เบราว์เซอร์นี้ไม่รองรับ — ลองเปิดผ่าน Chrome บน Android แล้วติดตั้งเป็นแอป',
+        pill: '<span class="set-pill">ไม่รองรับ</span>',
+      });
     }
     if (st.permission === 'denied') {
-      return `<div class="card" style="border-color:#F0C9C9;background:#FDF6F6">
-        <div class="settings-row-title" style="color:#B23B3B">⚠️ การแจ้งเตือนถูกปิดไว้ในเครื่อง</div>
-        <div class="settings-row-sub">ต้องเปิดเองที่เครื่องก่อน แอปขอสิทธิ์ซ้ำไม่ได้:<br>
-          กดไอคอน 🔒 ข้าง URL → การตั้งค่าเว็บไซต์ → การแจ้งเตือน → อนุญาต<br>
-          (หรือ ตั้งค่า Android → แอป → Chrome → การแจ้งเตือน)<br>
-          แล้วกลับมากดปุ่มนี้อีกครั้ง</div>
-        <button class="mark-paid-btn" style="align-self:flex-start;margin-top:8px" data-action="refresh-push">ตรวจสอบใหม่</button>
-        <div style="font-size:11px;color:#A3A9B8;margin-top:6px">สถานะเครื่องนี้: permission=${st.permission}</div>
-      </div>`;
+      return setCard({
+        icon: '🔕', tone: 'danger', title: 'การแจ้งเตือนถูกปิดไว้ในเครื่อง',
+        sub: 'ต้องเปิดเองที่เครื่องก่อน แอปขอสิทธิ์ซ้ำไม่ได้',
+        pill: '<span class="set-pill danger">ถูกบล็อก</span>',
+        body: `
+          ${setNote('กดไอคอน 🔒 ข้าง URL → การตั้งค่าเว็บไซต์ → การแจ้งเตือน → อนุญาต<br>(หรือ ตั้งค่า Android → แอป → Chrome → การแจ้งเตือน) แล้วกลับมากดปุ่มนี้อีกครั้ง')}
+          <button class="set-btn" data-action="refresh-push">ตรวจสอบใหม่</button>
+          <div class="set-diag">สถานะเครื่องนี้: permission=${st.permission}</div>`,
+      });
     }
     const on = st.enabled;
-    return `<div class="card" style="display:flex;flex-direction:column;gap:8px">
-      <div class="settings-row-title">แจ้งเตือนอัตโนมัติ ${on ? '<span style="color:#1F7A52">● เปิดอยู่</span>' : '<span style="color:#A3A9B8">○ ปิดอยู่</span>'}</div>
-      <div class="settings-row-sub">${on
-        ? 'เครื่องนี้จะได้รับแจ้งเตือนวันละ 2 ครั้ง (เช้า 8 โมง / เย็น 6 โมง) แม้ไม่ได้เปิดแอป เฉพาะตอนมีรายการครบกำหนด'
-        : 'เปิดเพื่อให้ระบบส่งแจ้งเตือนเข้าเครื่องนี้เอง แม้ไม่ได้เปิดแอป — ต้องเปิดครั้งเดียวต่อเครื่อง'}</div>
-      ${(S.pushLog && S.pushLog.length)
-        ? `<div style="font-size:11px;color:#A3A9B8">📥 เครื่องนี้ได้รับ ${S.pushLog.length} ครั้ง · ล่าสุด ${esc(new Date(S.pushLog[0].at).toLocaleString("th-TH"))} · ${S.pushLog[0].shown ? "แสดงผลสำเร็จ" : "แสดงไม่สำเร็จ: " + esc(S.pushLog[0].error || "ไม่ทราบสาเหตุ")}</div>`
-        : `<div style="font-size:11px;color:#A3A9B8">📥 เครื่องนี้ยังไม่เคยได้รับข้อความจากระบบเลย</div>`}
-      ${S.pushError ? `<div class="field-label" style="margin:0;color:#B23B3B;word-break:break-word">❌ ${esc(S.pushError)}</div>` : ''}
-      <button class="mark-paid-btn" style="align-self:flex-start" data-action="${on ? 'disable-push' : 'enable-push'}" ${lockAttr()}>
-        ${btnLabel('push', on ? 'ปิดแจ้งเตือนอัตโนมัติ' : '🔔 เปิดแจ้งเตือนอัตโนมัติ')}
-      </button>
-      <div style="font-size:11px;color:#A3A9B8">สถานะ: permission=${st.permission} · subscribed=${st.subscribed ? 'yes' : 'no'} · saved=${st.enabled ? 'yes' : 'no'}${st.detail ? ' · ' + esc(st.detail) : ''}</div>
-    </div>`;
+    return setCard({
+      icon: '🔔', title: 'แจ้งเตือนอัตโนมัติ',
+      sub: on
+        ? 'เครื่องนี้จะได้รับแจ้งเตือนวันละ 2 ครั้ง (8 โมงเช้า / 6 โมงเย็น) แม้ไม่ได้เปิดแอป เฉพาะตอนมีรายการครบกำหนด'
+        : 'เปิดเพื่อให้ระบบส่งแจ้งเตือนเข้าเครื่องนี้เอง แม้ไม่ได้เปิดแอป — ต้องเปิดครั้งเดียวต่อเครื่อง',
+      pill: `<span class="set-pill ${on ? 'on' : 'off'}">${on ? '● เปิดอยู่' : '○ ปิดอยู่'}</span>`,
+      body: `
+        ${(S.pushLog && S.pushLog.length)
+          ? setNote(`📥 เครื่องนี้ได้รับ ${S.pushLog.length} ครั้ง · ล่าสุด ${esc(new Date(S.pushLog[0].at).toLocaleString('th-TH'))} · ${S.pushLog[0].shown ? 'แสดงผลสำเร็จ' : 'แสดงไม่สำเร็จ: ' + esc(S.pushLog[0].error || 'ไม่ทราบสาเหตุ')}`)
+          : setNote('📥 เครื่องนี้ยังไม่เคยได้รับข้อความจากระบบเลย')}
+        ${S.pushError ? `<div class="set-note danger">❌ ${esc(S.pushError)}</div>` : ''}
+        <button class="set-btn${on ? ' ghost' : ''}" data-action="${on ? 'disable-push' : 'enable-push'}" ${lockAttr()}>
+          ${btnLabel('push', on ? 'ปิดแจ้งเตือนอัตโนมัติ' : '🔔 เปิดแจ้งเตือนอัตโนมัติ')}
+        </button>
+        <div class="set-diag">permission=${st.permission} · subscribed=${st.subscribed ? 'yes' : 'no'} · saved=${st.enabled ? 'yes' : 'no'}${st.detail ? ' · ' + esc(st.detail) : ''}</div>`,
+    });
   }
 
   // Google's "add by URL" only exists on the desktop web, so on a phone the page opens in the
@@ -2348,54 +2370,71 @@
   function renderCalendarCard() {
     const url = calendarFeedUrl();
     if (!url) {
-      return `<div class="card" style="display:flex;flex-direction:column;gap:8px">
-        <div class="settings-row-title">📅 เชื่อมกับ Google Calendar</div>
-        <div class="settings-row-sub">ให้วันครบกำหนดทุกรายการ (งวดผ่อน · ตั๋วจำนำ · ค่าใช้จ่ายประจำ) ขึ้นในปฏิทิน Google และอัปเดตเองทุกไม่กี่ชั่วโมง</div>
-        <button class="mark-paid-btn" style="align-self:flex-start" data-action="create-calendar-link" ${lockAttr()}>${btnLabel('calendar', 'สร้างลิงก์ปฏิทิน')}</button>
-      </div>`;
+      return setCard({
+        icon: '📅', title: 'เชื่อมกับ Google Calendar',
+        sub: 'ให้วันครบกำหนดทุกรายการ (งวดผ่อน · ตั๋วจำนำ · ค่าใช้จ่ายประจำ) ขึ้นในปฏิทิน Google และอัปเดตเองทุกไม่กี่ชั่วโมง',
+        pill: '<span class="set-pill off">ยังไม่ได้เชื่อม</span>',
+        body: `<button class="set-btn" data-action="create-calendar-link" ${lockAttr()}>${btnLabel('calendar', 'สร้างลิงก์ปฏิทิน')}</button>`,
+      });
     }
     const gcal = 'https://calendar.google.com/calendar/r?cid=' + encodeURIComponent(url.replace(/^https?:/, 'webcal:'));
-    return `<div class="card" style="display:flex;flex-direction:column;gap:8px">
-      <div class="settings-row-title">📅 เชื่อมกับ Google Calendar</div>
-      <div class="settings-row-sub">กด "เพิ่มลง Google Calendar" แล้วกดเพิ่ม (ทำครั้งเดียว) — ปฏิทินจะอัปเดตเองเมื่อจ่าย/ต่อดอก/ไถ่ถอน โดย Google ดึงข้อมูลใหม่ทุกไม่กี่ชั่วโมง</div>
-      <div style="font-size:12px;color:#5B6478;background:#EDF1F8;border-radius:10px;padding:8px 10px;word-break:break-all">${esc(url)}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <a class="mark-paid-btn" href="${esc(gcal)}" target="_blank" rel="noopener">➕ เพิ่มลง Google Calendar</a>
-        <button class="mark-paid-btn" data-action="copy-calendar-link">📋 คัดลอกลิงก์</button>
-      </div>
-      <div style="font-size:11px;color:#A3A9B8">บนมือถือ ถ้าเปิดแล้วไม่มีปุ่มเพิ่ม: คัดลอกลิงก์ → เปิด calendar.google.com ในโหมดเดสก์ท็อป → ปฏิทินอื่นๆ ＋ → จาก URL → วางลิงก์ · อย่าแชร์ลิงก์นี้ให้คนอื่น</div>
-    </div>`;
+    return setCard({
+      icon: '📅', title: 'เชื่อมกับ Google Calendar',
+      sub: 'กด "เพิ่มลง Google Calendar" แล้วกดเพิ่ม (ทำครั้งเดียว) — ปฏิทินจะอัปเดตเองเมื่อจ่าย/ต่อดอก/ไถ่ถอน',
+      pill: '<span class="set-pill on">● เชื่อมแล้ว</span>',
+      body: `
+        <div class="set-url">${esc(url)}</div>
+        <div class="set-btn-row">
+          <a class="set-btn" href="${esc(gcal)}" target="_blank" rel="noopener">➕ เพิ่มลง Google Calendar</a>
+          <button class="set-btn ghost" data-action="copy-calendar-link">📋 คัดลอกลิงก์</button>
+        </div>
+        ${setNote('บนมือถือ ถ้าเปิดแล้วไม่มีปุ่มเพิ่ม: คัดลอกลิงก์ → เปิด calendar.google.com ในโหมดเดสก์ท็อป → ปฏิทินอื่นๆ ＋ → จาก URL → วางลิงก์ · <b>อย่าแชร์ลิงก์นี้ให้คนอื่น</b>')}`,
+    });
   }
 
   function renderSettings() {
-    const opts = [1, 3, 5, 7, 14].map((n) => `<button class="warn-opt ${n === S.warnDays ? 'selected' : ''}" data-action="warn-days" data-n="${n}">${n} วัน</button>`).join('');
+    const user = (S.currentUser || {}).username || '';
+    const isAdmin = (S.realUser || {}).is_admin;
+    const viewingOther = S.currentUser && S.realUser && S.currentUser.id !== S.realUser.id;
+    const opts = [1, 3, 5, 7, 14].map((n) =>
+      `<button class="warn-opt ${n === S.warnDays ? 'selected' : ''}" data-action="warn-days" data-n="${n}">${n} วัน</button>`).join('');
+
+    const profile = `
+      <div class="hero-card set-profile">
+        <div class="set-avatar">${esc(user.slice(0, 1).toUpperCase() || '?')}</div>
+        <div style="flex:1;min-width:0">
+          <div class="hero-label">เข้าใช้งานในชื่อ</div>
+          <div class="set-username">${esc(user)}${isAdmin ? ' <span class="set-admin">แอดมิน</span>' : ''}</div>
+          ${viewingOther ? `<div class="set-viewing">กำลังดูข้อมูลของ ${esc((S.currentUser || {}).username || '')}</div>` : ''}
+        </div>
+        <button class="set-logout" data-action="logout">ออกจากระบบ</button>
+      </div>`;
+
     return `
       <div class="screen-pad">
-        <button class="card" data-action="export-excel" style="width:100%;border:none;cursor:pointer;background:linear-gradient(135deg,#1428A0,#0A1650);display:flex;align-items:center;gap:14px;text-align:left;font:inherit">
-          <div style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,0.16);display:flex;align-items:center;justify-content:center;flex:none">${svgDownload()}</div>
-          <div style="flex:1;min-width:0">
-            <div style="color:#fff;font-weight:700;font-size:15px">ดาวน์โหลดรายงาน Excel</div>
-            <div style="color:rgba(255,255,255,0.78);font-size:12.5px">หนี้สิน · ตั๋วจำนำ · ค่าใช้จ่ายประจำ ทั้งหมด</div>
-          </div>
-        </button>
-        <div class="card" style="display:flex;flex-direction:column;gap:12px">
-          <div class="settings-row-title">แจ้งเตือนล่วงหน้ากี่วันก่อนครบกำหนด</div>
-          <div class="warn-options">${opts}</div>
-        </div>
+        ${profile}
+
+        <div class="section-title">การแจ้งเตือน</div>
+        ${setCard({
+          icon: '⏰', title: 'เตือนล่วงหน้ากี่วัน',
+          sub: 'ใช้กับกระดิ่งในแอปและการแจ้งเตือนอัตโนมัติ — นับถอยหลังก่อนถึงวันครบกำหนด',
+          pill: `<span class="set-pill on">${S.warnDays} วัน</span>`,
+          body: `<div class="warn-options">${opts}</div>`,
+        })}
         ${renderPushCard()}
+        ${setCard({
+          icon: '🧪', title: 'ทดสอบการแจ้งเตือน',
+          sub: 'กดเพื่อเช็คว่าเครื่องนี้แสดงการแจ้งเตือนได้จริง (ทดสอบในเครื่อง ไม่เกี่ยวกับการส่งอัตโนมัติด้านบน)',
+          body: `<button class="set-btn ghost" data-action="test-notification">🔔 ทดสอบส่งแจ้งเตือน</button>`,
+        })}
+
+        <div class="section-title">เชื่อมต่อ &amp; ข้อมูล</div>
         ${renderCalendarCard()}
-        <div class="card" style="display:flex;flex-direction:column;gap:8px">
-          <div class="settings-row-title">ทดสอบการแจ้งเตือน</div>
-          <div class="settings-row-sub">กดเพื่อเช็คว่าเครื่องนี้แสดงการแจ้งเตือนได้จริง (เป็นการทดสอบในเครื่อง ไม่เกี่ยวกับการส่งอัตโนมัติด้านบน)</div>
-          <button class="mark-paid-btn" style="align-self:flex-start" data-action="test-notification">🔔 ทดสอบส่งแจ้งเตือน</button>
-        </div>
-        <div class="card settings-row">
-          <div>
-            <div class="settings-row-title">ผู้ใช้งาน</div>
-            <div class="settings-row-sub">${esc((S.currentUser || {}).username || '')}${(S.realUser || {}).is_admin ? ' (แอดมิน)' : ''}</div>
-          </div>
-          <button class="mark-paid-btn" data-action="logout">ออกจากระบบ</button>
-        </div>
+        ${setCard({
+          icon: '📊', title: 'ดาวน์โหลดรายงาน Excel',
+          sub: 'รวมหนี้สิน · ตั๋วจำนำ · ค่าใช้จ่ายประจำ ทั้งหมดไว้ในไฟล์เดียว',
+          body: `<button class="set-btn" data-action="export-excel">⬇️ ดาวน์โหลดไฟล์ Excel</button>`,
+        })}
       </div>`;
   }
 
@@ -2452,11 +2491,9 @@
   function svgChevronDir(dir, color) { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color || '#141B34'}" stroke-width="2"><path d="${dir === 'left' ? 'M15 18l-6-6 6-6' : 'M9 18l6-6-6-6'}"/></svg>`; }
   function svgCalendar() { return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B6478" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke-linecap="round"/></svg>`; }
   function svgPlus() { return `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`; }
-  function svgPawn() { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B8862F" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M8 12h8"/></svg>`; }
   function svgHome(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h14v-9"/></svg>`; }
   function svgHistory(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><path d="M3 12a9 9 0 109-9" stroke-linecap="round"/><path d="M3 4v5h5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 7v5l4 2" stroke-linecap="round" stroke-linejoin="round"/></svg>`; }
   function svgGear(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.6 7.6 0 000-2l1.9-1.5-2-3.4-2.3.6a7.7 7.7 0 00-1.7-1l-.3-2.4h-4l-.3 2.4a7.7 7.7 0 00-1.7 1l-2.3-.6-2 3.4L4.6 11a7.6 7.6 0 000 2l-1.9 1.5 2 3.4 2.3-.6a7.7 7.7 0 001.7 1l.3 2.4h4l.3-2.4a7.7 7.7 0 001.7-1l2.3.6 2-3.4z"/></svg>`; }
-  function svgDownload() { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 19h16" stroke-linecap="round"/></svg>`; }
   function svgBell(c) { return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c || '#141B34'}" stroke-width="1.8"><path d="M6 9a6 6 0 0112 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9z"/><path d="M9.5 17a2.5 2.5 0 005 0"/></svg>`; }
   function svgLogout(c) { return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c || '#141B34'}" stroke-width="1.8"><path d="M15 17l5-5-5-5M20 12H9"/><path d="M9 19H6a2 2 0 01-2-2V7a2 2 0 012-2h3"/></svg>`; }
   function svgSwap(c) { return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${c || '#1428A0'}" stroke-width="2"><path d="M7 4l-4 4 4 4M3 8h13M17 20l4-4-4-4M21 16H8"/></svg>`; }
