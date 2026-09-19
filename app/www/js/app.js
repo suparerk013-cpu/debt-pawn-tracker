@@ -1499,27 +1499,82 @@
     </div>`;
   }
 
+  // Where a debt stands, derived from its installments: what is still unpaid, which one is
+  // next, how many are already late, and how much of the principal is behind it.
+  function debtProgress(d) {
+    const unpaid = (d.installments || []).filter((i) => !i.paid)
+      .sort((a, b) => (a.due_date < b.due_date ? -1 : 1));
+    const paidPercent = d.total_amount
+      ? Math.min(100, Math.max(0, Math.round((d.total_amount - d.remaining_amount) / d.total_amount * 100)))
+      : 0;
+    return {
+      unpaid, next: unpaid[0] || null, paidPercent,
+      overdue: unpaid.filter((i) => daysUntil(i.due_date) < 0).length,
+    };
+  }
+
   function renderDebtList() {
     if (!S.debts.length) {
       return `<div class="screen-pad"><div class="empty-card"><div class="empty-emoji">📋</div><div class="empty-text">ยังไม่มีรายการหนี้ กดปุ่ม + เพื่อเพิ่ม</div></div></div>`;
     }
+    const totals = S.debts.reduce((a, d) => {
+      const p = debtProgress(d);
+      return {
+        remaining: a.remaining + (d.remaining_amount || 0),
+        total: a.total + (d.total_amount || 0),
+        monthly: a.monthly + (d.installment_amount || 0),
+        overdue: a.overdue + p.overdue,
+      };
+    }, { remaining: 0, total: 0, monthly: 0, overdue: 0 });
+    const paidPercent = totals.total ? Math.min(100, Math.max(0, Math.round((totals.total - totals.remaining) / totals.total * 100))) : 0;
+
+    const hero = `
+      <div class="hero-card">
+        <div class="hero-label">หนี้คงเหลือทั้งหมด</div>
+        <div class="hero-amount">฿${formatMoney(totals.remaining)}</div>
+        <div class="hero-meta">
+          <span class="hero-chip">${S.debts.length} ก้อน</span>
+          <span class="hero-chip">ผ่อนรวม ฿${formatMoney(totals.monthly)}/เดือน</span>
+          ${totals.overdue ? `<span class="hero-chip alert">⚠️ ค้าง ${totals.overdue} งวด</span>` : `<span class="hero-chip">ผ่อนแล้ว ${paidPercent}% ของยอดตั้งต้น</span>`}
+        </div>
+      </div>`;
+
     const cards = S.debts.map((d) => {
-      const paidPercent = d.total_amount ? Math.min(100, Math.round((d.total_amount - d.remaining_amount) / d.total_amount * 100)) : 0;
+      const p = debtProgress(d);
+      const days = p.next ? daysUntil(p.next.due_date) : null;
+      const status = !p.next ? 'paid' : days < 0 ? 'overdue' : days <= S.warnDays ? 'due_soon' : 'upcoming';
+      const meta = STATUS_META[status];
+      const badgeLabel = !p.next ? '✓ ไม่มีงวดค้าง' : daysLabel(days, status);
+      const nextColor = status === 'overdue' ? '#B23B3B' : status === 'due_soon' ? '#92600A' : undefined;
       return `
         <div class="debt-card" data-action="open-debt" data-id="${d.id}">
-          <div class="row-between">
-            <div class="debt-name">${esc(d.name)}</div>
-            ${svgChevron()}
+          <div class="item-head">
+            <div class="item-icon">📋</div>
+            <div class="item-headtext">
+              <div class="pawn-item">${esc(d.name)}</div>
+              <div class="pawn-shop">งวดละ ฿${formatMoney(d.installment_amount)} · ทุกวันที่ ${d.due_day || '-'}</div>
+            </div>
+            <div class="item-head-right">
+              <div class="near-badge" style="background:${meta.bg};color:${meta.fg}">${badgeLabel}</div>
+              ${svgChevron()}
+            </div>
           </div>
-          <div class="row-between">
-            <div class="debt-remaining">฿${formatMoney(d.remaining_amount)}</div>
-            <div class="debt-total">จาก ฿${formatMoney(d.total_amount)}</div>
+          <div class="stat-row">
+            ${statCell('คงเหลือ', '฿' + formatMoney(d.remaining_amount))}
+            ${statCell('ยอดตั้งต้น', '฿' + formatMoney(d.total_amount))}
+            ${statCell('งวดถัดไป', p.next ? formatDate(p.next.due_date) : '—', nextColor)}
           </div>
-          <div class="progress-track"><div class="progress-fill" style="width:${paidPercent}%"></div></div>
-          <div class="progress-label">ผ่อนแล้ว ${paidPercent}%</div>
+          <div class="progress-wrap">
+            <div class="progress-head">
+              <span>ผ่อนแล้ว ${p.paidPercent}%</span>
+              <span>จ่ายไปแล้ว ฿${formatMoney(Math.max(0, (d.total_amount || 0) - (d.remaining_amount || 0)))}</span>
+            </div>
+            <div class="progress-track"><div class="progress-fill" style="width:${p.paidPercent}%"></div></div>
+          </div>
+          ${p.overdue ? `<div class="pawn-note danger">มีงวดค้างชำระ ${p.overdue} งวด — แตะเพื่อดูตารางงวดผ่อน</div>` : ''}
         </div>`;
     }).join('');
-    return `<div class="screen-pad">${cards}</div>`;
+    return `<div class="screen-pad">${hero}${cards}</div>`;
   }
 
   function renderDebtDetail() {
