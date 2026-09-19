@@ -491,3 +491,22 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 .segmented { background: #E9EEF8; padding: 5px; border-radius: 999px; gap: 5px; }
 .segmented-btn { border-radius: 999px; padding: 11px 6px; font-size: 13px; }
 .segmented-btn.active { background: linear-gradient(135deg, #2A4BE0, #1428A0); color: #fff; box-shadow: 0 4px 10px rgba(20,40,160,0.26); }
+
+/* ---------- Pawn detail sheet ---------- */
+.modal-sheet { display: flex; flex-direction: column; gap: 12px; }
+.sheet-grip { width: 40px; height: 4px; border-radius: 999px; background: #D6DDEB; align-self: center; margin-bottom: 2px; }
+.sheet-head { display: flex; align-items: flex-start; gap: 12px; }
+.sheet-headtext { flex: 1; min-width: 0; }
+.sheet-title { font-size: 16.5px; font-weight: 700; color: #141B34; line-height: 1.35; }
+.sheet-close { width: 30px; height: 30px; flex: none; border: none; border-radius: 50%; background: #F2F5FC; color: #5B6478; font-size: 19px; line-height: 1; cursor: pointer; }
+.sheet-close:hover { background: #E6EBF5; }
+/* The figure the popup exists to answer: what it costs to walk out with the item today. */
+.sheet-hero { display: flex; flex-direction: column; gap: 2px; padding: 14px; border-radius: 16px; background: linear-gradient(135deg, #0A1650 0%, #1428A0 58%, #1E5BD6 100%); color: #fff; box-shadow: 0 8px 20px rgba(10,22,80,0.26); }
+.sheet-hero-label { font-size: 12.5px; font-weight: 600; color: rgba(255,255,255,0.8); }
+.sheet-hero-amount { font-size: 27px; font-weight: 700; letter-spacing: 0.2px; }
+.sheet-hero-sub { font-size: 12px; color: rgba(255,255,255,0.78); }
+.sheet-badge { align-self: flex-start; margin-top: 8px; }
+.stat-row.two { grid-template-columns: repeat(2, 1fr); }
+.modal-sheet .stat-cell { background: #F5F7FC; }
+.sheet-edit { width: 100%; padding: 11px; border-radius: 12px; border: 1px dashed #D6DDEB; background: transparent; color: #1428A0; font-size: 13px; font-weight: 600; cursor: pointer; }
+.sheet-edit:hover { background: #F2F5FC; }

@@ -1840,6 +1840,26 @@
     };
   }
 
+  // One segment per billed month, plus a narrow fifth for the forfeit deadline — the shape
+  // of a gold ticket's life in one line, rather than a sentence the user has to parse.
+  // Shared by the ticket card and the detail popup.
+  function jewelryTermBar(p, term, pastFinal) {
+    const segColor = (pastFinal || term.overdue) ? '#D64545' : '#C1961F';
+    const segments = [1, 2, 3, 4, 5].map((i) => {
+      const filled = i <= term.billed || (i === 5 && pastFinal);
+      const isFinal = i === 5;
+      return `<span class="term-seg${filled ? ' filled' : ''}${isFinal ? ' final' : ''}" style="${filled ? `background:${isFinal ? '#D64545' : segColor}` : ''}"></span>`;
+    }).join('');
+    return `
+      <div class="term-wrap">
+        <div class="term-head">
+          <span>${p.interest ? `ดอก ฿${formatMoney(p.interest)}/งวด × ${term.billed} งวด` : 'ไม่ได้ระบุดอกเบี้ย'}</span>
+          <span>งวดที่ ${term.billed}/${JEWELRY_BILLED_MONTHS}${pastFinal ? ' · เลยเดือนที่ 5' : ''}</span>
+        </div>
+        <div class="term-track">${segments}</div>
+      </div>`;
+  }
+
   // Shared by pawn cards and the dashboard's due-this-month list — lets the redeem amount
   // be typed in (the payout can differ from the recorded pawn amount) instead of assuming it.
   function renderRedeemPrompt(id) {
@@ -1899,12 +1919,14 @@
       // already in hand, so it shows straight away rather than appearing seconds later.
       return `<div class="modal-backdrop" data-action="close-pawn-detail">
         <div class="modal-sheet" data-stop="1">
-          <div class="row-between" style="align-items:flex-start">
-            <div style="flex:1;min-width:0">
-              <div style="font-size:16px;font-weight:700;color:#141B34">${esc((S.detailHistoryItem || {}).title || 'ตั๋วจำนำ')}</div>
+          <div class="sheet-grip"></div>
+          <div class="sheet-head">
+            <div class="item-icon">🎫</div>
+            <div class="sheet-headtext">
+              <div class="sheet-title">${esc((S.detailHistoryItem || {}).title || 'ตั๋วจำนำ')}</div>
               <div class="pawn-shop">กำลังโหลดรายละเอียด...</div>
             </div>
-            <button class="icon-btn" data-action="close-pawn-detail" style="width:30px;height:30px;font-size:20px;line-height:1;color:#5B6478">×</button>
+            <button class="sheet-close" data-action="close-pawn-detail">×</button>
           </div>
           ${renderUndoButton()}
         </div>
@@ -1915,72 +1937,85 @@
     const isJewelry = p.category === 'jewelry';
     const pawnDate = p.pawn_date || (p.created_at || '').slice(0, 10);
 
-    const row = (label, value, color) =>
-      `<div class="row-between" style="padding:7px 0;border-bottom:1px solid #EFF2F8">
-        <span style="font-size:13px;color:#5B6478">${label}</span>
-        <span style="font-size:13.5px;font-weight:600;color:${color || '#141B34'};text-align:right">${value}</span>
-      </div>`;
-
-    let detailRows, statusLine = '';
+    // The popup opens on the one number the user came for: what it costs to walk out with
+    // the item today. Everything else on the sheet supports that figure.
+    let payoff, interestNow, badge, statsA, statsB, termBar = '', note = '';
     if (isJewelry) {
       const term = jewelryTermOf(p);
       const finalDueDate = addMonths(pawnDate, 5);
-      const accrued = (p.interest || 0) * term.billed;
       const pastFinal = todayISO() >= finalDueDate;
-      detailRows = [
-        row('เงินต้น', `฿${formatMoney(p.amount)}`),
-        row('ดอกเบี้ยต่องวด', `฿${formatMoney(p.interest || 0)}/เดือน`),
-        row('งวดปัจจุบัน', `งวดที่ ${term.billed} / ${JEWELRY_BILLED_MONTHS}`, term.overdue ? '#B23B3B' : ''),
-        row('ดอกเบี้ยสะสมที่ต้องจ่าย', `฿${formatMoney(accrued)}`, '#B23B3B'),
-        row('รวมถ้าไถ่ถอนตอนนี้', `฿${formatMoney(p.amount + accrued)}`),
-        row('วันที่จำนำ', formatDate(pawnDate)),
-        row('ครบกำหนดสุดท้าย', formatDate(finalDueDate), pastFinal ? '#B23B3B' : ''),
-        row('ต่อดอกมาแล้ว', `${p.renewal_count || 0} ครั้ง`),
+      const urgent = pastFinal || term.overdue;
+      interestNow = (p.interest || 0) * term.billed;
+      payoff = (p.amount || 0) + interestNow;
+      badge = pastFinal ? { label: '⚠️ ใกล้ขาดจำนำ', bg: '#D64545', fg: '#fff' }
+        : term.overdue ? { label: '⚠️ เลยกำหนดต่อดอก', bg: '#D64545', fg: '#fff' }
+        : term.billed >= JEWELRY_BILLED_MONTHS ? { label: '⚠️ ครบ 4 งวดแล้ว', bg: '#FFF3DD', fg: '#92600A' }
+        : { label: `งวดที่ ${term.billed} / ${JEWELRY_BILLED_MONTHS}`, bg: '#FFFFFF', fg: '#8A6A12' };
+      statsA = [
+        statCell('เงินต้น', '฿' + formatMoney(p.amount)),
+        statCell('ดอกสะสม', '฿' + formatMoney(interestNow), urgent ? '#B23B3B' : '#92600A'),
+        statCell('ไถ่ถอนก่อน', formatDate(finalDueDate), urgent ? '#B23B3B' : undefined),
       ].join('');
-      statusLine = pastFinal
-        ? `<div class="field-label" style="color:#B23B3B;margin:0">⚠️ เลยกำหนดสุดท้ายแล้ว ต้องไถ่ถอนด่วน มิฉะนั้นจะเสียสิทธิ์</div>`
-        : term.overdue
-        ? `<div class="field-label" style="color:#B23B3B;margin:0">⚠️ เลยกำหนดต่อดอกมา ${term.elapsed - JEWELRY_BILLED_MONTHS} เดือน (ดอกหยุดนับที่ ${JEWELRY_BILLED_MONTHS} งวด)</div>`
-        : term.billed >= JEWELRY_BILLED_MONTHS
-        ? `<div class="field-label" style="color:#92600A;margin:0">⚠️ ครบ ${JEWELRY_BILLED_MONTHS} งวดแล้ว ต้องต่อดอกหรือไถ่ถอน</div>` : '';
+      statsB = [
+        statCell('ดอกต่อเดือน', '฿' + formatMoney(p.interest || 0)),
+        statCell('วันที่จำนำ', formatDate(pawnDate)),
+      ].join('');
+      termBar = jewelryTermBar(p, term, pastFinal);
+      note = pastFinal ? `<div class="pawn-note danger">⚠️ เลยกำหนดสุดท้ายแล้ว ต้องไถ่ถอนด่วน มิฉะนั้นจะเสียสิทธิ์</div>`
+        : term.overdue ? `<div class="pawn-note danger">⚠️ เลยกำหนดต่อดอกมา ${term.elapsed - JEWELRY_BILLED_MONTHS} เดือน (ดอกหยุดนับที่ ${JEWELRY_BILLED_MONTHS} งวด) ต้องต่อดอกหรือไถ่ก่อน ${formatDate(finalDueDate)}</div>`
+        : term.billed >= JEWELRY_BILLED_MONTHS ? `<div class="pawn-note warn">ครบ ${JEWELRY_BILLED_MONTHS} งวดแล้ว ต้องต่อดอกหรือไถ่ถอนก่อน ${formatDate(finalDueDate)}</div>` : '';
     } else {
       const days = daysUntil(p.due_date);
       const status = days < 0 ? 'overdue' : (days <= S.warnDays ? 'due_soon' : 'upcoming');
-      detailRows = [
-        row('เงินต้น', `฿${formatMoney(p.amount)}`),
-        row('ดอกต่อรอบ', `฿${formatMoney(p.interest || 0)}`),
-        row('รวมถ้าไถ่ถอนตอนนี้', `฿${formatMoney(p.amount + (p.interest || 0))}`),
-        row('วันที่จำนำ', formatDate(pawnDate)),
-        row('ครบกำหนด', formatDate(p.due_date), status === 'overdue' ? '#B23B3B' : ''),
-        row('สถานะ', daysLabel(days, status), STATUS_META[status].fg),
-        row('ต่อดอกมาแล้ว', `${p.renewal_count || 0} ครั้ง`),
+      const sm = STATUS_META[status];
+      interestNow = p.interest || 0;
+      payoff = (p.amount || 0) + interestNow;
+      badge = { label: daysLabel(days, status), bg: sm.bg, fg: sm.fg };
+      statsA = [
+        statCell('เงินต้น', '฿' + formatMoney(p.amount)),
+        statCell('ค่าต่อดอก', interestNow ? '฿' + formatMoney(interestNow) : '—'),
+        statCell('ครบกำหนด', formatDate(p.due_date), status === 'overdue' ? '#B23B3B' : status === 'due_soon' ? '#92600A' : undefined),
+      ].join('');
+      statsB = [
+        statCell('วันที่จำนำ', formatDate(pawnDate)),
+        statCell('ต่อดอกมาแล้ว', `${p.renewal_count || 0} ครั้ง`),
       ].join('');
     }
 
     return `
       <div class="modal-backdrop" data-action="close-pawn-detail">
         <div class="modal-sheet cat-${p.category}" data-stop="1">
-          <div class="row-between" style="align-items:flex-start;gap:10px">
-            <div style="flex:1;min-width:0">
-              <span class="near-kind" style="background:#EFEFEF;color:#5B6478">${meta.icon} ${meta.label}</span>
-              <div style="font-size:16px;font-weight:700;color:#141B34;margin-top:6px">${esc(p.item_name)}</div>
+          <div class="sheet-grip"></div>
+          <div class="sheet-head">
+            <div class="item-icon">${meta.icon}</div>
+            <div class="sheet-headtext">
+              <div class="sheet-title">${esc(p.item_name)}</div>
               <div class="pawn-shop">${esc(p.shop_name || 'ไม่ระบุร้าน')}${p.ticket_code ? ' · เลขที่ตั๋ว ' + esc(p.ticket_code) : ''}</div>
             </div>
-            <button class="icon-btn" data-action="close-pawn-detail" style="width:30px;height:30px;font-size:20px;line-height:1;color:#5B6478">×</button>
+            <button class="sheet-close" data-action="close-pawn-detail">×</button>
           </div>
-          <div style="margin-top:12px">${detailRows}</div>
-          ${statusLine ? `<div style="margin-top:10px">${statusLine}</div>` : ''}
-          ${p.renew_url ? `<a href="${esc(p.renew_url)}" target="_blank" rel="noopener" class="pawn-btn renew" style="text-align:center;text-decoration:none;display:block;margin-top:12px">🔗 ต่อดอกออนไลน์ (จาก QR ตั๋ว)</a>` : ''}
-          ${isRedeemed
-            ? `<div class="status-badge" style="background:#E7F5EE;color:#1F7A52;display:block;text-align:center;margin-top:12px;padding:10px">ไถ่ถอนไปแล้ว${p.redeemed_amount != null ? ` · ฿${formatMoney(p.redeemed_amount)}` : ''}</div>`
-            : `<div class="pawn-actions" style="margin-top:12px">
-                <button class="pawn-btn redeem" data-action="redeem-open" data-id="${p.id}" ${lockAttr()}>${btnLabel('redeem:' + p.id, 'ไถ่ถอน')}</button>
-                <button class="pawn-btn renew" data-action="${isJewelry ? 'jewelry-renew' : 'renew-open'}" data-id="${p.id}" ${lockAttr()}>${btnLabel('renew:' + p.id, 'ต่อดอก')}</button>
-              </div>
-              ${renderRedeemPrompt(p.id)}
-              ${isJewelry ? '' : renderRenewPicker(p.id)}`}
+
+          <div class="sheet-hero">
+            <div class="sheet-hero-label">${isRedeemed ? 'ไถ่ถอนไปแล้ว' : 'ถ้าไถ่ถอนตอนนี้ต้องจ่าย'}</div>
+            <div class="sheet-hero-amount">฿${formatMoney(isRedeemed && p.redeemed_amount != null ? p.redeemed_amount : payoff)}</div>
+            ${isRedeemed ? '' : `<div class="sheet-hero-sub">เงินต้น ฿${formatMoney(p.amount)} + ดอก ฿${formatMoney(interestNow)}</div>`}
+            <span class="near-badge sheet-badge" style="background:${isRedeemed ? '#E7F5EE' : badge.bg};color:${isRedeemed ? '#1F7A52' : badge.fg}">${isRedeemed ? '✓ ไถ่ถอนแล้ว' : badge.label}</span>
+          </div>
+
+          <div class="stat-row">${statsA}</div>
+          <div class="stat-row two">${statsB}</div>
+          ${termBar}
+          ${note}
+          ${p.renew_url ? `<a href="${esc(p.renew_url)}" target="_blank" rel="noopener" class="pawn-link">🔗 ต่อดอกออนไลน์ (จาก QR ตั๋ว)</a>` : ''}
+          ${isRedeemed ? '' : `
+            <div class="pawn-actions">
+              <button class="pawn-btn redeem" data-action="redeem-open" data-id="${p.id}" ${lockAttr()}>${btnLabel('redeem:' + p.id, 'ไถ่ถอน')}</button>
+              <button class="pawn-btn renew" data-action="${isJewelry ? 'jewelry-renew' : 'renew-open'}" data-id="${p.id}" ${lockAttr()}>${btnLabel('renew:' + p.id, 'ต่อดอก')}</button>
+            </div>
+            ${renderRedeemPrompt(p.id)}
+            ${isJewelry ? '' : renderRenewPicker(p.id)}`}
           ${renderUndoButton()}
-          <button class="cal-today-btn" data-action="open-pawn-settings" data-id="${p.id}" data-from="${S.screen}" style="margin-top:10px">⚙️ แก้ไขข้อมูลตั๋วนี้</button>
+          <button class="sheet-edit" data-action="open-pawn-settings" data-id="${p.id}" data-from="${S.screen}">⚙️ แก้ไขข้อมูลตั๋วนี้</button>
         </div>
       </div>`;
   }
@@ -2023,14 +2058,6 @@
       }
 
       const noteColor = urgent ? '#B23B3B' : atFourMonths ? '#92600A' : '';
-      const segColor = urgent ? '#D64545' : '#C1961F';
-      // One segment per billed month, plus a fifth for the forfeit deadline — the shape of
-      // the ticket's life in one line, rather than a sentence the user has to parse.
-      const segments = [1, 2, 3, 4, 5].map((i) => {
-        const filled = i <= term.billed || (i === 5 && pastFinal);
-        const isFinal = i === 5;
-        return `<span class="term-seg${filled ? ' filled' : ''}${isFinal ? ' final' : ''}" style="${filled ? `background:${isFinal ? '#D64545' : segColor}` : ''}"></span>`;
-      }).join('');
 
       bodyHtml = `
         <div class="stat-row">
@@ -2038,13 +2065,7 @@
           ${statCell('ดอกสะสม', '฿' + formatMoney(accrued), noteColor || undefined)}
           ${statCell('ไถ่ถอนก่อน', formatDate(finalDueDate), urgent ? '#B23B3B' : undefined)}
         </div>
-        <div class="term-wrap">
-          <div class="term-head">
-            <span>${p.interest ? `ดอก ฿${formatMoney(p.interest)}/งวด × ${term.billed} งวด` : 'ไม่ได้ระบุดอกเบี้ย'}</span>
-            <span>งวดที่ ${term.billed}/${JEWELRY_BILLED_MONTHS}${pastFinal ? ' · เลยเดือนที่ 5' : ''}</span>
-          </div>
-          <div class="term-track">${segments}</div>
-        </div>
+        ${jewelryTermBar(p, term, pastFinal)}
         ${pastFinal ? `<div class="pawn-note danger">เลยกำหนดสุดท้ายแล้ว กรุณาไถ่ถอนโดยเร็ว มิฉะนั้นจะเสียสิทธิ์</div>`
           : term.overdue ? `<div class="pawn-note danger">เลยกำหนดต่อดอกมา ${term.elapsed - JEWELRY_BILLED_MONTHS} เดือน (ดอกหยุดนับที่ ${JEWELRY_BILLED_MONTHS} งวด) ต้องต่อดอกหรือไถ่ก่อน ${formatDate(finalDueDate)}</div>`
           : atFourMonths ? `<div class="pawn-note warn">ครบ ${JEWELRY_BILLED_MONTHS} งวดแล้ว ต้องต่อดอกหรือไถ่ก่อน ${formatDate(finalDueDate)}</div>` : ''}`;
