@@ -1029,20 +1029,35 @@
 
   function toastHtml() { return S.toast ? `<div class="toast">${esc(S.toast)}</div>` : ''; }
 
+  // The two accounts are fixed (see README), so the lock screen offers them as chips —
+  // typing is still allowed, but on a phone one tap is the normal way in.
+  const LOGIN_USERS = ['not', 'lek'];
+
   function renderLogin() {
+    const typed = S.forms.loginUsername.trim().toLowerCase();
+    const chips = LOGIN_USERS.map((u) => `
+      <button class="lock-chip${typed === u ? ' selected' : ''}" data-action="pick-login-user" data-name="${u}" ${S.busy ? 'disabled' : ''}>
+        <span class="lock-chip-avatar">${u.slice(0, 1).toUpperCase()}</span>${u}
+      </button>`).join('');
     return `
     <div class="lock-screen">
-      <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:20px">
-        <div class="brand-mark" style="margin-bottom:8px">Debt · Pawn Tracker</div>
+      <div class="lock-brand">
         <div class="lock-icon">${svgLock()}</div>
-        <div class="lock-title">พิมพ์ชื่อผู้ใช้เพื่อเข้าแอป</div>
-        <div class="lock-sub">not หรือ lek</div>
-        <div class="lock-error">${esc(S.loginError)}</div>
+        <div class="brand-mark">Debt · Pawn Tracker</div>
+        <div class="lock-title">หนี้สิน &amp; ตั๋วจำนำ</div>
+        <div class="lock-sub">ติดตามงวดผ่อน ตั๋วจำนำ และค่าใช้จ่ายประจำ<br>พร้อมเตือนก่อนถึงกำหนด</div>
       </div>
-      <div style="padding:24px;display:flex;flex-direction:column;gap:14px">
-        <input class="field-input" data-bind="loginUsername" value="${esc(S.forms.loginUsername)}" placeholder="ชื่อผู้ใช้" autocapitalize="off" autocomplete="off"/>
-        <button class="submit-btn" style="background:#fff;color:#1428A0;box-shadow:0 8px 20px rgba(0,0,0,0.2)" data-action="submit-login" ${S.busy ? 'disabled' : ''}>เข้าแอป</button>
+
+      <div class="lock-card">
+        <div class="lock-card-label">เลือกผู้ใช้</div>
+        <div class="lock-chips">${chips}</div>
+        <div class="lock-or"><span>หรือพิมพ์ชื่อเอง</span></div>
+        <input class="field-input lock-input" data-bind="loginUsername" value="${esc(S.forms.loginUsername)}" placeholder="ชื่อผู้ใช้" autocapitalize="off" autocomplete="off" ${S.busy ? 'disabled' : ''}/>
+        ${S.loginError ? `<div class="lock-error">⚠️ ${esc(S.loginError)}</div>` : ''}
+        <button class="submit-btn lock-submit" data-action="submit-login" ${S.busy ? 'disabled' : ''}>${S.busy ? 'กำลังเข้าสู่ระบบ...' : 'เข้าแอป'}</button>
       </div>
+
+      <div class="lock-foot">ไม่มีรหัสผ่าน — ใช้ภายในครอบครัวเท่านั้น<br>ข้อมูลเก็บบน Firebase ของโปรเจกต์นี้</div>
       ${toastHtml()}
     </div>`;
   }
@@ -2579,6 +2594,10 @@
     const action = el.dataset.action;
     switch (action) {
       case 'submit-login': submitLogin(); break;
+      case 'pick-login-user':
+        S.forms = { ...S.forms, loginUsername: el.dataset.name };
+        submitLogin();
+        break;
       case 'logout': logout(); break;
       case 'toggle-user-menu': setState({ userMenuOpen: !S.userMenuOpen }); break;
       case 'switch-user': switchToUser(el.dataset.id); break;

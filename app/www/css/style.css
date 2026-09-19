@@ -14,15 +14,34 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 
 /* ---------- Lock screen ---------- */
 .lock-screen {
-  height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-  background: radial-gradient(120% 60% at 100% 0%, rgba(0,163,224,0.35) 0%, rgba(0,163,224,0) 60%), linear-gradient(165deg, #1E3BC4 0%, #1428A0 45%, #0A1650 100%);
-  color: #fff; padding: 56px 28px calc(env(safe-area-inset-bottom, 0px) + 40px); box-sizing: border-box;
-  position: relative;
+  height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px;
+  background: radial-gradient(120% 60% at 100% 0%, rgba(0,163,224,0.38) 0%, rgba(0,163,224,0) 58%), radial-gradient(90% 50% at 0% 100%, rgba(30,91,214,0.42) 0%, rgba(30,91,214,0) 60%), linear-gradient(165deg, #1E3BC4 0%, #1428A0 45%, #0A1650 100%);
+  color: #fff; padding: 40px 22px calc(env(safe-area-inset-bottom, 0px) + 28px); box-sizing: border-box;
+  position: relative; overflow-y: auto;
 }
-.lock-icon { width: 64px; height: 64px; border-radius: 20px; background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.22); display: flex; align-items: center; justify-content: center; }
-.lock-title { font-size: 20px; font-weight: 600; letter-spacing: .2px; }
-.lock-sub { font-size: 13.5px; color: rgba(255,255,255,0.75); }
-.lock-error { font-size: 13px; color: #FFD3D3; margin-top: 4px; min-height: 18px; }
+.lock-brand { display: flex; flex-direction: column; align-items: center; gap: 9px; text-align: center; }
+.lock-icon { width: 64px; height: 64px; border-radius: 22px; background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.26); display: flex; align-items: center; justify-content: center; box-shadow: 0 12px 30px rgba(0,0,0,0.28); }
+.lock-title { font-size: 23px; font-weight: 700; letter-spacing: .2px; }
+.lock-sub { font-size: 13px; line-height: 1.6; color: rgba(255,255,255,0.72); }
+/* A frosted panel so the form reads as a surface on the gradient, not text floating on it. */
+.lock-card { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 12px; padding: 18px 16px; border-radius: 22px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 16px 40px rgba(5,12,45,0.35); }
+.lock-card-label { font-size: 12.5px; font-weight: 600; color: rgba(255,255,255,0.75); }
+.lock-chips { display: flex; gap: 10px; }
+/* The two fixed accounts, one tap each. */
+.lock-chip { flex: 1; display: flex; align-items: center; justify-content: center; gap: 9px; padding: 12px 10px; border-radius: 14px; cursor: pointer; font-size: 15px; font-weight: 600; color: #fff; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); }
+.lock-chip:hover { background: rgba(255,255,255,0.22); }
+.lock-chip.selected { background: #fff; color: #1428A0; border-color: #fff; }
+.lock-chip-avatar { width: 26px; height: 26px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; background: rgba(255,255,255,0.22); }
+.lock-chip.selected .lock-chip-avatar { background: #E8EEFB; color: #1428A0; }
+.lock-or { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: rgba(255,255,255,0.55); }
+.lock-or::before, .lock-or::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.18); }
+.lock-screen .lock-input { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.22); color: #fff; }
+.lock-screen .lock-input::placeholder { color: rgba(255,255,255,0.5); }
+.lock-screen .lock-input:focus { border-color: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,0.18); }
+.lock-error { font-size: 12.5px; font-weight: 600; color: #FFD3D3; background: rgba(214,69,69,0.22); border-radius: 10px; padding: 9px 11px; }
+.lock-screen .lock-submit { margin-top: 2px; background: #fff; color: #1428A0; box-shadow: 0 10px 24px rgba(0,0,0,0.25); }
+.lock-screen .lock-submit:hover { background: #EDF1F8; }
+.lock-foot { font-size: 11px; line-height: 1.6; text-align: center; color: rgba(255,255,255,0.5); }
 
 /* ---------- Header ---------- */
 .header { flex: none; display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 18px) 16px 12px; background: #F3F6FB; }
