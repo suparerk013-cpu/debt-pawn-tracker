@@ -80,6 +80,7 @@
     datePickerView: { y: 0, m: 0 }, // {y,m} (Gregorian, m 0-indexed) the open popup's month grid is showing
     calMonth: null,            // 'YYYY-MM' the dashboard payment calendar is showing (null = this month)
     calSelected: null,         // 'YYYY-MM-DD' whose items are expanded under that calendar
+    historyFilter: null,       // history row type to show ('renew' | 'redeem' | 'installment' | 'expense'), null = all
     debts: [],
     pawns: [],
     expenses: [],
@@ -1454,24 +1455,67 @@
     return '';
   }
 
+  // One hue per kind of payment. The three that make up real spending are a validated
+  // categorical trio (blue / magenta / gold stay apart under colour-vision deficiency);
+  // ไถ่ถอน sits outside the chart — it is principal coming back with the item, not a cost.
+  const HISTORY_TYPES = [
+    { key: 'renew', label: 'ต่อดอก', color: '#C0399B', bg: '#FBE9F5', spend: true },
+    { key: 'installment', label: 'ผ่อนหนี้', color: '#1E5BD6', bg: '#E8EEFB', spend: true },
+    { key: 'expense', label: 'ค่าใช้จ่าย', color: '#C1961F', bg: '#FBF0D2', spend: true },
+    { key: 'redeem', label: 'ไถ่ถอน', color: '#1F8A70', bg: '#E4F5EF', spend: false },
+  ];
+  const historyTypeMeta = (type) => HISTORY_TYPES.find((t) => t.key === type) || HISTORY_TYPES[3];
+
   function renderHistoryItem(it) {
-    const typeMeta = {
-      renew: { label: 'ต่อดอก', bg: '#EFE7F8', fg: '#6B3FA0' },
-      redeem: { label: 'ไถ่ถอน', bg: '#E8EEFB', fg: '#1428A0' },
-      installment: { label: 'ผ่อนหนี้', bg: '#E8EEFB', fg: '#1428A0' },
-      expense: { label: 'ค่าใช้จ่าย', bg: '#FFF3DD', fg: '#92600A' },
-    }[it.type];
+    const meta = historyTypeMeta(it.type);
     const clickable = ['installment', 'expense', 'renew', 'redeem'].includes(it.type);
     return `
-      <div class="installment-row" ${clickable ? historyItemAction(it) + ' style="cursor:pointer"' : ''}>
-        <div style="flex:1">
-          <div style="display:flex;align-items:center;gap:6px">
-            <span class="near-kind" style="background:${typeMeta.bg};color:${typeMeta.fg}">${typeMeta.label}</span>
-            <span class="installment-date">${esc(it.title)}</span>
+      <div class="hist-row" ${clickable ? historyItemAction(it) + ' style="cursor:pointer"' : ''}>
+        <span class="hist-bar" style="background:${meta.color}"></span>
+        <div class="hist-body">
+          <div class="hist-title">${esc(it.title)}</div>
+          <div class="hist-meta">
+            <span class="near-kind" style="background:${meta.bg};color:${meta.color}">${meta.label}</span>
+            <span>${it.date ? formatDate(it.date) : '-'}</span>
           </div>
-          <div class="installment-amount">฿${formatMoney(it.amount)} · ${it.date ? formatDate(it.date) : '-'}</div>
         </div>
+        <div class="hist-amount" style="color:${meta.color}">฿${formatMoney(it.amount)}</div>
         ${clickable ? svgChevron() : ''}
+      </div>`;
+  }
+
+  // Where this month's money actually went, as one proportion bar: three segments separated
+  // by a 2px surface gap, each amount spelled out in the legend so the split never rests on
+  // colour alone.
+  function renderSpendBreakdown(s) {
+    const parts = [
+      { key: 'renew', amount: s.interest_paid },
+      { key: 'installment', amount: s.installments_paid },
+      { key: 'expense', amount: s.expenses_paid },
+    ].map((part) => ({ ...part, meta: historyTypeMeta(part.key) }));
+    const total = s.net_spend || 0;
+    return `
+      <div class="card spend-card">
+        <div class="spend-head">
+          <span>ใช้จ่ายจริงแยกตามประเภท</span>
+          <span class="spend-total">฿${formatMoney(total)}</span>
+        </div>
+        ${total ? `
+          <div class="spend-bar">
+            ${parts.filter((p) => p.amount > 0).map((p) => `
+              <span style="width:${(p.amount / total * 100).toFixed(1)}%;background:${p.meta.color}" title="${p.meta.label} ฿${formatMoney(p.amount)}"></span>`).join('')}
+          </div>
+          <div class="spend-legend">
+            ${parts.map((p) => `
+              <div class="spend-legend-row">
+                <span class="spend-dot" style="background:${p.meta.color}"></span>
+                <span class="spend-legend-label">${p.meta.label}</span>
+                <span class="spend-legend-pct">${total ? Math.round(p.amount / total * 100) : 0}%</span>
+                <span class="spend-legend-amount">฿${formatMoney(p.amount)}</span>
+              </div>`).join('')}
+          </div>`
+        : `<div class="pay-cal-hint" style="border:0;padding-top:4px">เดือนนี้ยังไม่มีการจ่ายเงินออก</div>`}
+        ${s.redeemed_cash ? `<div class="spend-note">ไถ่ถอนคืน ฿${formatMoney(s.redeemed_cash)} — ได้ของคืนมา ไม่นับเป็นค่าใช้จ่าย (เงินสดจ่ายออกจริงทั้งเดือน ฿${formatMoney(s.total_cash_out)})</div>` : ''}
       </div>`;
   }
 
@@ -1479,23 +1523,56 @@
     const h = S.history;
     if (!h) return `<div class="screen-pad"><div class="empty-card"><div class="empty-text">กำลังโหลด...</div></div></div>`;
     const s = h.summary;
-    const summaryCard = `
-      <div class="card" style="display:flex;flex-direction:column;gap:8px">
-        <div class="section-title" style="margin:0">สรุปเดือนนี้ (${formatMonthLabel(s.month)})</div>
-        <div class="row-between"><span style="color:#5B6478">ดอกเบี้ยต่อดอก</span><span style="font-weight:600">฿${formatMoney(s.interest_paid)}</span></div>
-        <div class="row-between"><span style="color:#5B6478">งวดผ่อนหนี้</span><span style="font-weight:600">฿${formatMoney(s.installments_paid)}</span></div>
-        <div class="row-between"><span style="color:#5B6478">ค่าใช้จ่ายประจำ</span><span style="font-weight:600">฿${formatMoney(s.expenses_paid)}</span></div>
-        <div class="row-between" style="border-top:1px solid #E3E8F2;padding-top:8px">
-          <span style="font-weight:700">รวมใช้จ่ายจริง</span><span style="font-weight:700;color:#B23B3B">฿${formatMoney(s.net_spend)}</span>
+
+    const hero = `
+      <div class="hero-card">
+        <div class="hero-label">ใช้จ่ายจริงเดือนนี้ · ${formatMonthLabel(s.month)}</div>
+        <div class="hero-amount">฿${formatMoney(s.net_spend)}</div>
+        <div class="hero-meta">
+          <span class="hero-chip">ดอกต่อดอก ฿${formatMoney(s.interest_paid)}</span>
+          <span class="hero-chip">งวดผ่อน ฿${formatMoney(s.installments_paid)}</span>
+          <span class="hero-chip">ค่าใช้จ่ายประจำ ฿${formatMoney(s.expenses_paid)}</span>
         </div>
-        ${s.redeemed_cash ? `<div style="font-size:12px;color:#A3A9B8">+ เงินต้นไถ่ถอนคืน ฿${formatMoney(s.redeemed_cash)} (ได้ของคืน ไม่นับเป็นค่าใช้จ่าย) · เงินสดจ่ายออกทั้งหมด ฿${formatMoney(s.total_cash_out)}</div>` : ''}
       </div>`;
-    const empty = !h.items.length ? `<div class="empty-card"><div class="empty-emoji">🕐</div><div class="empty-text">ยังไม่มีประวัติ</div></div>` : '';
-    const rows = h.items.map(renderHistoryItem).join('');
+
+    const counts = (key) => h.items.filter((it) => it.type === key).length;
+    const filters = `
+      <div class="pawn-filters">
+        <button class="pawn-filter${!S.historyFilter ? ' selected' : ''}" style="${!S.historyFilter ? 'background:linear-gradient(150deg,#EDF2FF 0%,#DAE5FC 100%);color:#12309B;box-shadow:0 4px 12px rgba(20,40,160,0.16)' : ''}" data-action="set-history-filter" data-type="">ทั้งหมด<i>${h.items.length}</i></button>
+        ${HISTORY_TYPES.map((t) => `
+          <button class="pawn-filter${S.historyFilter === t.key ? ' selected' : ''}" style="${S.historyFilter === t.key ? `background:${t.bg};color:${t.color};box-shadow:0 4px 12px ${t.color}33` : ''}" data-action="set-history-filter" data-type="${t.key}">${t.label}<i>${counts(t.key)}</i></button>`).join('')}
+      </div>`;
+
+    const items = S.historyFilter ? h.items.filter((it) => it.type === S.historyFilter) : h.items;
+    if (!items.length) {
+      return `<div class="screen-pad">
+        ${hero}${renderSpendBreakdown(s)}${filters}
+        <div class="empty-card"><div class="empty-emoji">🕐</div><div class="empty-text">${h.items.length ? 'ไม่มีรายการประเภทนี้' : 'ยังไม่มีประวัติ'}</div></div>
+      </div>`;
+    }
+
+    // Items already arrive newest first, so walking them in order yields month groups in
+    // order too — each headed by its own total, which is what a month is usually scanned for.
+    const groups = [];
+    items.forEach((it) => {
+      const month = (it.date || '').slice(0, 7) || 'ไม่ระบุ';
+      const last = groups[groups.length - 1];
+      if (last && last.month === month) last.items.push(it);
+      else groups.push({ month, items: [it] });
+    });
+
     return `<div class="screen-pad">
-      ${summaryCard}
-      <div class="section-title">ประวัติทั้งหมด</div>
-      ${empty}${h.items.length ? `<div style="display:flex;flex-direction:column;gap:10px">${rows}</div>` : ''}
+      ${hero}
+      ${renderSpendBreakdown(s)}
+      ${filters}
+      ${groups.map((g) => `
+        <div class="hist-group">
+          <div class="hist-group-head">
+            <span>${g.month === 'ไม่ระบุ' ? 'ไม่ระบุเดือน' : formatMonthLabel(g.month)}</span>
+            <span class="hist-group-sum">${g.items.length} รายการ · จ่ายออก ฿${formatMoney(g.items.reduce((a, it) => a + (it.amount || 0), 0))}</span>
+          </div>
+          ${g.items.map(renderHistoryItem).join('')}
+        </div>`).join('')}
     </div>`;
   }
 
@@ -2423,6 +2500,7 @@
         break;
       case 'goto-pawn-cat': setState({ screen: 'pawnList', returnScreen: S.screen === 'pawnList' ? S.returnScreen : S.screen, pawnFilter: el.dataset.cat, detailFor: null, fabMenuOpen: false }); break;
       case 'set-pawn-filter': setState({ pawnFilter: el.dataset.cat || null }); break;
+      case 'set-history-filter': setState({ historyFilter: el.dataset.type || null }); break;
       case 'renew-confirm': {
         const opt = PERIOD_OPTIONS.find((o) => o.key === el.dataset.key);
         if (opt && opt.unit) renewPawn(el.dataset.id, opt);

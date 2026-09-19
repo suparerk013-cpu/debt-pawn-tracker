@@ -384,3 +384,29 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 .tl-sub { font-size: 11.5px; color: #5B6478; margin-top: 2px; }
 .tl-amount { font-size: 17px; font-weight: 700; color: #141B34; white-space: nowrap; }
 .tl-paid-at { font-size: 11.5px; color: #1F7A52; font-weight: 600; }
+
+/* ---------- History ---------- */
+.spend-card { display: flex; flex-direction: column; gap: 12px; padding: 15px 14px; border-radius: 18px; box-shadow: 0 5px 14px rgba(20,40,160,0.08); }
+.spend-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600; color: #5B6478; }
+.spend-total { font-size: 18px; font-weight: 700; color: #141B34; white-space: nowrap; }
+/* Segments are separated by a 2px gap of the card's own surface, and the rounded ends belong
+   to the bar, so the split reads as one measured length rather than three loose blocks. */
+.spend-bar { display: flex; gap: 2px; height: 14px; border-radius: 999px; overflow: hidden; background: #EDF1F8; }
+.spend-bar span { display: block; height: 100%; }
+.spend-legend { display: flex; flex-direction: column; gap: 7px; }
+.spend-legend-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.spend-dot { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+.spend-legend-label { color: #5B6478; font-weight: 600; }
+.spend-legend-pct { color: #A3A9B8; font-size: 11.5px; }
+.spend-legend-amount { margin-left: auto; font-weight: 700; color: #141B34; white-space: nowrap; }
+.spend-note { font-size: 11.5px; color: #5B6478; background: #F5F7FC; border-radius: 10px; padding: 9px 11px; }
+
+.hist-group { display: flex; flex-direction: column; gap: 8px; }
+.hist-group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 0 2px; font-size: 13.5px; font-weight: 700; color: #141B34; }
+.hist-group-sum { font-size: 12px; font-weight: 600; color: #5B6478; white-space: nowrap; }
+.hist-row { display: flex; align-items: center; gap: 11px; padding: 12px; border-radius: 14px; background: #fff; border: 1px solid #E9EEF8; box-shadow: 0 3px 10px rgba(20,40,160,0.06); }
+.hist-bar { width: 4px; align-self: stretch; border-radius: 3px; flex: none; }
+.hist-body { flex: 1; min-width: 0; }
+.hist-title { font-size: 14px; font-weight: 600; color: #141B34; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-meta { display: flex; align-items: center; gap: 7px; margin-top: 4px; font-size: 11.5px; color: #5B6478; }
+.hist-amount { font-size: 15.5px; font-weight: 700; white-space: nowrap; }
