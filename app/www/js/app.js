@@ -1150,7 +1150,7 @@
         ${renderPayCalendar()}
         ${stats}
         ${urgent.length ? `
-          <div class="section-title" style="color:#B23B3B">⚠️ ครบกำหนดชำระ (ด่วน)</div>
+          <div class="section-title danger">⚠️ ครบกำหนดชำระ (ด่วน)</div>
           ${renderDueGroups(urgent)}
         ` : ''}
         <div class="section-title">รายการที่ต้องชำระเดือนนี้</div>
@@ -1798,8 +1798,8 @@
   // A ticket card leads with the three numbers that decide what to do with it — principal,
   // interest owed, deadline — as white panels on the category's tint, with jewelry also
   // showing how far through its four billed months it is.
-  function pawnStat(label, value, accentColor) {
-    return `<div class="pawn-stat"><span>${label}</span><b${accentColor ? ` style="color:${accentColor}"` : ''}>${value}</b></div>`;
+  function statCell(label, value, accentColor) {
+    return `<div class="stat-cell"><span>${label}</span><b${accentColor ? ` style="color:${accentColor}"` : ''}>${value}</b></div>`;
   }
 
   function renderPawnCard(p, from) {
@@ -1843,10 +1843,10 @@
       }).join('');
 
       bodyHtml = `
-        <div class="pawn-stats">
-          ${pawnStat('เงินต้น', '฿' + formatMoney(p.amount))}
-          ${pawnStat('ดอกสะสม', '฿' + formatMoney(accrued), noteColor || undefined)}
-          ${pawnStat('ไถ่ถอนก่อน', formatDate(finalDueDate), urgent ? '#B23B3B' : undefined)}
+        <div class="stat-row">
+          ${statCell('เงินต้น', '฿' + formatMoney(p.amount))}
+          ${statCell('ดอกสะสม', '฿' + formatMoney(accrued), noteColor || undefined)}
+          ${statCell('ไถ่ถอนก่อน', formatDate(finalDueDate), urgent ? '#B23B3B' : undefined)}
         </div>
         <div class="term-wrap">
           <div class="term-head">
@@ -1871,10 +1871,10 @@
       const dueColor = status === 'overdue' ? '#B23B3B' : status === 'due_soon' ? '#92600A' : undefined;
 
       bodyHtml = `
-        <div class="pawn-stats">
-          ${pawnStat('เงินต้น', '฿' + formatMoney(p.amount))}
-          ${pawnStat('ค่าต่อดอก', p.interest ? '฿' + formatMoney(p.interest) : '—')}
-          ${pawnStat('ครบกำหนด', formatDate(p.due_date), dueColor)}
+        <div class="stat-row">
+          ${statCell('เงินต้น', '฿' + formatMoney(p.amount))}
+          ${statCell('ค่าต่อดอก', p.interest ? '฿' + formatMoney(p.interest) : '—')}
+          ${statCell('ครบกำหนด', formatDate(p.due_date), dueColor)}
         </div>`;
       actionsHtml = `
         <div class="pawn-actions">
@@ -1887,14 +1887,14 @@
 
     return `
       <div class="pawn-card cat-${p.category}">
-        <div class="pawn-head">
-          <div class="pawn-icon">${categoryMeta.icon}</div>
-          <div class="pawn-headtext" data-action="open-pawn-detail" data-id="${p.id}">
+        <div class="item-head">
+          <div class="item-icon">${categoryMeta.icon}</div>
+          <div class="item-headtext" data-action="open-pawn-detail" data-id="${p.id}">
             <div class="pawn-item">${esc(p.item_name)}</div>
             <div class="pawn-shop">${shopLine}</div>
             <div class="pawn-shop">จำนำเมื่อ ${formatDate(pawnDate)}</div>
           </div>
-          <div class="pawn-head-right">
+          <div class="item-head-right">
             <div class="near-badge" style="background:${badgeBg};color:${badgeFg}">${badgeLabel}</div>
             <button class="icon-btn" data-action="open-pawn-settings" data-id="${p.id}" data-from="${from || ''}" style="width:28px;height:28px">${svgGear('#5B6478')}</button>
           </div>
@@ -1905,40 +1905,96 @@
       </div>`;
   }
 
-  // Shared by the expenses list and the report screen's expense section.
+  // Shared by the expenses list and the report screen's expense section. Like a pawn card,
+  // it leads with the numbers: what it costs, when it is due this month, and whether it has
+  // been paid yet — a paid row goes green and quiet so the unpaid ones stand out.
+  function expenseDueDate(e) {
+    const month = todayISO().slice(0, 7);
+    const lastDay = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+    return `${month}-${String(Math.min(Math.max(1, e.due_day || 1), lastDay)).padStart(2, '0')}`;
+  }
+
   function renderExpenseCard(e, from) {
     const isVariable = e.expense_type === 'variable';
-    const typeLabel = isVariable ? 'ไม่คงที่ ต้องจ่ายทุกเดือน' : 'ยอดคงที่ทุกเดือน';
-    const amountLine = isVariable
-      ? (e.last_amount != null ? `฿${formatMoney(e.last_amount)} <span style="font-size:12px;color:#8A93A6">(ล่าสุด)</span>` : `<span style="font-size:13px;color:#8A93A6">ยังไม่มีข้อมูล</span>`)
-      : `฿${formatMoney(e.amount)}`;
+    const dueDate = expenseDueDate(e);
+    const days = daysUntil(dueDate);
+    const status = e.paid_this_month ? 'paid' : days < 0 ? 'overdue' : days <= S.warnDays ? 'due_soon' : 'upcoming';
+    const meta = STATUS_META[status];
+    const badgeLabel = e.paid_this_month ? '✓ จ่ายแล้วเดือนนี้' : daysLabel(days, status);
+    const amountText = isVariable
+      ? (e.last_amount != null ? '~฿' + formatMoney(e.last_amount) : 'ยังไม่มีข้อมูล')
+      : '฿' + formatMoney(e.amount);
+    const dueColor = status === 'overdue' ? '#B23B3B' : status === 'due_soon' ? '#92600A' : undefined;
     const payPrompt = S.expensePayFor === e.id ? `
         <div class="warn-options" style="width:100%">
           <input class="field-input" type="number" data-bind="expensePayAmount" value="${esc(S.forms.expensePayAmount)}" placeholder="ยอดที่จ่ายจริงเดือนนี้"/>
           <button class="submit-btn" data-action="confirm-expense-pay" data-id="${e.id}" ${lockAttr()}>${btnLabel('expense:' + e.id, 'ยืนยัน')}</button>
         </div>` : '';
     return `
-      <div class="debt-card">
-        <div class="row-between">
-          <div class="debt-name">${esc(e.name)}</div>
-          <button class="icon-btn" data-action="open-expense-settings" data-id="${e.id}" data-from="${from || ''}" style="width:28px;height:28px">${svgGear('#5B6478')}</button>
+      <div class="expense-card${e.paid_this_month ? ' paid' : ''}">
+        <div class="item-head">
+          <div class="item-icon">${isVariable ? '📈' : '🧾'}</div>
+          <div class="item-headtext" style="cursor:default">
+            <div class="pawn-item">${esc(e.name)}</div>
+            <div class="pawn-shop">${isVariable ? 'ยอดไม่คงที่ · กรอกยอดจริงตอนจ่าย' : 'ยอดคงที่ทุกเดือน'}</div>
+          </div>
+          <div class="item-head-right">
+            <div class="near-badge" style="background:${meta.bg};color:${meta.fg}">${badgeLabel}</div>
+            <button class="icon-btn" data-action="open-expense-settings" data-id="${e.id}" data-from="${from || ''}" style="width:28px;height:28px">${svgGear('#5B6478')}</button>
+          </div>
         </div>
-        <div class="row-between">
-          <div class="debt-remaining">${amountLine}</div>
-          <div class="debt-total">${typeLabel} · จ่ายทุกวันที่ ${e.due_day}</div>
+        <div class="stat-row">
+          ${statCell(isVariable ? 'ยอดล่าสุด' : 'ยอดต่อเดือน', amountText)}
+          ${statCell('กำหนดจ่าย', 'ทุกวันที่ ' + (e.due_day || 1))}
+          ${statCell('รอบเดือนนี้', e.paid_this_month ? 'จ่ายแล้ว' : formatDate(dueDate), e.paid_this_month ? '#1F7A52' : dueColor)}
         </div>
-        ${e.paid_this_month
-          ? `<div class="status-badge" style="background:#E7F5EE;color:#1F7A52;align-self:flex-start">จ่ายแล้วเดือนนี้</div>`
-          : `<button class="mark-paid-btn" data-action="mark-expense-paid" data-id="${e.id}" data-expense-type="${e.expense_type}" style="align-self:flex-start" ${lockAttr()}>${btnLabel('expense:' + e.id, 'บันทึกว่าจ่ายแล้ว')}</button>`}
+        ${e.paid_this_month ? '' : `
+          <button class="mark-paid-btn expense-pay-btn" data-action="mark-expense-paid" data-id="${e.id}" data-expense-type="${e.expense_type}" ${lockAttr()}>${btnLabel('expense:' + e.id, 'บันทึกว่าจ่ายแล้ว')}</button>`}
         ${payPrompt}
       </div>`;
   }
 
   function renderExpenses() {
-    const empty = !S.expenses.length ? `
-      <div class="empty-card"><div class="empty-emoji">🧾</div><div class="empty-text">ยังไม่มีค่าใช้จ่ายประจำ กดปุ่ม + เพื่อเพิ่ม</div></div>` : '';
-    const cards = S.expenses.map((e) => renderExpenseCard(e)).join('');
-    return `<div class="screen-pad">${empty}${cards}</div>`;
+    if (!S.expenses.length) {
+      return `<div class="screen-pad">
+        <div class="empty-card"><div class="empty-emoji">🧾</div><div class="empty-text">ยังไม่มีค่าใช้จ่ายประจำ กดปุ่ม + เพื่อเพิ่ม</div></div>
+      </div>`;
+    }
+    // A variable expense has no amount until it is paid, so last month's stands in — the
+    // monthly total is an estimate whenever one of those is still unpaid.
+    const amountOf = (e) => (e.expense_type === 'variable' ? (e.last_amount || 0) : (e.amount || 0));
+    const monthlyTotal = S.expenses.reduce((a, e) => a + amountOf(e), 0);
+    const unpaid = S.expenses.filter((e) => !e.paid_this_month);
+    const remaining = unpaid.reduce((a, e) => a + amountOf(e), 0);
+    const paidCount = S.expenses.length - unpaid.length;
+    const overdueCount = unpaid.filter((e) => daysUntil(expenseDueDate(e)) < 0).length;
+    const allPaid = !unpaid.length;
+
+    const hero = `
+      <div class="hero-card">
+        <div class="hero-label">ค่าใช้จ่ายประจำเดือนนี้</div>
+        <div class="hero-amount">฿${formatMoney(monthlyTotal)}</div>
+        <div class="hero-meta">
+          <span class="hero-chip">${allPaid ? '✓ จ่ายครบแล้ว' : `ยังต้องจ่าย ฿${formatMoney(remaining)}`}</span>
+          <span class="hero-chip">จ่ายแล้ว ${paidCount}/${S.expenses.length} รายการ</span>
+          ${overdueCount ? `<span class="hero-chip alert">⚠️ เลยกำหนด ${overdueCount} รายการ</span>` : ''}
+        </div>
+      </div>`;
+
+    // Whatever still has to be paid this month goes on top; settled rows sink below the
+    // divider so the list opens on the part that needs action.
+    const byDue = (a, b) => (a.due_day || 0) - (b.due_day || 0);
+    const paid = S.expenses.filter((e) => e.paid_this_month).sort(byDue);
+    return `
+      <div class="screen-pad">
+        ${hero}
+        ${unpaid.length ? `
+          <div class="section-title">ยังไม่ได้จ่ายเดือนนี้ (${unpaid.length})</div>
+          ${unpaid.slice().sort(byDue).map((e) => renderExpenseCard(e)).join('')}` : ''}
+        ${paid.length ? `
+          <div class="section-title done">จ่ายแล้วเดือนนี้ (${paid.length})</div>
+          ${paid.map((e) => renderExpenseCard(e)).join('')}` : ''}
+      </div>`;
   }
 
   // Shared by the "add pawn" form and the pawn settings screen — same fields either way.

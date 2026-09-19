@@ -117,7 +117,6 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
    a full-width sheet, and the gradient needs to start below the rounded top corners. */
 .modal-sheet.cat-jewelry { border-top: 4px solid #C1961F; background: linear-gradient(180deg, #FCF7E8 0%, #fff 130px); }
 .modal-sheet.cat-electronics { border-top: 4px solid #0A8BC2; background: linear-gradient(180deg, #E8F6FB 0%, #fff 130px); }
-.pawn-icon { width: 44px; height: 44px; border-radius: 12px; background: #F5EFE0; display: flex; align-items: center; justify-content: center; flex: none; }
 .pawn-item { font-size: 15px; font-weight: 600; color: #141B34; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pawn-shop { font-size: 12.5px; color: #5B6478; }
 .pawn-footer { display: flex; justify-content: space-between; align-items: baseline; padding-top: 10px; border-top: 1px dashed #E3E8F2; }
@@ -217,6 +216,12 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 .hero-chip.alert { background: #fff; color: #B23B3B; }
 .section-title { display: flex; align-items: center; gap: 8px; }
 .section-title::before { content: ''; width: 4px; height: 16px; border-radius: 2px; background: #1428A0; flex: none; }
+/* The accent bar follows the heading's own colour, so a red or green section doesn't keep a
+   blue tick beside it. */
+.section-title.danger { color: #B23B3B; }
+.section-title.danger::before { background: #B23B3B; }
+.section-title.done { color: #1F7A52; }
+.section-title.done::before { background: #1F7A52; }
 
 /* ---------- Dashboard payment calendar ---------- */
 /* Month grid that answers one question per day: how much has to be paid. The blue band on
@@ -306,17 +311,18 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 .list-summary b { font-size: 15px; font-weight: 700; color: #141B34; white-space: nowrap; }
 .list-summary b.accent { color: #1428A0; }
 
-.pawn-head { display: flex; gap: 12px; align-items: flex-start; }
-.pawn-headtext { flex: 1; min-width: 0; cursor: pointer; }
-.pawn-head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
-.pawn-icon { font-size: 21px; line-height: 1; box-shadow: 0 3px 8px rgba(20,40,160,0.08); background: rgba(255,255,255,0.85); border-radius: 14px; }
+/* Card header + stat panels are shared by the pawn and expense lists. */
+.item-head { display: flex; gap: 12px; align-items: flex-start; }
+.item-headtext { flex: 1; min-width: 0; cursor: pointer; }
+.item-head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
+.item-icon { width: 44px; height: 44px; border-radius: 14px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 21px; line-height: 1; background: rgba(255,255,255,0.85); box-shadow: 0 3px 8px rgba(20,40,160,0.08); }
 
 /* The three numbers that decide what to do with a ticket, on white panels so they stay
    readable over the card's category tint. */
-.pawn-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.pawn-stat { background: rgba(255,255,255,0.8); border-radius: 12px; padding: 8px 10px; min-width: 0; }
-.pawn-stat span { display: block; font-size: 10.5px; color: #5B6478; }
-.pawn-stat b { display: block; font-size: 14px; font-weight: 700; color: #141B34; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat-cell { background: rgba(255,255,255,0.8); border-radius: 12px; padding: 8px 10px; min-width: 0; }
+.stat-cell span { display: block; font-size: 10.5px; color: #5B6478; }
+.stat-cell b { display: block; font-size: 14px; font-weight: 700; color: #141B34; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Jewelry only: four billed months plus the fifth, forfeit month. */
 .term-wrap { display: flex; flex-direction: column; gap: 6px; }
@@ -335,3 +341,10 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
    it stay single-line so the card keeps a predictable height. */
 .pawn-card .pawn-item { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
 .pawn-card .pawn-shop { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Recurring expenses ---------- */
+.expense-card { display: flex; flex-direction: column; gap: 12px; padding: 15px 14px; border-radius: 18px; border: 1px solid #F3E4C6; background: linear-gradient(150deg, #FFF6E7 0%, #fff 62%); box-shadow: 0 5px 14px rgba(146,96,10,0.12); }
+/* Settled rows go green and quiet — they stay readable but stop competing with what is due. */
+.expense-card.paid { border-color: #CDE9DA; background: linear-gradient(150deg, #EAF6F0 0%, #fff 62%); box-shadow: 0 3px 10px rgba(31,122,82,0.1); }
+.expense-card .pawn-item { white-space: normal; }
+.expense-pay-btn { width: 100%; text-align: center; padding: 11px; }
