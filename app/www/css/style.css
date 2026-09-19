@@ -356,3 +356,31 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 .debt-card .pawn-item, .debt-card .pawn-shop { white-space: normal; }
 .progress-wrap { display: flex; flex-direction: column; gap: 5px; }
 .progress-head { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; font-weight: 600; color: #5B6478; }
+
+/* ---------- Debt detail: installment timeline ---------- */
+/* A progress bar reading white-on-blue inside the hero card. */
+.hero-progress { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.22); overflow: hidden; margin-top: 12px; }
+.hero-progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #7ED8FF, #00A3E0); box-shadow: 0 0 10px rgba(0,163,224,0.6); }
+/* The stat panels sit on the page here, not on a tinted card, so they carry their own shell. */
+.stat-row-plain .stat-cell { background: #fff; border: 1px solid #E9EEF8; box-shadow: 0 3px 10px rgba(20,40,160,0.06); }
+
+.timeline { display: flex; flex-direction: column; }
+.tl-item { display: flex; gap: 12px; padding-bottom: 12px; }
+.tl-item:last-child { padding-bottom: 0; }
+.tl-rail { width: 26px; flex: none; display: flex; justify-content: center; position: relative; }
+/* The rail that joins one installment to the next; the last row has nothing to join to. */
+.tl-rail::before { content: ''; position: absolute; top: 28px; bottom: -14px; width: 2px; background: #DEE6F5; border-radius: 1px; }
+.tl-item:last-child .tl-rail::before { display: none; }
+.tl-dot { width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 2px solid #D6DDEB; color: #fff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; position: relative; z-index: 1; }
+.tl-item.paid .tl-dot { background: #2E9E6D; border-color: #2E9E6D; }
+.tl-item.overdue .tl-dot { background: #D64545; border-color: #D64545; }
+.tl-item.next .tl-dot { border-color: #1428A0; box-shadow: 0 0 0 3px rgba(20,40,160,0.16); }
+.tl-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; padding: 12px; border-radius: 14px; background: #fff; border: 1px solid #E9EEF8; box-shadow: 0 3px 10px rgba(20,40,160,0.06); }
+.tl-item.paid .tl-card { background: linear-gradient(150deg, #EAF6F0 0%, #fff 60%); border-color: #CDE9DA; }
+.tl-item.overdue .tl-card { background: linear-gradient(150deg, #FDECEC 0%, #fff 60%); border-color: #F5D2D2; }
+.tl-item.next .tl-card { border-color: #C6D5F6; box-shadow: 0 6px 16px rgba(20,40,160,0.13); }
+.tl-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tl-date { font-size: 14.5px; font-weight: 600; color: #141B34; }
+.tl-sub { font-size: 11.5px; color: #5B6478; margin-top: 2px; }
+.tl-amount { font-size: 17px; font-weight: 700; color: #141B34; white-space: nowrap; }
+.tl-paid-at { font-size: 11.5px; color: #1F7A52; font-weight: 600; }

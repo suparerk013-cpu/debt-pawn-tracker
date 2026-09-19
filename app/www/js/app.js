@@ -1577,37 +1577,71 @@
     return `<div class="screen-pad">${hero}${cards}</div>`;
   }
 
+  // The schedule is the point of this screen, so it is drawn as a timeline: one dot per
+  // installment down a rail, filled green once paid and red once late, with the next one
+  // still owed ringed in blue. Reading down it answers "where am I in this debt?".
   function renderDebtDetail() {
     const d = S.debts.find((x) => x.id === S.selectedDebtId);
     if (!d) return `<div class="screen-pad"><div class="empty-card"><div class="empty-text">ไม่พบข้อมูล</div></div></div>`;
-    const paidPercent = d.total_amount ? Math.min(100, Math.round((d.total_amount - d.remaining_amount) / d.total_amount * 100)) : 0;
-    const installments = (d.installments || []).map((i) => {
+    const p = debtProgress(d);
+    const inst = (d.installments || []).slice().sort((a, b) => (a.due_date < b.due_date ? -1 : 1));
+    const paidCount = inst.filter((i) => i.paid).length;
+    const paidAmount = Math.max(0, (d.total_amount || 0) - (d.remaining_amount || 0));
+    const nextId = p.next ? p.next.id : null;
+
+    const hero = `
+      <div class="hero-card">
+        <div class="hero-label">ยอดคงเหลือของหนี้ก้อนนี้</div>
+        <div class="hero-amount">฿${formatMoney(d.remaining_amount)}</div>
+        <div class="hero-progress"><div class="hero-progress-fill" style="width:${p.paidPercent}%"></div></div>
+        <div class="hero-meta">
+          <span class="hero-chip">ผ่อนแล้ว ${p.paidPercent}% ของ ฿${formatMoney(d.total_amount)}</span>
+          <span class="hero-chip">งวดละ ฿${formatMoney(d.installment_amount)}</span>
+          ${p.overdue ? `<span class="hero-chip alert">⚠️ ค้าง ${p.overdue} งวด</span>` : `<span class="hero-chip">ทุกวันที่ ${d.due_day || '-'}</span>`}
+        </div>
+      </div>`;
+
+    const stats = `
+      <div class="stat-row stat-row-plain">
+        ${statCell('จ่ายไปแล้ว', '฿' + formatMoney(paidAmount))}
+        ${statCell('งวดที่จ่ายแล้ว', `${paidCount}/${inst.length} งวด`)}
+        ${statCell('งวดถัดไป', p.next ? formatDate(p.next.due_date) : '—', p.overdue ? '#B23B3B' : undefined)}
+      </div>`;
+
+    const rows = inst.map((i, idx) => {
       const status = statusOf(!!i.paid, i.due_date);
       const meta = STATUS_META[status];
+      const isNext = i.id === nextId;
+      const cls = ['tl-item', status === 'paid' ? 'paid' : status === 'overdue' ? 'overdue' : '', isNext ? 'next' : ''].filter(Boolean).join(' ');
       const label = status === 'paid' ? meta.label : daysLabel(daysUntil(i.due_date), status);
       return `
-        <div class="installment-row">
-          <div style="flex:1">
-            <div class="installment-date">${formatDate(i.due_date)}</div>
-            <div class="installment-amount">฿${formatMoney(i.amount)}</div>
+        <div class="${cls}">
+          <div class="tl-rail"><span class="tl-dot">${i.paid ? '✓' : ''}</span></div>
+          <div class="tl-card">
+            <div class="tl-line">
+              <div>
+                <div class="tl-date">${formatDate(i.due_date)}</div>
+                <div class="tl-sub">งวดที่ ${idx + 1}${isNext ? ' · งวดถัดไป' : ''}</div>
+              </div>
+              <div class="tl-amount">฿${formatMoney(i.amount)}</div>
+            </div>
+            <div class="tl-line">
+              <span class="status-badge" style="background:${meta.bg};color:${meta.fg}">${label}</span>
+              ${i.paid
+                ? `<span class="tl-paid-at">${i.paid_at ? 'จ่ายเมื่อ ' + formatDate(String(i.paid_at).slice(0, 10)) : ''}</span>`
+                : `<button class="mark-paid-btn" data-action="mark-paid" data-id="${i.id}" data-debt="${d.id}" ${lockAttr()}>${btnLabel('paid:' + i.id, 'บันทึกว่าจ่ายแล้ว')}</button>`}
+            </div>
           </div>
-          <div class="status-badge" style="background:${meta.bg};color:${meta.fg}">${label}</div>
-          ${!i.paid ? `<button class="mark-paid-btn" data-action="mark-paid" data-id="${i.id}" data-debt="${d.id}">บันทึกว่าจ่ายแล้ว</button>` : ''}
         </div>`;
     }).join('');
 
     return `
       <div class="screen-pad">
-        <div class="card" style="display:flex;flex-direction:column;gap:10px">
-          <div class="row-between">
-            <div style="font-size:22px;font-weight:700;color:#141B34">฿${formatMoney(d.remaining_amount)}</div>
-            <div class="debt-total">จาก ฿${formatMoney(d.total_amount)}</div>
-          </div>
-          <div class="progress-track"><div class="progress-fill" style="width:${paidPercent}%"></div></div>
-          <div class="progress-label">ผ่อนแล้ว ${paidPercent}%</div>
-        </div>
-        <div class="section-title">ตารางงวดผ่อน</div>
-        <div style="display:flex;flex-direction:column;gap:10px">${installments}</div>
+        ${hero}
+        ${stats}
+        <div class="section-title">ตารางงวดผ่อน (${inst.length} งวด)</div>
+        ${inst.length ? `<div class="timeline">${rows}</div>` : `
+          <div class="empty-card"><div class="empty-emoji">🗓️</div><div class="empty-text">ยังไม่มีงวดผ่อนในรายการนี้</div></div>`}
       </div>`;
   }
 
