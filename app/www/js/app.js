@@ -309,6 +309,46 @@
     S.forms = { ...S.forms, [field]: dateStr };
     setState({ datePickerFor: null });
   }
+  // ---------------- Form building blocks ----------------
+  // Every form on this app is the same three pieces: a titled card, a labelled field, and a
+  // hint line — so they are written once here instead of inline in five screens.
+  function formCard(icon, title, body) {
+    return `
+      <div class="form-card">
+        ${title ? `<div class="form-card-head"><span class="form-card-icon">${icon}</span>${title}</div>` : ''}
+        ${body}
+      </div>`;
+  }
+  const formHint = (text, tone) => `<div class="form-hint${tone ? ' ' + tone : ''}">${text}</div>`;
+  function textField(label, bind, opts) {
+    const o = opts || {};
+    return `
+      <div class="form-field">
+        <div class="field-label">${label}</div>
+        <input class="field-input" ${o.type ? `type="${o.type}"` : ''} data-bind="${bind}" value="${esc(S.forms[bind])}" ${o.placeholder ? `placeholder="${esc(o.placeholder)}"` : ''}/>
+      </div>`;
+  }
+  // Money always carries its ฿ inside the box, so an amount never reads as a bare number.
+  function moneyField(label, bind, placeholder) {
+    return `
+      <div class="form-field">
+        <div class="field-label">${label}</div>
+        <div class="field-money">
+          <span>฿</span>
+          <input class="field-input" type="number" inputmode="decimal" data-bind="${bind}" value="${esc(S.forms[bind])}" placeholder="${placeholder || '0'}"/>
+        </div>
+      </div>`;
+  }
+  function dayField(label, bind) {
+    const options = Array.from({ length: 28 }, (_, i) => i + 1)
+      .map((n) => `<option value="${n}" ${String(n) === S.forms[bind] ? 'selected' : ''}>วันที่ ${n}</option>`).join('');
+    return `
+      <div class="form-field">
+        <div class="field-label">${label}</div>
+        <select class="field-input field-select" data-bind="${bind}">${options}</select>
+      </div>`;
+  }
+
   function renderDateField(field, label) {
     const value = S.forms[field];
     const isOpen = S.datePickerFor === field;
@@ -1724,30 +1764,14 @@
 
   function renderDebtSettings() {
     const id = S.editingDebtId;
-    const dayOptions = Array.from({ length: 28 }, (_, i) => i + 1)
-      .map((n) => `<option value="${n}" ${String(n) === S.forms.dueDay ? 'selected' : ''}>${n}</option>`).join('');
     return `
       <div class="screen-pad">
-        <div style="display:flex;flex-direction:column;gap:14px">
-          <div><div class="field-label">ชื่อหนี้</div><input class="field-input" data-bind="name" value="${esc(S.forms.name)}"/></div>
-          <div class="field-row">
-            <div class="field-1"><div class="field-label">ยอดหนี้ทั้งหมด</div><input class="field-input" type="number" data-bind="total" value="${esc(S.forms.total)}"/></div>
-            <div class="field-1"><div class="field-label">ยอดคงเหลือ</div><input class="field-input" type="number" data-bind="remaining" value="${esc(S.forms.remaining)}"/></div>
-          </div>
-          <div class="field-row">
-            <div class="field-1">
-              <div class="field-label">จ่ายทุกวันที่</div>
-              <select class="field-input" data-bind="dueDay">${dayOptions}</select>
-            </div>
-            <div class="field-1"><div class="field-label">ยอดผ่อนต่อเดือน (งวดที่ยังไม่จ่ายจะถูกปรับตามนี้)</div><input class="field-input" type="number" data-bind="installmentAmount" value="${esc(S.forms.installmentAmount)}"/></div>
-          </div>
-          <button class="submit-btn" data-action="submit-edit-debt">บันทึกการแก้ไข</button>
-        </div>
-        <div class="section-title">การจัดการหนี้</div>
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <button class="mark-paid-btn" style="width:100%;background:#E7F5EE;color:#1F7A52" data-action="close-debt" data-id="${id}">✓ ปิดหนี้ (ชำระครบแล้ว)</button>
-          <button class="mark-paid-btn" style="width:100%;background:#FDEAEA;color:#B23B3B" data-action="delete-debt" data-id="${id}">🗑 ลบหนี้ถาวร</button>
-        </div>
+        ${renderDebtFormFields('แก้ "ยอดผ่อนต่อเดือน" แล้วงวดที่ยังไม่จ่ายทั้งหมดจะถูกปรับตามยอดใหม่ทันที')}
+        <button class="submit-btn" data-action="submit-edit-debt">บันทึกการแก้ไข</button>
+        ${formCard('⚙️', 'การจัดการหนี้ก้อนนี้', `
+          <button class="danger-btn ok" data-action="close-debt" data-id="${id}">✓ ปิดหนี้ (ชำระครบแล้ว)</button>
+          ${formHint('ปิดหนี้ = เอาออกจากรายการแต่เก็บประวัติไว้ · ลบ = หายถาวรพร้อมงวดผ่อนทั้งหมด กู้คืนไม่ได้')}
+          <button class="danger-btn" data-action="delete-debt" data-id="${id}">🗑 ลบหนี้ถาวร</button>`)}
       </div>`;
   }
 
@@ -2163,7 +2187,9 @@
       </div>`;
   }
 
-  // Shared by the "add pawn" form and the pawn settings screen — same fields either way.
+  // Shared by the "add pawn" form and the pawn settings screen — same fields either way,
+  // split into three cards so a ticket is entered in the order it is read off the slip:
+  // what the item is, what it cost, and when it has to be settled.
   function renderPawnFormFields() {
     const isJewelry = S.forms.category === 'jewelry';
     const isCustomPeriod = S.forms.pawnPeriod === 'custom';
@@ -2177,131 +2203,117 @@
     // pawn_date+5 months, computed automatically, and interest accrues monthly instead (see
     // renderPawnCard). Every other category keeps the original pick-a-period flow unchanged.
     const periodSection = isJewelry ? '' : `
-        <div>
+        <div class="form-field">
           <div class="field-label">ครบกำหนดต่อดอก</div>
           <div class="warn-options">${periodChips}</div>
         </div>
-        ${isCustomPeriod ? `<div><div class="field-label">ระบุจำนวนวันต่อรอบ</div><input class="field-input" type="number" min="1" data-bind="pawnCustomDays" value="${esc(S.forms.pawnCustomDays)}" placeholder="เช่น 7, 10, 20"/></div>` : ''}
+        ${isCustomPeriod ? `<div class="form-field"><div class="field-label">ระบุจำนวนวันต่อรอบ</div><input class="field-input" type="number" min="1" data-bind="pawnCustomDays" value="${esc(S.forms.pawnCustomDays)}" placeholder="เช่น 7, 10, 20"/></div>` : ''}
         ${renderDateField('dueDate', 'วันครบกำหนดงวดแรก')}
-        <div class="field-label">ไม่รู้ว่าจำนำมาวันไหน แต่รู้วันครบกำหนด (เช่น ร้านนัดจ่ายวันที่ 10) ก็เลือกวันนั้นเป็นงวดแรกได้เลย — งวดถัดไปจะนับต่อจากวันนี้ไปเรื่อยๆ ทุก${isCustomPeriod ? (S.forms.pawnCustomDays || 'N') + ' วัน' : ' ' + (PERIOD_OPTIONS.find((o) => o.key === S.forms.pawnPeriod) || {}).label}</div>`;
+        ${formHint(`ไม่รู้ว่าจำนำมาวันไหน แต่รู้วันครบกำหนด (เช่น ร้านนัดจ่ายวันที่ 10) ก็เลือกวันนั้นเป็นงวดแรกได้เลย — งวดถัดไปจะนับต่อไปเรื่อยๆ ทุก${isCustomPeriod ? (S.forms.pawnCustomDays || 'N') + ' วัน' : ' ' + (PERIOD_OPTIONS.find((o) => o.key === S.forms.pawnPeriod) || {}).label}`)}`;
+
     return `
-        <div>
+      ${formCard('🎫', 'ข้อมูลตั๋วและสินค้า', `
+        <div class="form-field">
           <div class="field-label">หมวดหมู่</div>
           <div class="warn-options">${categoryChips}</div>
         </div>
-        <div><div class="field-label">ชื่อสินค้า</div><input class="field-input" data-bind="itemName" value="${esc(S.forms.itemName)}" placeholder="เช่น ทองคำแท่ง 1 บาท"/></div>
-        <div><div class="field-label">ร้านจำนำ</div><input class="field-input" data-bind="shop" value="${esc(S.forms.shop)}" placeholder="ชื่อร้าน"/></div>
-        <div><div class="field-label">รหัสตั๋ว (ถ้ามี)</div><input class="field-input" data-bind="ticketCode" value="${esc(S.forms.ticketCode)}" placeholder="เลขที่ตั๋วจำนำ"/></div>
-        <div><div class="field-label">ลิงก์ต่อดอกออนไลน์ (จาก QR code บนตั๋ว ถ้ามี)</div><input class="field-input" type="url" data-bind="renewUrl" value="${esc(S.forms.renewUrl)}" placeholder="https://..."/></div>
+        ${textField('ชื่อสินค้า', 'itemName', { placeholder: 'เช่น ทองคำแท่ง 1 บาท' })}
         <div class="field-row">
-          <div class="field-1"><div class="field-label">ยอดเงินต้น</div><input class="field-input" type="number" data-bind="amount" value="${esc(S.forms.amount)}" placeholder="0"/></div>
-          <div class="field-1"><div class="field-label">${isJewelry ? 'อัตราดอกเบี้ยต่อเดือน' : 'ยอดต่อดอก (ถ้ามี)'}</div><input class="field-input" type="number" data-bind="interest" value="${esc(S.forms.interest)}" placeholder="0"/></div>
+          <div class="field-1">${textField('ร้านจำนำ', 'shop', { placeholder: 'ชื่อร้าน' })}</div>
+          <div class="field-1">${textField('เลขที่ตั๋ว', 'ticketCode', { placeholder: 'ถ้ามี' })}</div>
         </div>
+        ${textField('ลิงก์ต่อดอกออนไลน์', 'renewUrl', { type: 'url', placeholder: 'https://... (จาก QR บนตั๋ว)' })}`)}
+
+      ${formCard('💰', 'ยอดเงิน', `
+        <div class="field-row">
+          <div class="field-1">${moneyField('ยอดเงินต้น', 'amount')}</div>
+          <div class="field-1">${moneyField(isJewelry ? 'ดอกเบี้ยต่อเดือน' : 'ยอดต่อดอก', 'interest')}</div>
+        </div>
+        ${isJewelry ? formHint('หมวดเครื่องประดับ: ดอกเบี้ยคิดเป็นรายเดือนจาก "วันที่จำนำ" (เดือนละเท่ากับอัตราที่กรอกไว้ สะสมไปเรื่อยๆ) ครบเดือนที่ 4 จะเตือน เดือนที่ 5 คือกำหนดไถ่ถอนสุดท้าย', 'gold') : ''}`)}
+
+      ${formCard('📅', isJewelry ? 'วันที่จำนำ' : 'วันที่และรอบต่อดอก', `
         ${renderDateField('pawnDate', 'วันที่จำนำ')}
-        ${periodSection}
-        ${isJewelry ? `<div class="field-label" style="color:#92600A">หมวดเครื่องประดับ: ดอกเบี้ยคิดเป็นรายเดือนจาก "วันที่จำนำ" (เดือนละเท่ากับอัตราที่กรอกไว้ สะสมไปเรื่อยๆ) ครบเดือนที่ 4 จะเตือน เดือนที่ 5 คือกำหนดไถ่ถอนสุดท้าย</div>` : ''}`;
+        ${periodSection}`)}`;
   }
 
   function renderPawnSettings() {
     return `
       <div class="screen-pad">
-        <div style="display:flex;flex-direction:column;gap:14px">
-          ${renderPawnFormFields()}
-          <button class="submit-btn" data-action="submit-edit-pawn">บันทึกการแก้ไข</button>
-        </div>
-        <div class="section-title">การจัดการตั๋วจำนำ</div>
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <button class="mark-paid-btn" style="width:100%;background:#FDEAEA;color:#B23B3B" data-action="delete-pawn" data-id="${S.editingPawnId}">🗑 ลบตั๋วจำนำถาวร</button>
-        </div>
+        ${renderPawnFormFields()}
+        <button class="submit-btn" data-action="submit-edit-pawn">บันทึกการแก้ไข</button>
+        ${formCard('⚙️', 'การจัดการตั๋วจำนำ', `
+          ${formHint('ลบแล้วตั๋วใบนี้จะหายถาวรพร้อมประวัติต่อดอก/ไถ่ถอน กู้คืนไม่ได้')}
+          <button class="danger-btn" data-action="delete-pawn" data-id="${S.editingPawnId}">🗑 ลบตั๋วจำนำถาวร</button>`)}
       </div>`;
   }
 
   // Shared by the "add expense" form and the expense settings screen — same fields either way.
   function renderExpenseFormFields() {
     const isVariableExpense = S.forms.expenseType === 'variable';
-    const expenseDayOptions = Array.from({ length: 28 }, (_, i) => i + 1)
-      .map((n) => `<option value="${n}" ${String(n) === S.forms.expenseDueDay ? 'selected' : ''}>${n}</option>`).join('');
     const expenseTypeChips = `
       <button class="warn-opt ${!isVariableExpense ? 'selected' : ''}" data-action="expense-type" data-key="fixed">ยอดคงที่ทุกเดือน</button>
       <button class="warn-opt ${isVariableExpense ? 'selected' : ''}" data-action="expense-type" data-key="variable">ไม่คงที่ ต้องจ่ายทุกเดือน</button>`;
-    return `
-        <div><div class="field-label">ชื่อค่าใช้จ่าย</div><input class="field-input" data-bind="expenseName" value="${esc(S.forms.expenseName)}" placeholder="เช่น ค่าเช่าห้อง, ค่าไฟ, ค่าเน็ต"/></div>
-        <div>
-          <div class="field-label">ลักษณะค่าใช้จ่าย</div>
-          <div class="warn-options">${expenseTypeChips}</div>
-        </div>
-        <div class="field-row">
-          ${isVariableExpense ? '' : `<div class="field-1"><div class="field-label">ยอดต่อเดือน</div><input class="field-input" type="number" data-bind="expenseAmount" value="${esc(S.forms.expenseAmount)}" placeholder="0"/></div>`}
-          <div class="field-1">
-            <div class="field-label">จ่ายทุกวันที่</div>
-            <select class="field-input" data-bind="expenseDueDay">${expenseDayOptions}</select>
-          </div>
-        </div>
-        ${isVariableExpense ? `<div class="field-label" style="color:#92600A">ยอดไม่คงที่ (เช่น ค่าน้ำ ค่าไฟ ค่าเน็ต): กรอกยอดจริงทุกครั้งตอนบันทึกว่าจ่ายแล้ว</div>` : ''}`;
+    return formCard('🧾', 'รายละเอียดค่าใช้จ่าย', `
+      ${textField('ชื่อค่าใช้จ่าย', 'expenseName', { placeholder: 'เช่น ค่าเช่าห้อง, ค่าไฟ, ค่าเน็ต' })}
+      <div class="form-field">
+        <div class="field-label">ลักษณะค่าใช้จ่าย</div>
+        <div class="warn-options">${expenseTypeChips}</div>
+      </div>
+      <div class="field-row">
+        ${isVariableExpense ? '' : `<div class="field-1">${moneyField('ยอดต่อเดือน', 'expenseAmount')}</div>`}
+        <div class="field-1">${dayField('จ่ายทุกวันที่', 'expenseDueDay')}</div>
+      </div>
+      ${isVariableExpense ? formHint('ยอดไม่คงที่ (เช่น ค่าน้ำ ค่าไฟ ค่าเน็ต): กรอกยอดจริงทุกครั้งตอนบันทึกว่าจ่ายแล้ว', 'gold') : ''}`);
   }
 
   function renderExpenseSettings() {
     return `
       <div class="screen-pad">
-        <div style="display:flex;flex-direction:column;gap:14px">
-          ${renderExpenseFormFields()}
-          <button class="submit-btn" data-action="submit-edit-expense">บันทึกการแก้ไข</button>
-        </div>
-        <div class="section-title">การจัดการค่าใช้จ่าย</div>
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <button class="mark-paid-btn" style="width:100%;background:#FDEAEA;color:#B23B3B" data-action="delete-expense" data-id="${S.editingExpenseId}">🗑 ลบค่าใช้จ่ายนี้ถาวร</button>
-        </div>
+        ${renderExpenseFormFields()}
+        <button class="submit-btn" data-action="submit-edit-expense">บันทึกการแก้ไข</button>
+        ${formCard('⚙️', 'การจัดการค่าใช้จ่าย', `
+          ${formHint('ลบแล้วค่าใช้จ่ายนี้จะหายถาวรพร้อมประวัติการจ่ายทุกเดือน กู้คืนไม่ได้')}
+          <button class="danger-btn" data-action="delete-expense" data-id="${S.editingExpenseId}">🗑 ลบค่าใช้จ่ายนี้ถาวร</button>`)}
       </div>`;
   }
 
+  // Debt fields are shared by the add form and the debt settings screen.
+  function renderDebtFormFields(installmentNote) {
+    return formCard('📋', 'รายละเอียดหนี้', `
+      ${textField('ชื่อหนี้', 'name', { placeholder: 'เช่น บัตรเครดิต, สินเชื่อส่วนบุคคล' })}
+      <div class="field-row">
+        <div class="field-1">${moneyField('ยอดหนี้ทั้งหมด', 'total')}</div>
+        <div class="field-1">${moneyField('ยอดคงเหลือ', 'remaining')}</div>
+      </div>
+      <div class="field-row">
+        <div class="field-1">${dayField('จ่ายทุกวันที่', 'dueDay')}</div>
+        <div class="field-1">${moneyField('ยอดผ่อนต่อเดือน', 'installmentAmount')}</div>
+      </div>
+      ${installmentNote ? formHint(installmentNote) : ''}`);
+  }
+
+  const ADD_TYPES = [
+    { key: 'debt', icon: '📋', label: 'หนี้ใหม่' },
+    { key: 'pawn', icon: '🎫', label: 'ตั๋วจำนำ' },
+    { key: 'expense', icon: '🧾', label: 'ค่าใช้จ่าย' },
+  ];
+
   function renderAddEdit() {
-    const isDebt = S.addType === 'debt';
-    const isPawn = S.addType === 'pawn';
-    const isExpense = S.addType === 'expense';
-    const dayOptions = Array.from({ length: 28 }, (_, i) => i + 1)
-      .map((n) => `<option value="${n}" ${String(n) === S.forms.dueDay ? 'selected' : ''}>${n}</option>`).join('');
-
-    const debtForm = `
-      <div style="display:flex;flex-direction:column;gap:14px">
-        <div>
-          <div class="field-label">ชื่อหนี้</div>
-          <input class="field-input" data-bind="name" value="${esc(S.forms.name)}" placeholder="เช่น บัตรเครดิต, สินเชื่อส่วนบุคคล"/>
-        </div>
-        <div class="field-row">
-          <div class="field-1"><div class="field-label">ยอดหนี้ทั้งหมด</div><input class="field-input" type="number" data-bind="total" value="${esc(S.forms.total)}" placeholder="0"/></div>
-          <div class="field-1"><div class="field-label">ยอดคงเหลือ</div><input class="field-input" type="number" data-bind="remaining" value="${esc(S.forms.remaining)}" placeholder="0"/></div>
-        </div>
-        <div class="field-row">
-          <div class="field-1">
-            <div class="field-label">จ่ายทุกวันที่</div>
-            <select class="field-input" data-bind="dueDay">${dayOptions}</select>
-          </div>
-          <div class="field-1"><div class="field-label">ยอดผ่อนต่อเดือน</div><input class="field-input" type="number" data-bind="installmentAmount" value="${esc(S.forms.installmentAmount)}" placeholder="0"/></div>
-        </div>
-        <button class="submit-btn" data-action="submit-debt">บันทึกหนี้ใหม่</button>
+    const type = S.addType;
+    const tabs = `
+      <div class="segmented">
+        ${ADD_TYPES.map((t) => `
+          <button class="segmented-btn ${type === t.key ? 'active' : ''}" data-action="add-type" data-type="${t.key}">${t.icon} ${t.label}</button>`).join('')}
       </div>`;
-
-    const pawnForm = `
-      <div style="display:flex;flex-direction:column;gap:14px">
-        ${renderPawnFormFields()}
-        <button class="submit-btn" data-action="submit-pawn">บันทึกตั๋วจำนำ</button>
-      </div>`;
-
-    const expenseForm = `
-      <div style="display:flex;flex-direction:column;gap:14px">
-        ${renderExpenseFormFields()}
-        <button class="submit-btn" data-action="submit-expense">บันทึกค่าใช้จ่ายประจำ</button>
-      </div>`;
-
-    return `
-      <div class="screen-pad">
-        <div class="segmented">
-          <button class="segmented-btn ${isDebt ? 'active' : ''}" data-action="add-type" data-type="debt">หนี้ใหม่</button>
-          <button class="segmented-btn ${isPawn ? 'active' : ''}" data-action="add-type" data-type="pawn">ตั๋วจำนำใหม่</button>
-          <button class="segmented-btn ${isExpense ? 'active' : ''}" data-action="add-type" data-type="expense">ค่าใช้จ่าย</button>
-        </div>
-        ${isDebt ? debtForm : isPawn ? pawnForm : expenseForm}
-      </div>`;
+    const form = type === 'debt'
+      ? `${renderDebtFormFields('เพิ่มหนี้ใหม่แล้วระบบจะสร้างงวดผ่อน 3 งวดถัดไปให้อัตโนมัติ แก้ไขภายหลังได้')}
+         <button class="submit-btn" data-action="submit-debt">บันทึกหนี้ใหม่</button>`
+      : type === 'pawn'
+      ? `${renderPawnFormFields()}
+         <button class="submit-btn" data-action="submit-pawn">บันทึกตั๋วจำนำ</button>`
+      : `${renderExpenseFormFields()}
+         <button class="submit-btn" data-action="submit-expense">บันทึกค่าใช้จ่ายประจำ</button>`;
+    return `<div class="screen-pad">${tabs}${form}</div>`;
   }
 
   // Push registration lives on its own card because its state is device-specific: the token

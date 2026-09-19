@@ -465,3 +465,29 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 .notif-dot { width: 9px; height: 9px; border-radius: 50%; background: #1428A0; flex: none; margin-top: 6px; box-shadow: 0 0 0 3px rgba(20,40,160,0.14); }
 .notif-row.urgent .notif-dot { background: #D64545; box-shadow: 0 0 0 3px rgba(214,69,69,0.16); }
 .notif-hint { font-size: 11.5px; line-height: 1.55; color: #A3A9B8; text-align: center; padding: 0 6px; }
+
+/* ---------- Forms ---------- */
+.form-card { display: flex; flex-direction: column; gap: 13px; padding: 15px 14px; border-radius: 18px; background: #fff; border: 1px solid #E9EEF8; box-shadow: 0 4px 12px rgba(20,40,160,0.07); }
+.form-card-head { display: flex; align-items: center; gap: 9px; font-size: 14.5px; font-weight: 700; color: #141B34; }
+.form-card-icon { width: 30px; height: 30px; border-radius: 10px; background: #F2F5FC; display: flex; align-items: center; justify-content: center; font-size: 15px; flex: none; }
+.form-field { min-width: 0; }
+.form-hint { font-size: 11.5px; line-height: 1.55; color: #5B6478; background: #F5F7FC; border-radius: 10px; padding: 9px 11px; }
+.form-hint.gold { color: #92600A; background: #FFF6E7; }
+.field-input:focus { outline: none; border-color: #1428A0; box-shadow: 0 0 0 3px rgba(20,40,160,0.12); }
+/* ฿ lives inside the box so an amount never reads as a bare number. */
+.field-money { position: relative; }
+.field-money span { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); font-size: 15px; font-weight: 600; color: #8A91A3; pointer-events: none; }
+.field-money .field-input { padding-left: 30px; }
+.field-select { appearance: none; -webkit-appearance: none; padding-right: 34px; cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%235B6478' stroke-width='2'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat; background-position: right 10px center; }
+.submit-btn { background: linear-gradient(135deg, #2A4BE0, #1428A0); }
+.submit-btn:hover { background: linear-gradient(135deg, #1E3BC4, #0F1F7A); }
+/* Destructive and irreversible actions, kept full width and apart from the save button. */
+.danger-btn { width: 100%; font-size: 13.5px; font-weight: 600; padding: 12px; border-radius: 12px; cursor: pointer; border: 1px solid #F3D3D3; background: #FDF0F0; color: #B23B3B; }
+.danger-btn:hover { background: #FBE3E3; }
+.danger-btn.ok { border-color: #CDE9DA; background: #EAF6F0; color: #1F7A52; }
+.danger-btn.ok:hover { background: #DCEFE6; }
+.segmented { background: #E9EEF8; padding: 5px; border-radius: 999px; gap: 5px; }
+.segmented-btn { border-radius: 999px; padding: 11px 6px; font-size: 13px; }
+.segmented-btn.active { background: linear-gradient(135deg, #2A4BE0, #1428A0); color: #fff; box-shadow: 0 4px 10px rgba(20,40,160,0.26); }
