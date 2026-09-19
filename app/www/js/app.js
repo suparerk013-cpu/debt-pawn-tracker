@@ -1088,16 +1088,30 @@
     }
   }
 
+  // One tone per dashboard tile: the fill gradient, the ink on it, and a shadow in the same
+  // hue — the calendar's day cells are built from these same four families.
+  const STAT_TONES = {
+    debt: { grad: 'linear-gradient(150deg, #EDF2FF 0%, #DAE5FC 100%)', fg: '#12309B', shadow: 'rgba(20,40,160,0.16)' },
+    expense: { grad: 'linear-gradient(150deg, #FFF6E7 0%, #FBE6C2 100%)', fg: '#92600A', shadow: 'rgba(146,96,10,0.16)' },
+    jewelry: { grad: 'linear-gradient(150deg, #FCF3DC 0%, #F4E2AC 100%)', fg: '#8A6A12', shadow: 'rgba(184,134,47,0.2)' },
+    electronics: { grad: 'linear-gradient(150deg, #E7F5FC 0%, #C8E8F7 100%)', fg: '#0A6E96', shadow: 'rgba(10,110,150,0.2)' },
+  };
+
   function renderDashboard() {
     const r = S.report;
     if (!r) return `<div class="screen-pad"><div class="empty-card"><div class="empty-text">กำลังโหลด...</div></div></div>`;
 
-    // `cat` makes the tile a shortcut into the pawn list filtered to that category.
-    const stat = (label, amount, bg, fg, sub, cat) => `
-      <div class="report-stat" style="background:${bg}${cat ? ';cursor:pointer' : ''}" ${cat ? `data-action="goto-pawn-cat" data-cat="${cat}"` : ''}>
-        <div class="report-stat-label" style="color:${fg}">${label}${cat ? ' ›' : ''}</div>
-        <div class="report-stat-amount" style="color:${fg}">฿${formatMoney(amount)}</div>
-        ${sub ? `<div class="report-stat-sub" style="color:${fg}">${sub}</div>` : ''}
+    // Same tinted-gradient-plus-coloured-shadow language as the calendar cells, so the tiles
+    // read as part of it. `cat` makes the tile a shortcut into the pawn list for that category.
+    const stat = (icon, label, amount, tone, sub, cat) => `
+      <div class="report-stat" style="background:${tone.grad};box-shadow:0 6px 16px ${tone.shadow}${cat ? ';cursor:pointer' : ''}" ${cat ? `data-action="goto-pawn-cat" data-cat="${cat}"` : ''}>
+        <div class="report-stat-top">
+          <span class="report-stat-icon">${icon}</span>
+          <span class="report-stat-label" style="color:${tone.fg}">${label}</span>
+          ${cat ? `<span class="report-stat-go" style="color:${tone.fg}">›</span>` : ''}
+        </div>
+        <div class="report-stat-amount" style="color:${tone.fg}">฿${formatMoney(amount)}</div>
+        ${sub ? `<div class="report-stat-sub" style="color:${tone.fg}">${sub}</div>` : ''}
       </div>`;
 
     // Jewelry and electronics get their own cards (replacing the single combined pawn card):
@@ -1118,10 +1132,10 @@
       </div>`;
     const stats = `
       <div class="report-grid">
-        ${stat('ยอดหนี้สิน', r.total_debt, '#E8EEFB', '#1428A0')}
-        ${stat('ค่าใช้จ่ายประจำต่อเดือน', r.total_recurring, '#FFF3DD', '#92600A')}
-        ${stat('💍 ตั๋วทอง', r.total_pawn_jewelry, '#FBF0D2', '#8A6A12', `${r.count_pawn_jewelry} ใบ · ดอก ฿${formatMoney(r.interest_jewelry)}`, 'jewelry')}
-        ${stat('📱 ตั๋วอิเล็กทรอนิก', r.total_pawn_other, '#E0F3FA', '#0A6E96', `${r.count_pawn_other} ใบ · ดอก ฿${formatMoney(r.interest_other)}`, 'nonjewelry')}
+        ${stat('📋', 'ยอดหนี้สิน', r.total_debt, STAT_TONES.debt)}
+        ${stat('🧾', 'ค่าใช้จ่ายประจำ', r.total_recurring, STAT_TONES.expense, 'ต่อเดือน')}
+        ${stat('💍', 'ตั๋วทอง', r.total_pawn_jewelry, STAT_TONES.jewelry, `${r.count_pawn_jewelry} ใบ · ดอก ฿${formatMoney(r.interest_jewelry)}`, 'jewelry')}
+        ${stat('📱', 'ตั๋วอิเล็กทรอนิก', r.total_pawn_other, STAT_TONES.electronics, `${r.count_pawn_other} ใบ · ดอก ฿${formatMoney(r.interest_other)}`, 'nonjewelry')}
       </div>`;
 
     // Overdue or due within 2 days is treated as needing action right now, split into its own
@@ -1307,20 +1321,21 @@
   // categories (with pawns split gold/electronics, since those two settle on different
   // rules). A group with nothing in it is omitted entirely rather than shown empty.
   const DUE_GROUPS = [
-    { label: '📋 หนี้สิน', match: (it) => it.type === 'installment' },
-    { label: '💍 ตั๋วจำนำ — ทอง', match: (it) => it.type === 'pawn' && it.category === 'jewelry' },
-    { label: '📱 ตั๋วจำนำ — อิเล็กทรอนิก', match: (it) => it.type === 'pawn' && it.category !== 'jewelry' },
-    { label: '🧾 ค่าใช้จ่ายประจำ', match: (it) => it.type === 'expense' },
+    { label: '📋 หนี้สิน', tone: 0, match: (it) => it.type === 'installment' },
+    { label: '💍 ตั๋วจำนำ — ทอง', tone: 1, match: (it) => it.type === 'pawn' && it.category === 'jewelry' },
+    { label: '📱 ตั๋วจำนำ — อิเล็กทรอนิก', tone: 2, match: (it) => it.type === 'pawn' && it.category !== 'jewelry' },
+    { label: '🧾 ค่าใช้จ่ายประจำ', tone: 3, match: (it) => it.type === 'expense' },
   ];
   function renderDueGroups(list) {
     return DUE_GROUPS.map((g) => {
       const items = list.filter(g.match);
       if (!items.length) return '';
       const sum = items.reduce((a, it) => a + (it.amount || 0), 0);
+      const tone = PAY_LEGEND[g.tone];
       return `
         <div class="due-group">
           <div class="due-group-head">
-            <span>${g.label} (${items.length})</span>
+            <span class="due-group-label" style="background:${tone.bg};color:${tone.color}">${g.label} (${items.length})</span>
             <span class="due-group-sum">฿${formatMoney(sum)}</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px">${items.map(renderDueRow).join('')}</div>
@@ -1336,7 +1351,7 @@
       ? `<button class="mark-paid-btn" data-action="mark-paid" data-id="${it.ref_id}" data-debt="${it.debt_id}" ${lockAttr()}>${btnLabel('paid:' + it.ref_id, 'บันทึกว่าจ่ายแล้ว')}</button>`
       : it.type === 'expense'
       ? `<button class="mark-paid-btn" data-action="mark-expense-paid" data-id="${it.ref_id}" data-expense-type="${it.expense_type}" ${lockAttr()}>${btnLabel('expense:' + it.ref_id, 'บันทึกว่าจ่ายแล้ว')}</button>`
-      : `<div style="display:flex;gap:6px;flex-wrap:wrap">
+      : `<div class="due-actions">
           <button class="mark-paid-btn" data-action="redeem-open" data-id="${it.ref_id}" ${lockAttr()}>${btnLabel('redeem:' + it.ref_id, 'ไถ่ถอน')}</button>
           <button class="pawn-btn renew" data-action="${it.category === 'jewelry' ? 'jewelry-renew' : 'renew-open'}" data-id="${it.ref_id}" ${lockAttr()}>${btnLabel('renew:' + it.ref_id, 'ต่อดอก')}</button>
         </div>`;

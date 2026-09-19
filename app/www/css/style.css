@@ -39,11 +39,17 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 .screen-pad { padding: 4px 16px 24px; display: flex; flex-direction: column; gap: 18px; }
 
 .card { background: #fff; border-radius: 18px; padding: 16px; border: 1px solid #E3E8F2; box-shadow: 0 2px 10px rgba(20,40,160,0.05); }
-.report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.report-stat { border-radius: 16px; padding: 16px 14px; display: flex; flex-direction: column; gap: 6px; }
-.report-stat-label { font-size: 12.5px; font-weight: 600; opacity: 0.85; }
-.report-stat-amount { font-size: 19px; font-weight: 700; }
-.report-stat-sub { font-size: 11.5px; font-weight: 600; opacity: 0.7; margin-top: -2px; }
+.report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+/* Tinted gradient + a shadow in its own hue, the same recipe as a calendar day cell, so the
+   tiles and the grid above them read as one set of surfaces rather than two designs. */
+.report-stat { border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 5px; border: 1px solid rgba(255,255,255,0.7); transition: transform .12s ease, box-shadow .12s ease; }
+.report-stat[data-action]:hover { transform: translateY(-2px); }
+.report-stat-top { display: flex; align-items: center; gap: 7px; }
+.report-stat-icon { width: 26px; height: 26px; border-radius: 9px; background: rgba(255,255,255,0.75); display: flex; align-items: center; justify-content: center; font-size: 14px; flex: none; box-shadow: 0 2px 6px rgba(20,40,160,0.08); }
+.report-stat-label { font-size: 12.5px; font-weight: 600; opacity: 0.9; flex: 1; min-width: 0; }
+.report-stat-go { font-size: 16px; font-weight: 700; opacity: 0.55; flex: none; }
+.report-stat-amount { font-size: 20px; font-weight: 700; letter-spacing: -0.2px; }
+.report-stat-sub { font-size: 11.5px; font-weight: 600; opacity: 0.72; margin-top: -2px; }
 
 /* Pawn detail popup — a bottom sheet on phones, so the actions land near the thumb. */
 .modal-backdrop {
@@ -66,19 +72,21 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 
 .section-title { font-size: 15px; font-weight: 600; color: #141B34; }
 
-/* Sub-heading for each kind of thing owed inside a due list. */
+/* Sub-heading for each kind of thing owed inside a due list — a tinted pill in that
+   category's colour, matching the calendar legend. */
 .due-group { display: flex; flex-direction: column; gap: 8px; }
-.due-group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 0 2px; font-size: 13.5px; font-weight: 600; color: #5B6478; }
-.due-group-sum { font-weight: 700; color: #141B34; white-space: nowrap; }
+.due-group-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 2px; font-size: 13.5px; font-weight: 600; color: #5B6478; }
+.due-group-label { font-size: 12px; font-weight: 700; padding: 5px 11px; border-radius: 999px; }
+.due-group-sum { font-size: 14.5px; font-weight: 700; color: #141B34; white-space: nowrap; }
 
 .near-kind { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 6px; white-space: nowrap; flex: none; }
 .near-badge { font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 8px; white-space: nowrap; }
 
-.empty-card { background: #fff; border-radius: 14px; padding: 26px 18px; text-align: center; border: 1px solid #E3E8F2; }
+.empty-card { background: #fff; border-radius: 18px; padding: 26px 18px; text-align: center; border: 1px solid #E9EEF8; box-shadow: 0 3px 10px rgba(20,40,160,0.06); }
 .empty-emoji { font-size: 28px; }
 .empty-text { font-size: 14px; color: #5B6478; margin-top: 6px; }
 
-.debt-card { background: #fff; border-radius: 18px; box-shadow: 0 2px 10px rgba(20,40,160,0.05); padding: 16px; border: 1px solid #E3E8F2; cursor: pointer; display: flex; flex-direction: column; gap: 10px; }
+.debt-card { background: #fff; border-radius: 18px; box-shadow: 0 4px 14px rgba(20,40,160,0.08); padding: 16px; border: 1px solid #E9EEF8; cursor: pointer; display: flex; flex-direction: column; gap: 10px; }
 .row-between { display: flex; justify-content: space-between; align-items: baseline; }
 .debt-name { font-size: 15.5px; font-weight: 600; color: #141B34; }
 .debt-remaining { font-size: 20px; font-weight: 700; color: #141B34; }
@@ -87,14 +95,14 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 .progress-fill { height: 100%; background: linear-gradient(90deg, #1428A0, #00A3E0); border-radius: 4px; }
 .progress-label { font-size: 12px; color: #5B6478; }
 
-.installment-row { background: #fff; border-radius: 14px; padding: 14px; border: 1px solid #E3E8F2; display: flex; align-items: center; gap: 12px; }
+.installment-row { background: #fff; border-radius: 16px; padding: 14px; border: 1px solid #E9EEF8; display: flex; align-items: center; gap: 12px; box-shadow: 0 3px 10px rgba(20,40,160,0.07); }
 .installment-date { font-size: 14.5px; font-weight: 600; color: #141B34; }
 .installment-amount { font-size: 13px; color: #5B6478; }
 .status-badge { font-size: 11.5px; font-weight: 600; padding: 4px 9px; border-radius: 8px; white-space: nowrap; flex: none; }
-.mark-paid-btn { font-size: 12.5px; font-weight: 600; color: #1428A0; padding: 7px 10px; border-radius: 9px; background: #E8EEFB; cursor: pointer; flex: none; white-space: nowrap; border: none; }
-.mark-paid-btn:hover { background: #D3DDF6; }
+.mark-paid-btn { font-size: 12.5px; font-weight: 600; color: #fff; padding: 9px 14px; border-radius: 999px; background: linear-gradient(135deg, #2A4BE0, #1428A0); box-shadow: 0 4px 10px rgba(20,40,160,0.28); cursor: pointer; flex: none; white-space: nowrap; border: none; }
+.mark-paid-btn:hover { background: linear-gradient(135deg, #1E3BC4, #0F1F7A); }
 
-.pawn-card { background: #fff; border-radius: 18px; box-shadow: 0 2px 10px rgba(20,40,160,0.05); padding: 16px; border: 1px solid #E3E8F2; display: flex; flex-direction: column; gap: 10px; }
+.pawn-card { background: #fff; border-radius: 18px; box-shadow: 0 4px 14px rgba(20,40,160,0.08); padding: 16px; border: 1px solid #E9EEF8; display: flex; flex-direction: column; gap: 10px; }
 /* Soft category sheen — gold for jewelry, blue for electronics — so the two are easy to
    tell apart at a glance in a mixed list, without turning the page into flat color blocks. */
 .pawn-card.cat-jewelry, .installment-row.cat-jewelry {
@@ -116,11 +124,15 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 .pawn-amount { font-size: 18px; font-weight: 700; color: #141B34; }
 .pawn-due { font-size: 12px; color: #5B6478; }
 .pawn-actions { display: flex; gap: 8px; }
-.pawn-btn { flex: 1; text-align: center; font-size: 13px; font-weight: 600; padding: 10px; border-radius: 10px; cursor: pointer; white-space: nowrap; border: none; }
-.pawn-btn.redeem { color: #1428A0; background: #E8EEFB; }
-.pawn-btn.redeem:hover { background: #D3DDF6; }
-.pawn-btn.renew { color: #92600A; background: #FFF3DD; }
-.pawn-btn.renew:hover { background: #FBE7BD; }
+/* The two pawn actions get their own full-width row under the text: sharing the line with
+   a long item name squeezed the title into a four-word-wide column. */
+.due-actions { width: 100%; display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.due-actions .mark-paid-btn, .due-actions .pawn-btn { flex: 1; text-align: center; }
+.pawn-btn { flex: 1; text-align: center; font-size: 13px; font-weight: 600; padding: 10px; border-radius: 999px; cursor: pointer; white-space: nowrap; border: none; color: #fff; }
+.pawn-btn.redeem { background: linear-gradient(135deg, #2A4BE0, #1428A0); box-shadow: 0 4px 10px rgba(20,40,160,0.28); }
+.pawn-btn.redeem:hover { background: linear-gradient(135deg, #1E3BC4, #0F1F7A); }
+.pawn-btn.renew { background: linear-gradient(135deg, #E0A62A, #B8862F); box-shadow: 0 4px 10px rgba(184,134,47,0.3); }
+.pawn-btn.renew:hover { background: linear-gradient(135deg, #C9931F, #9C6F20); }
 
 /* ---------- Forms ---------- */
 .segmented { display: flex; background: #EDF1F8; border-radius: 12px; padding: 4px; gap: 4px; }
@@ -195,7 +207,7 @@ input, select, button { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
 .hero-card {
   position: relative; overflow: hidden; border-radius: 22px; padding: 18px 18px 16px; color: #fff;
   background: linear-gradient(135deg, #0A1650 0%, #1428A0 55%, #1E5BD6 100%);
-  box-shadow: 0 12px 28px rgba(10,22,80,0.28);
+  box-shadow: 0 14px 30px rgba(10,22,80,0.32), 0 2px 8px rgba(10,22,80,0.2);
 }
 .hero-card::after { content: ''; position: absolute; right: -60px; top: -70px; width: 200px; height: 200px; border-radius: 50%; background: radial-gradient(circle, rgba(0,163,224,0.45), rgba(0,163,224,0) 70%); pointer-events: none; }
 .hero-label { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.8); }
