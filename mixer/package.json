@@ -1,0 +1,15 @@
+{
+  "name": "stemroom",
+  "productName": "Stemroom",
+  "version": "0.0.1",
+  "description": "Multitrack mixing practice app (working name)",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "serve": "python -m http.server 8080"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}
